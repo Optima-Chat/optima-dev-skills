@@ -4,13 +4,38 @@
 
 ## 📦 快速安装
 
+### 方式 1：通过 npm（推荐）
+
 ```bash
 npm install -g @optima-chat/dev-skills@latest
 ```
 
-安装后，Claude Code 会自动获得以下能力：
-- `/logs` 命令 - 查看 Stage/Prod 环境日志
-- `viewing-logs` 场景 - 完整的日志查看指导
+安装后会自动将 skills 复制到 `~/.claude/` 目录。
+
+### 方式 2：验证安装
+
+```bash
+# 查看版本
+optima-dev-skills --version
+
+# 查看帮助
+optima-dev-skills --help
+
+# 检查文件
+ls ~/.claude/commands/logs/
+ls ~/.claude/skills/scenarios/viewing-logs/
+```
+
+### 已安装的能力
+
+- ✅ `/logs` 命令 - 查看 Stage/Prod 环境日志
+- ✅ `viewing-logs` 场景 - 完整的日志查看指导
+
+### 更新
+
+```bash
+npm update -g @optima-chat/dev-skills@latest
+```
 
 ## 🎯 核心理念
 
