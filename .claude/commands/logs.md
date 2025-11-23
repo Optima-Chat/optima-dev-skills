@@ -36,6 +36,10 @@
 /logs mcp-host 200 prod          # 查看 Prod 环境最近 200 行
 ```
 
+## 特殊参数处理
+
+如果用户输入 `/logs` 或 `/logs --help` 或 `/logs help`，显示此帮助文档，不执行查询。
+
 ## Claude Code 执行步骤
 
 ### 1. Stage 环境
@@ -74,11 +78,12 @@ aws logs get-log-events \
 ```bash
 # 获取日志内容（纯文本）
 # 注意：Prod 环境的 log stream 通常是固定的 "backend"
+# 使用 --no-start-from-head 从最新日志开始读取
 aws logs get-log-events \
   --log-group-name /optima/prod/commerce-backend \
   --log-stream-name backend \
   --limit 50 \
-  --start-from-head false \
+  --no-start-from-head \
   | jq -r '.events[] | .message'
 ```
 
@@ -119,12 +124,12 @@ aws logs get-log-events \
 SERVICE="commerce-backend"
 LINES=50
 
-# 显示主服务日志
+# 显示主服务日志（从最新开始）
 aws logs get-log-events \
   --log-group-name /optima/prod/${SERVICE} \
   --log-stream-name backend \
   --limit $LINES \
-  --start-from-head false \
+  --no-start-from-head \
   | jq -r '.events[] | .message'
 ```
 
