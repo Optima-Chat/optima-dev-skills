@@ -11,6 +11,17 @@ Optima Dev Skills 让 Claude Code 能够直接在 **CI、Stage、Prod** 三个�
 - **任务驱动** - 基于具体任务场景（查看日志、调用 API），不是抽象分类
 - **跨环境协作** - 统一的命令在 CI、Stage、Prod 三个环境中使用
 
+## 📋 任务场景（6 个）
+
+当 Claude Code 识别到以下任务时，会自动加载对应的 Skill：
+
+- **viewing-logs** - 查看 CI/Stage/Prod 的服务器日志
+- **calling-apis** - 调用 API（获取 Token、查看文档、测试）
+- **preparing-test-data** - 准备测试数据（用户、商品、订单）
+- **troubleshooting** - 排查问题（500、401、服务异常）
+- **database-tasks** - 数据库操作（查询、迁移、分析）
+- **deploying** - 部署服务（Stage/Prod、回滚）
+
 ## 👤 用户故事
 
 **场景：排查 Stage 环境问题**
@@ -66,17 +77,6 @@ Claude:
 - 所有命令都支持 CI、Stage、Prod 三个环境
 - Claude Code 会根据上下文自动选择环境
 - 命令提供信息和入口，具体操作由 Claude Code 智能完成
-
-## 📋 任务场景（6 个）
-
-当 Claude Code 识别到以下任务时，会自动加载对应的 Skill：
-
-- **viewing-logs** - 查看 CI/Stage/Prod 的服务器日志
-- **calling-apis** - 调用 API（获取 Token、查看文档、测试）
-- **preparing-test-data** - 准备测试数据（用户、商品、订单）
-- **troubleshooting** - 排查问题（500、401、服务异常）
-- **database-tasks** - 数据库操作（查询、迁移、分析）
-- **deploying** - 部署服务（Stage/Prod、回滚）
 
 ## 🏗️ 项目结构
 
