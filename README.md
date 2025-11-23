@@ -17,8 +17,8 @@ Optima Dev Skills 让 Claude Code 能够直接在 **CI、Stage、Prod** 三个�
 
 - **viewing-logs** - 查看 CI/Stage/Prod 的服务器日志
 - **calling-apis** - 调用 API（获取 Token、查看文档、测试）
-- **preparing-test-data** - 准备测试数据（用户、商品、订单）
 - **database-tasks** - 数据库操作（查询、迁移、分析）
+- **preparing-test-data** - 准备测试数据（用户、商品、订单）
 - **deploying** - 部署服务（Stage/Prod、回滚）
 
 ## 👤 用户故事
@@ -99,8 +99,8 @@ optima-dev-skills/
 │       └── scenarios/
 │           ├── viewing-logs/
 │           ├── calling-apis/
-│           ├── preparing-test-data/
 │           ├── database-tasks/
+│           ├── preparing-test-data/
 │           └── deploying/
 │
 └── docs/
