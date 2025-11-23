@@ -1,40 +1,40 @@
 {
-  "name": "@optima-ai/dev-skills",
+  "name": "@optima-chat/dev-skills",
   "version": "0.1.0",
-  "description": "Claude Skills for Optima AI Development Team - 开发团队共享的 Claude Code 技能集合",
+  "description": "Claude Code Skills for Optima development team - cross-environment collaboration tools",
   "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "bin": {
+    "optima-dev-skills": "./bin/cli.js"
   },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "keywords": [
+    "claude-code",
+    "skills",
+    "optima",
+    "devops",
+    "logs",
+    "aws",
+    "cloudwatch"
+  ],
+  "author": "Optima AI Team",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Optima-Chat/optima-dev-skills.git"
   },
-  "keywords": [
-    "claude",
-    "claude-code",
-    "skills",
-    "development",
-    "optima",
-    "ai",
-    "mcp",
-    "e-commerce"
-  ],
-  "author": "Optima AI Team",
-  "license": "MIT",
   "bugs": {
     "url": "https://github.com/Optima-Chat/optima-dev-skills/issues"
   },
   "homepage": "https://github.com/Optima-Chat/optima-dev-skills#readme",
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=14.0.0"
   },
   "files": [
-    "skills/",
-    "scripts/",
-    "docs/",
-    "install.js",
-    "README.md",
-    "LICENSE"
+    ".claude",
+    "bin",
+    "scripts",
+    "README.md"
   ]
 }

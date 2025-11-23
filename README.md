@@ -2,6 +2,16 @@
 
 **命令驱动的 Claude Skills - 为 Optima AI 开发团队提供跨环境协作的开发工具**
 
+## 📦 快速安装
+
+```bash
+npm install -g @optima-chat/dev-skills@latest
+```
+
+安装后，Claude Code 会自动获得以下能力：
+- `/logs` 命令 - 查看 Stage/Prod 环境日志
+- `viewing-logs` 场景 - 完整的日志查看指导
+
 ## 🎯 核心理念
 
 Optima Dev Skills 让 Claude Code 能够直接在 **CI、Stage、Prod** 三个环境中执行开发任务。
