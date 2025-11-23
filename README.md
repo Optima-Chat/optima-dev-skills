@@ -1,51 +1,82 @@
 # Optima Dev Skills
 
-**命令驱动的 Claude Skills - 为 Optima AI 开发团队提供即时可执行的开发操作**
+**命令驱动的 Claude Skills - 为 Optima AI 开发团队提供跨环境协作的开发工具**
 
 ## 🎯 核心理念
 
-Optima Dev Skills 让 Claude Code 能够直接执行开发任务：
-
-```
-开发者: "获取 Token"
-Claude: 自动执行 /get-token，返回 Token
-开发者: 直接使用 Token
-```
+Optima Dev Skills 让 Claude Code 能够直接在 **CI、Stage、Prod** 三个环境中执行开发任务。
 
 **核心价值**:
 - **即时执行** - Claude 直接执行操作，开发者零手动操作
 - **任务驱动** - 基于具体任务场景（查看日志、调用 API），不是抽象分类
-- **智能识别** - 自动识别环境（本地/Stage/Prod）和上下文
+- **跨环境协作** - 统一的命令在 CI、Stage、Prod 三个环境中使用
 
-## 🚀 高频命令（Top 10）
+## 👤 用户故事
 
-| 命令 | 使用频率 | 说明 |
-|------|---------|------|
-| `/backend-logs` | 20+ 次/天 | 查看后端日志 |
-| `/health-check` | 10+ 次/天 | 健康检查 |
-| `/test-api` | 10+ 次/天 | 测试 API 端点 |
-| `/get-token` | 5-10 次/天 | 获取 JWT Token |
-| `/restart-service` | 5-10 次/天 | 重启服务 |
-| `/db-connect` | 5-10 次/天 | 连接数据库 |
-| `/service-status` | 5-10 次/天 | 查看服务状态 |
-| `/swagger` | 3-5 次/天 | 打开 API 文档 |
-| `/create-test-product` | 3-5 次/天 | 创建测试商品 |
-| `/create-test-user` | 2-3 次/天 | 创建测试用户 |
+**场景：排查 Stage 环境问题**
 
-## 📦 安装
+```
+开发者: "Stage 的商品 API 返回 500，帮我看看"
 
-```bash
-npm install -g @optima-ai/dev-skills
+Claude:
+  → 执行 /backend-logs commerce-backend 100 stage
+  → 分析日志，发现数据库查询错误
+  → 执行 /db-connect commerce stage
+  → 定位问题：某个商品的 merchant_id 不存在
+
+开发者: "明白了，我去修复数据"
 ```
 
-安装后，Skills 和命令会自动复制到 `~/.claude/`
+**传统方式需要**：
+1. 登录 AWS Console
+2. 找到 CloudWatch Logs
+3. 筛选服务和时间
+4. 找到 RDS 密码
+5. 复制连接字符串
+6. 手动连接数据库
+
+**使用 dev-skills**：一句话，Claude 全部完成。
+
+## 🌐 支持的环境
+
+| 环境 | 部署方式 | 用途 | 访问方式 |
+|------|---------|------|---------|
+| **CI** | Docker Compose | 团队共享测试环境 | localhost:8280/8290/8300 |
+| **Stage** | AWS ECS | 预发布环境 | api.stage.optima.onl |
+| **Prod** | EC2 + Docker | 生产环境 | api.optima.shop |
+
+## 🚀 核心命令（10 个）
+
+| 命令 | 说明 | 示例 |
+|------|------|------|
+| `/backend-logs` | 查看后端日志 | `/backend-logs commerce-backend 100 stage` |
+| `/health-check` | 健康检查 | `/health-check stage` |
+| `/test-api` | 测试 API 端点 | `/test-api /products GET` |
+| `/get-token` | 获取 JWT Token | `/get-token merchant@optima.ai` |
+| `/restart-service` | 重启服务 | `/restart-service commerce-backend` |
+| `/db-connect` | 连接数据库 | `/db-connect commerce stage` |
+| `/service-status` | 查看服务状态 | `/service-status` |
+| `/swagger` | 打开 API 文档 | `/swagger commerce-backend` |
+| `/create-test-product` | 创建测试商品 | `/create-test-product 10` |
+| `/create-test-user` | 创建测试用户 | `/create-test-user test@optima.ai merchant` |
+
+## 📋 任务场景（6 个）
+
+当 Claude Code 识别到以下任务时，会自动加载对应的 Skill：
+
+- **viewing-logs** - 查看 CI/Stage/Prod 的服务器日志
+- **calling-apis** - 调用 API（获取 Token、查看文档、测试）
+- **preparing-test-data** - 准备测试数据（用户、商品、订单）
+- **troubleshooting** - 排查问题（500、401、服务异常）
+- **database-tasks** - 数据库操作（查询、迁移、分析）
+- **deploying** - 部署服务（Stage/Prod、回滚）
 
 ## 🏗️ 项目结构
 
 ```
 optima-dev-skills/
 ├── .claude/
-│   ├── commands/              # ⭐ 核心：50+ 可执行命令
+│   ├── commands/              # 10 个可执行命令
 │   │   ├── logs/
 │   │   │   └── backend-logs.md
 │   │   ├── services/
@@ -61,178 +92,145 @@ optima-dev-skills/
 │   │       ├── test-api.md
 │   │       └── swagger.md
 │   │
-│   └── skills/                # 任务场景指导（6 个）
+│   └── skills/                # 6 个任务场景
 │       └── scenarios/
-│           ├── viewing-logs/          # 查看服务器日志
-│           ├── calling-apis/          # 调用 API
-│           ├── preparing-test-data/   # 准备测试数据
-│           ├── troubleshooting/       # 排查问题
-│           ├── database-tasks/        # 数据库操作
-│           └── deploying/             # 部署服务
+│           ├── viewing-logs/
+│           ├── calling-apis/
+│           ├── preparing-test-data/
+│           ├── troubleshooting/
+│           ├── database-tasks/
+│           └── deploying/
 │
 └── docs/
-    └── COMMANDS_DESIGN.md     # 命令设计文档
+    └── COMMANDS_DESIGN.md
 ```
-
-**设计原则**：
-- **命令是核心** - 直接可执行的操作
-- **任务驱动** - 基于具体任务，不是抽象角色
-- **即学即用** - 场景提供完整操作流程
-- **聚焦协作** - 跨仓库协作工具
 
 ## 💡 使用示例
 
-### 示例 1：调试 API 错误
+### 示例 1：调试 Stage 环境 API 错误
 
 ```
-开发者: "API 返回 500 错误，帮我查一下"
+开发者: "Stage 的 /products API 返回 500"
 
 Claude:
-1. /backend-logs commerce-backend 100
-   [显示日志，发现数据库查询错误]
+1. /backend-logs commerce-backend 100 stage
+   → 查看 CloudWatch 日志
 
-2. /db-connect commerce
-   [连接数据库检查数据]
+2. 发现错误：商品的 merchant_id 在数据库中不存在
 
-3. 问题定位：商品的 merchant_id 在数据库中不存在
+3. /db-connect commerce stage
+   → 连接 Stage RDS 查看数据
+
+4. 问题定位：某个商品数据损坏
    建议：修复数据或调整查询逻辑
 ```
 
-### 示例 2：准备测试数据
+### 示例 2：在 CI 环境准备测试数据
 
 ```
-开发者: "我需要 10 个测试商品"
+开发者: "我需要测试商品列表页"
 
 Claude:
 1. /get-token merchant@optima.ai
-   [获取商家 Token]
+   → 获取商家 Token（CI 环境）
 
-2. /create-test-product 10
-   [创建 10 个测试商品]
+2. /create-test-product 20
+   → 创建 20 个测试商品
 
-✅ 创建完成:
-- Product 1: Pearl Earrings - $299.00
-- Product 2: Summer Dress - $89.99
-...
-
-🔗 查看: http://localhost:3001/products
+✅ 完成！可以访问 http://localhost:3000 查看
 ```
 
-### 示例 3：数据库迁移
+### 示例 3：对比 Stage 和 Prod 的日志
 
 ```
-开发者: "我要给 products 表添加 collections 字段"
+开发者: "为什么 Prod 正常，Stage 出错？"
 
 Claude:
-1. /db-connect commerce
-   [连接数据库查看当前表结构]
+1. /backend-logs commerce-backend 100 stage
+   → Stage 日志：Database connection timeout
 
-2. 建议创建迁移:
-   alembic revision --autogenerate -m "Add collections field"
+2. /backend-logs commerce-backend 100 prod
+   → Prod 日志：正常运行
 
-3. 执行迁移:
-   alembic upgrade head
-
-4. /restart-service commerce-backend
-   [重启服务应用更改]
-
-5. /test-api /products GET
-   [测试新字段]
+3. 问题定位：Stage RDS 连接配置问题
 ```
 
-## 📋 功能清单
+## 🎯 设计原则
 
-### 10 个核心命令
-- ✅ `/backend-logs` - 查看后端日志
-- ✅ `/restart-service` - 重启服务
-- ✅ `/health-check` - 健康检查
-- ✅ `/db-connect` - 连接数据库
-- ✅ `/get-token` - 获取 Token
-- ✅ `/create-test-product` - 创建测试商品
-- ✅ `/create-test-user` - 创建测试用户
-- ✅ `/service-status` - 查看服务状态
-- ✅ `/test-api` - 测试 API
-- ✅ `/swagger` - 打开 Swagger 文档
+### dev-skills 提供什么？
 
-### 6 个任务场景
-- ✅ `viewing-logs` - 查看服务器日志（本地、Stage、Prod）
-- ✅ `calling-apis` - 调用 API（Token、文档、测试）
-- ✅ `preparing-test-data` - 准备测试数据（用户、商品、订单）
-- ✅ `troubleshooting` - 排查问题（500、401、服务异常）
-- ✅ `database-tasks` - 数据库操作（查询、迁移、分析）
-- ✅ `deploying` - 部署服务（Stage/Prod、回滚）
+- ✅ **跨环境命令** - 在 CI/Stage/Prod 统一执行
+- ✅ **任务场景指导** - 完整的操作流程（不是零散命令）
+- ✅ **团队协作工具** - 跨仓库、跨环境的共享知识
 
-## 🎯 适用场景
+### dev-skills 不提供什么？
 
-### dev-skills 提供
-- ✅ 跨服务操作命令（查日志、健康检查、获取 Token）
-- ✅ 任务场景工作流指导
-- ✅ 团队共享的快捷操作
+- ❌ **单个服务的开发文档** → 看各服务的 `CLAUDE.md`
+- ❌ **服务内部架构** → 看各服务的 `CLAUDE.md`
+- ❌ **API 详细文档** → 用 `/swagger` 命令查看
 
-### dev-skills 不提供
-- ❌ 单个服务的详细开发文档 → 看各服务的 CLAUDE.md
-- ❌ 服务内部架构说明 → 看各服务的 CLAUDE.md
-- ❌ API 详细文档 → 用 /swagger 命令查看
+### 为什么要这样设计？
 
-### 覆盖的环境
-- **本地环境** (Docker Compose) - 完整支持
-- **Stage-ECS** (AWS ECS) - 日志、部署、健康检查
-- **Prod** (EC2 + Docker) - 只读操作、日志查看
+1. **避免重复** - 服务级文档已经在各服务的 CLAUDE.md 中
+2. **聚焦协作** - dev-skills 专注于跨服务、跨环境的协作场景
+3. **易于维护** - 命令和场景独立维护，不与服务代码耦合
 
 ## 📊 效率提升
 
 | 操作 | 传统方式 | 使用命令 | 节省时间 |
 |------|---------|---------|---------|
-| 查看日志 | 2 分钟 | 10 秒 | **92%** |
-| 获取 Token | 1 分钟 | 5 秒 | **92%** |
-| 创建测试数据 | 5 分钟 | 30 秒 | **90%** |
-| 健康检查 | 3 分钟 | 15 秒 | **92%** |
+| 查看 Stage 日志 | 登录 AWS Console → CloudWatch → 筛选 | `/backend-logs service 100 stage` | **90%** |
+| 获取 API Token | 找密码 → Postman → 复制粘贴 | `/get-token user@optima.ai` | **85%** |
+| 创建测试数据 | 手动调用 API 10 次 | `/create-test-product 10` | **95%** |
+| 连接 Stage 数据库 | 找密码 → 复制连接串 → psql | `/db-connect commerce stage` | **90%** |
 
 **平均节省时间**: **90%+**
 
 ## 🔐 安全说明
 
-本 Skills 集合**不包含**任何敏感信息：
-- ✅ 服务地址和端口
-- ✅ 文档链接
-- ✅ 获取密钥的方式（Infisical 路径）
-- ❌ 不包含 API Key、密码
-- ❌ 不包含数据库密码
+本仓库**不包含**任何敏感信息：
+
+✅ **包含**：
+- 服务地址和端口（公开信息）
+- 文档链接
+- 获取密钥的方式（Infisical 路径，不是密钥本身）
+
+❌ **不包含**：
+- API Key、密码
+- 数据库密码
+- AWS 凭证
+
+所有密钥通过 Infisical 管理，命令只描述如何获取，不存储实际值。
 
 ## 🛠️ 开发状态
 
-**当前版本**: 0.1.0 (Phase 1 MVP)
+**当前版本**: 0.1.0 (MVP)
 
 **已完成**:
-- ✅ 10 个 P0 命令
+- ✅ 10 个核心命令
 - ✅ 6 个任务场景 Skills
+- ✅ 支持 CI、Stage、Prod 三个环境
 - ✅ 命令设计文档
 
-**计划中**:
-- ⏳ Phase 2 - 10 个 P1 命令
-- ⏳ NPM 包发布
+**已知问题**:
+- ⚠️ 部分命令还未实现具体逻辑（只有文档）
+- ⚠️ 需要逐步验证每个命令在三个环境的可用性
 
-## 📚 文档
+## 📚 相关文档
 
-- [命令设计方案](docs/COMMANDS_DESIGN.md) - 完整的命令驱动设计
+- [命令设计方案](docs/COMMANDS_DESIGN.md) - 完整的命令驱动设计思路
 
 ## 📝 维护
 
-Skills 和命令内容由 Optima AI 开发团队维护。
+由 Optima AI 开发团队维护。
 
 如发现问题：
-1. 提交 Issue
+1. 提交 Issue 到 GitHub
 2. 或直接提交 PR 修复
-3. Review 通过后，自动发布新版本
 
 ## 📄 License
 
 MIT
-
-## 🙋 联系
-
-- GitHub Issues: https://github.com/Optima-Chat/optima-dev-skills/issues
-- 团队内部：开发者微信群
 
 ---
 
