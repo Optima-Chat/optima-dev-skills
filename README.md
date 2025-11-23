@@ -72,10 +72,14 @@ optima-dev-skills/
 │   │   │   └── swagger.md
 │   │   └── ...
 │   │
-│   └── skills/                # 场景工作流指导（仅 2 个）
+│   └── skills/                # 任务场景指导（6 个）
 │       └── scenarios/
-│           ├── frontend-dev/  # 前端开发场景（引用命令）
-│           └── backend-dev/   # 后端开发场景（引用命令）
+│           ├── viewing-logs/          # 查看服务器日志
+│           ├── calling-apis/          # 调用 API
+│           ├── preparing-test-data/   # 准备测试数据
+│           ├── troubleshooting/       # 排查问题
+│           ├── database-tasks/        # 数据库操作
+│           └── deploying/             # 部署服务
 │
 └── docs/
     ├── TECHNICAL_DESIGN.md    # 技术设计（V1 - 已弃用）
@@ -84,9 +88,9 @@ optima-dev-skills/
 
 **设计理念**：
 - **命令是核心** - 直接可执行的操作
-- **场景是引导** - 告诉你什么时候用什么命令
-- **避免重复** - 每个服务自己的 CLAUDE.md 更权威
-- **聚焦协作** - dev-skills 是"跨仓库协作"工具，不替代单仓库文档
+- **任务驱动** - 基于具体任务场景，不是抽象的角色分类
+- **即学即用** - 场景 Skill 提供完整的操作流程
+- **聚焦协作** - dev-skills 是"跨仓库协作"工具
 ```
 
 ## 💡 使用示例
@@ -163,14 +167,18 @@ Claude:
 - ✅ `/test-api` - 测试 API
 - ✅ `/swagger` - 打开 Swagger 文档
 
-**场景 Skills（2 个）**:
-- ✅ `scenarios/frontend-dev` - 前端开发场景（API 调试、测试数据、Token 管理）
-- ✅ `scenarios/backend-dev` - 后端开发场景（数据库迁移、API 测试、部署）
+**任务场景 Skills（6 个）**:
+- ✅ `viewing-logs` - 查看服务器日志（本地、Stage、Prod）
+- ✅ `calling-apis` - 调用 API（Token、文档、测试）
+- ✅ `preparing-test-data` - 准备测试数据（用户、商品、订单）
+- ✅ `troubleshooting` - 排查问题（500、401、服务异常）
+- ✅ `database-tasks` - 数据库操作（查询、迁移、分析）
+- ✅ `deploying` - 部署服务（Stage/Prod、回滚）
 
-**已删除的冗余内容**:
-- ❌ 服务级别 Skills（commerce-backend、user-auth 等）→ 用各服务自己的 CLAUDE.md
-- ❌ MCP 工具 Skills → 用各 MCP 工具自己的 CLAUDE.md
-- ❌ 核心索引 Skill → 已被命令取代
+**设计转变**:
+- ❌ 旧设计：抽象的角色分类（frontend-dev、backend-dev）
+- ✅ 新设计：具体的任务场景（查看日志、调用 API）
+- **原因**：开发者不会想"我在做前端开发"，而是想"我要查看日志"
 
 ## 🎯 核心价值
 
