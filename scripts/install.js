@@ -6,7 +6,7 @@ const os = require('os');
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const SKILLS_SOURCE = path.join(__dirname, '..', '.claude');
-const COMMANDS_DEST = path.join(CLAUDE_DIR, 'commands', 'logs');
+const COMMANDS_DEST = path.join(CLAUDE_DIR, 'commands');
 const SKILLS_DEST = path.join(CLAUDE_DIR, 'skills', 'scenarios', 'viewing-logs');
 
 // 颜色输出
@@ -50,10 +50,14 @@ function install() {
   }
 
   // 安装命令
-  const commandsSource = path.join(SKILLS_SOURCE, 'commands', 'logs');
+  const commandsSource = path.join(SKILLS_SOURCE, 'commands', 'logs.md');
+  const commandsDest = path.join(COMMANDS_DEST, 'logs.md');
   if (fs.existsSync(commandsSource)) {
-    copyRecursive(commandsSource, COMMANDS_DEST);
-    log(`✓ Installed /logs command to ${COMMANDS_DEST}`, 'green');
+    if (!fs.existsSync(COMMANDS_DEST)) {
+      fs.mkdirSync(COMMANDS_DEST, { recursive: true });
+    }
+    fs.copyFileSync(commandsSource, commandsDest);
+    log(`✓ Installed /logs command to ${commandsDest}`, 'green');
   } else {
     log(`✗ Commands not found at ${commandsSource}`, 'red');
   }

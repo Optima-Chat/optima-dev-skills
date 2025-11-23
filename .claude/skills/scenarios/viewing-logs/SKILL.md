@@ -1,6 +1,6 @@
 ---
 name: "Viewing Server Logs"
-description: "查看服务器日志 - Stage、Prod 环境的日志查看，快速定位问题"
+description: "当用户请求查看日志、查看服务日志、排查问题、看看日志、检查日志、商品服务日志、后端日志、API日志时，使用此技能。支持 Stage、Prod 环境的 commerce-backend、user-auth、mcp-host、agentic-chat 服务。"
 allowed-tools: ["Bash", "SlashCommand"]
 ---
 
