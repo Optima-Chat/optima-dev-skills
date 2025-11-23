@@ -20,7 +20,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 ### 1. 查看 CI 环境日志
 
 ```
-/backend-logs commerce-backend
+/logs commerce-backend
 ```
 
 **说明**：
@@ -36,7 +36,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 ### 2. 查看更多日志行数
 
 ```
-/backend-logs commerce-backend 200
+/logs commerce-backend 200
 ```
 
 查看最近 200 行日志，用于排查历史问题。
@@ -44,7 +44,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 ### 3. 查看 Stage 环境日志
 
 ```
-/backend-logs commerce-backend 100 stage
+/logs commerce-backend 100 stage
 ```
 
 查看 Stage-ECS 环境的日志（通过 AWS CloudWatch）。
@@ -52,7 +52,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 ### 4. 查看 Prod 环境日志
 
 ```
-/backend-logs commerce-backend 100 prod
+/logs commerce-backend 100 prod
 ```
 
 查看生产环境日志（需要 SSH 权限）。
@@ -62,7 +62,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 ### 问题 1：API 返回 500 错误
 
 **步骤**：
-1. 查看日志：`/backend-logs commerce-backend 100`
+1. 查看日志：`/logs commerce-backend 100`
 2. 搜索 ERROR 关键字
 3. 查看完整错误堆栈
 4. 定位问题代码或数据
@@ -79,7 +79,7 @@ Traceback:
 ### 问题 2：服务启动失败
 
 **步骤**：
-1. 查看启动日志：`/backend-logs commerce-backend 200`
+1. 查看启动日志：`/logs commerce-backend 200`
 2. 查找启动错误信息
 3. 检查环境变量、数据库连接
 
@@ -91,7 +91,7 @@ Traceback:
 ### 问题 3：性能问题（响应慢）
 
 **步骤**：
-1. 查看日志：`/backend-logs commerce-backend`
+1. 查看日志：`/logs commerce-backend`
 2. 查找 "response_time" 或 "query_time"
 3. 识别慢查询或慢接口
 
@@ -139,7 +139,7 @@ docker compose logs -f commerce-backend user-auth mcp-host
 ### CI 环境
 
 ```
-/backend-logs commerce-backend
+/logs commerce-backend
 ```
 
 使用 Docker Compose logs：
@@ -150,7 +150,7 @@ docker compose logs -f commerce-backend --tail 50
 ### Stage-ECS
 
 ```
-/backend-logs commerce-backend 100 stage
+/logs commerce-backend 100 stage
 ```
 
 使用 AWS CloudWatch Logs：
@@ -161,7 +161,7 @@ aws logs tail /ecs/commerce-backend-stage --follow --since 5m
 ### Prod（通过 SSH）
 
 ```
-/backend-logs commerce-backend 100 prod
+/logs commerce-backend 100 prod
 ```
 
 SSH 到 EC2 查看 Docker 日志：

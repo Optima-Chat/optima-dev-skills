@@ -60,5 +60,5 @@
 ## 相关命令
 
 - `/get-token` - 获取认证 Token
-- `/backend-logs` - 查看 API 错误日志
+- `/logs` - 查看 API 错误日志
 - `/health-check` - 检查 API 服务状态

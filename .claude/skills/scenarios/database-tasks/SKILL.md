@@ -470,7 +470,7 @@ DELETE FROM products ...;  -- ERROR: permission denied
 ## 🔗 相关命令
 
 - `/query-db` - 连接数据库
-- `/backend-logs` - 查看数据库相关日志
+- `/logs` - 查看数据库相关日志
 - `/test-api` - 测试 API 并验证数据
 - `/create-test-product` - 创建测试数据
 

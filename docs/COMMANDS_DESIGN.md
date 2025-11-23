@@ -130,7 +130,7 @@ docker logs -f optima-commerce-backend-prod --tail 50
 
 ## Top 20 高频命令详细设计
 
-### 1. `/backend-logs` - 查看后端日志
+### 1. `/logs` - 查看后端日志
 
 **优先级**: P0（每天 20+ 次使用）
 
@@ -296,7 +296,7 @@ allowed-tools: ["Bash", "Read"]
 **问题**: 调用 commerce-backend API 返回 500
 
 **解决步骤**:
-1. `/backend-logs commerce-backend 100` - 查看错误日志
+1. `/logs commerce-backend 100` - 查看错误日志
 2. `/query-db commerce` - 检查数据库数据
 3. `/test-api /products GET` - 重现问题
 
@@ -319,7 +319,7 @@ allowed-tools: ["Bash", "Read"]
 
 ## 快速命令
 
-- `/backend-logs commerce-backend` - 查看后端日志
+- `/logs commerce-backend` - 查看后端日志
 - `/health-check all` - 检查所有服务
 - `/swagger commerce-backend` - 打开 API 文档
 - `/test-api [endpoint] [method]` - 测试 API
@@ -330,7 +330,7 @@ allowed-tools: ["Bash", "Read"]
 ### Phase 1: MVP（本周完成）
 
 **P0 命令**（10 个）:
-- ✅ `/backend-logs`
+- ✅ `/logs`
 - ✅ `/restart-service`
 - ✅ `/health-check`
 - ✅ `/query-db`

@@ -115,7 +115,7 @@ ssh -i ~/.ssh/optima-ec2-key ec2-user@ec2-prod.optima.shop \
 💡 建议:
 - 检查 user-auth 容器是否运行: docker compose ps user-auth
 - 重启 redis: docker compose restart redis
-- 查看 mcp-host 日志排查性能问题: /backend-logs mcp-host
+- 查看 mcp-host 日志排查性能问题: /logs mcp-host
 ```
 
 ## 健康端点详情
@@ -166,5 +166,5 @@ ssh -i ~/.ssh/optima-ec2-key ec2-user@ec2-prod.optima.shop \
 ## 相关命令
 
 - /service-status - 查看详细服务状态
-- /backend-logs - 查看错误日志
+- /logs - 查看错误日志
 - /restart-service - 重启异常服务

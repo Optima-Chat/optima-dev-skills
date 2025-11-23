@@ -205,4 +205,4 @@ Error: Permission denied (publickey)
 
 - /db-migrate - 运行数据库迁移
 - /db-query - 快速执行 SQL 查询（无需进入 psql）
-- /backend-logs - 查看数据库相关日志
+- /logs - 查看数据库相关日志

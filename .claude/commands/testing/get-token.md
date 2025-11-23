@@ -215,7 +215,7 @@ Error: Connection refused
 ```
 
 - 检查 User Auth 是否运行: `/health-check user-auth`
-- 查看日志: `/backend-logs user-auth`
+- 查看日志: `/logs user-auth`
 - 重启服务: `/restart-service user-auth`
 
 ## 相关命令

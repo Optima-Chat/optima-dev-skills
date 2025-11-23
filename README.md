@@ -28,7 +28,7 @@ Optima Dev Skills 让 Claude Code 能够直接在 **CI、Stage、Prod** 三个�
 开发者: "Stage 的商品 API 返回 500，帮我看看"
 
 Claude:
-  → 执行 /backend-logs commerce-backend 100 stage
+  → 执行 /logs commerce-backend 100 stage
   → 分析日志，发现数据库查询错误
   → 执行 /query-db commerce stage
   → 定位问题：某个商品的 merchant_id 不存在
@@ -63,7 +63,7 @@ Claude:
 
 | 命令 | 说明 | 示例 | 跨环境 |
 |------|------|------|--------|
-| `/backend-logs` | 查看后端日志 | `/backend-logs commerce-backend 100 stage` | ✅ |
+| `/logs` | 查看后端日志 | `/logs commerce-backend 100 stage` | ✅ |
 | `/get-token` | 获取 JWT Token | `/get-token merchant@optima.ai` | ✅ |
 | `/query-db` | 查询数据库 | `/query-db commerce stage` | ✅ |
 | `/api` | 查看 API 定义 | `/api commerce-backend` | ✅ |
@@ -83,7 +83,7 @@ optima-dev-skills/
 ├── .claude/
 │   ├── commands/              # 7 个跨环境命令
 │   │   ├── logs/
-│   │   │   └── backend-logs.md
+│   │   │   └── logs.md
 │   │   ├── database/
 │   │   │   └── query-db.md         # 查询数据库
 │   │   ├── api/
@@ -113,7 +113,7 @@ optima-dev-skills/
 开发者: "Stage 的 /products API 返回 500"
 
 Claude:
-1. /backend-logs commerce-backend 100 stage
+1. /logs commerce-backend 100 stage
    → 查看 CloudWatch 日志
 
 2. 发现错误：商品的 merchant_id 在数据库中不存在
@@ -146,10 +146,10 @@ Claude:
 开发者: "为什么 Prod 正常，Stage 出错？"
 
 Claude:
-1. /backend-logs commerce-backend 100 stage
+1. /logs commerce-backend 100 stage
    → Stage 日志：Database connection timeout
 
-2. /backend-logs commerce-backend 100 prod
+2. /logs commerce-backend 100 prod
    → Prod 日志：正常运行
 
 3. 问题定位：Stage RDS 连接配置问题
@@ -179,7 +179,7 @@ Claude:
 
 | 操作 | 传统方式 | 使用命令 | 节省时间 |
 |------|---------|---------|---------|
-| 查看 Stage 日志 | 登录 AWS Console → CloudWatch → 筛选 | `/backend-logs service 100 stage` | **90%** |
+| 查看 Stage 日志 | 登录 AWS Console → CloudWatch → 筛选 | `/logs service 100 stage` | **90%** |
 | 获取 API Token | 找密码 → Postman → 复制粘贴 | `/get-token user@optima.ai` | **85%** |
 | 创建测试数据 | 手动调用 API 10 次 | `/create-test-product 10` | **95%** |
 | 连接 Stage 数据库 | 找密码 → 复制连接串 → psql | `/query-db commerce stage` | **90%** |

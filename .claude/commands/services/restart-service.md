@@ -120,5 +120,5 @@ curl -f https://api.optima.shop/health
 ## 相关命令
 
 - /health-check - 检查服务健康状态
-- /backend-logs - 查看重启日志
+- /logs - 查看重启日志
 - /service-status - 查看服务状态

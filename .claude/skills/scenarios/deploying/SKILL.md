@@ -133,10 +133,10 @@ aws ecs list-tasks \
 
 ```
 # Stage 环境
-/backend-logs commerce-backend stage
+/logs commerce-backend stage
 
 # Prod 环境
-/backend-logs commerce-backend prod
+/logs commerce-backend prod
 ```
 
 ## ✅ 部署后验证
@@ -168,7 +168,7 @@ aws ecs list-tasks \
 ### 3. 检查日志
 
 ```
-/backend-logs commerce-backend 50 stage
+/logs commerce-backend 50 stage
 ```
 
 **查找**：
@@ -277,7 +277,7 @@ alembic downgrade -1
 
 1. **监控日志**：
 ```
-/backend-logs commerce-backend stage
+/logs commerce-backend stage
 ```
 
 2. **监控错误率**：
@@ -387,7 +387,7 @@ Error: Required environment variable not set
 ## 🔗 相关命令
 
 - `/health-check` - 检查服务健康
-- `/backend-logs` - 查看部署日志
+- `/logs` - 查看部署日志
 - `/service-status` - 查看服务状态
 - `/test-api` - 测试 API 功能
 - `/query-db` - 验证数据库迁移

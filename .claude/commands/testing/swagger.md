@@ -269,7 +269,7 @@ Error: Connection refused
 
 - 检查服务是否运行: `/health-check`
 - 确认端口号正确
-- 查看服务日志: `/backend-logs`
+- 查看服务日志: `/logs`
 
 ### Swagger UI 显示 "Failed to fetch"
 
@@ -288,4 +288,4 @@ Error: Connection refused
 - /test-api - 测试 API 端点
 - /get-token - 获取认证 Token
 - /health-check - 检查服务状态
-- /backend-logs - 查看服务日志
+- /logs - 查看服务日志

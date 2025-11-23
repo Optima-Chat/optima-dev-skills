@@ -322,5 +322,5 @@ curl -X GET https://api.optima.shop/products \
 
 - /get-token - 获取认证 Token
 - /health-check - 检查服务状态
-- /backend-logs - 查看 API 日志
+- /logs - 查看 API 日志
 - /swagger - 查看 API 文档

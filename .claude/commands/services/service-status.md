@@ -144,7 +144,7 @@ aws rds describe-db-instances --db-instance-identifier optima-prod-postgres
 2. ⚠️ mcp-host 不健康 (HTTP 503)
    原因: 服务启动但健康检查失败，内存使用过高 (500MB)
    建议:
-   - 查看日志: /backend-logs mcp-host
+   - 查看日志: /logs mcp-host
    - 重启服务: /restart-service mcp-host
    - 检查 MCP 服务器连接
 ```
@@ -251,5 +251,5 @@ Error: Permission denied
 ## 相关命令
 
 - /health-check - 详细健康检查
-- /backend-logs - 查看服务日志
+- /logs - 查看服务日志
 - /restart-service - 重启异常服务

@@ -294,7 +294,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 **解决**：
 ```
-/backend-logs commerce-backend 100  # 查看详细错误日志
+/logs commerce-backend 100  # 查看详细错误日志
 ```
 
 ## 🌐 不同环境的 API 地址
@@ -329,7 +329,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 2. **使用测试环境** - CI 或 Stage 测试通过后再上 Prod
 3. **保存 Token** - 避免频繁重新获取
 4. **错误处理** - 前端代码要处理 401、403、500 等错误
-5. **日志排查** - API 出错时，用 /backend-logs 查看详细信息
+5. **日志排查** - API 出错时，用 /logs 查看详细信息
 
 ## 🔗 相关命令
 
@@ -337,7 +337,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 - `/get-token` - 获取认证 Token
 - `/create-test-product` - 创建测试商品
 - `/create-test-user` - 创建测试用户
-- `/backend-logs` - 查看 API 错误日志
+- `/logs` - 查看 API 错误日志
 - `/health-check` - 检查 API 服务是否运行
 
 ## 📚 API 设计规范
