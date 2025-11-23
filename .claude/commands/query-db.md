@@ -114,47 +114,186 @@ sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} 
 
 ### 1. Stage 环境（environment = "stage"）
 
-**访问方式**: AWS RDS 直连（需要配置）
+**访问方式**: 通过 EC2 SSH 隧道访问 RDS（通过 Infisical 获取密钥）
+
+**前置条件**:
+1. 获取 `optima-ec2-key` SSH 密钥文件（联系 xbfool）
+2. 保存到 `~/.ssh/optima-ec2-key` 并设置权限: `chmod 600 ~/.ssh/optima-ec2-key`
 
 **步骤**:
 ```bash
 # IMPORTANT: 使用单行命令
 
-# 从 GitHub Variables 获取 RDS 配置
-STAGE_DB_HOST=$(gh variable get STAGE_DB_HOST -R Optima-Chat/optima-dev-skills)
-STAGE_DB_PASSWORD=$(gh variable get STAGE_DB_PASSWORD -R Optima-Chat/optima-dev-skills)
+# 1. 获取 Infisical 配置
+INFISICAL_URL=$(gh variable get INFISICAL_URL -R Optima-Chat/optima-dev-skills)
+INFISICAL_CLIENT_ID=$(gh variable get INFISICAL_CLIENT_ID -R Optima-Chat/optima-dev-skills)
+INFISICAL_CLIENT_SECRET=$(gh variable get INFISICAL_CLIENT_SECRET -R Optima-Chat/optima-dev-skills)
+INFISICAL_PROJECT_ID=$(gh variable get INFISICAL_PROJECT_ID -R Optima-Chat/optima-dev-skills)
 
-# 执行查询
-PGPASSWORD="$STAGE_DB_PASSWORD" psql -h "$STAGE_DB_HOST" -U commerce -d commerce -c "SELECT COUNT(*) FROM products"
+# 2. 获取 Infisical Access Token
+INFISICAL_TOKEN=$(curl -s -X POST "${INFISICAL_URL}/api/v1/auth/universal-auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"clientId\": \"${INFISICAL_CLIENT_ID}\", \"clientSecret\": \"${INFISICAL_CLIENT_SECRET}\"}" \
+  | python3 -c "import sys, json; print(json.load(sys.stdin)['accessToken'])")
+
+# 3. 从 Infisical 获取数据库配置（以 commerce-backend 为例）
+curl -s "${INFISICAL_URL}/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=staging&secretPath=/infrastructure" \
+  -H "Authorization: Bearer ${INFISICAL_TOKEN}" | python3 -c "
+import sys, json
+secrets = {s['secretKey']: s['secretValue'] for s in json.load(sys.stdin)['secrets']}
+print(f\"DATABASE_HOST={secrets['DATABASE_HOST']}\")
+print(f\"COMMERCE_DB_USER={secrets['COMMERCE_DB_USER']}\")
+print(f\"COMMERCE_DB_PASSWORD={secrets['COMMERCE_DB_PASSWORD']}\")
+" > /tmp/stage_db_config.sh && source /tmp/stage_db_config.sh
+
+# 4. 建立 SSH 隧道到 Stage EC2，通过隧道访问 RDS
+ssh -i ~/.ssh/optima-ec2-key -f -N -L 15432:${DATABASE_HOST}:5432 ec2-user@54.179.132.102
+
+# 5. 通过本地端口 15432 连接到 RDS
+PGPASSWORD="${COMMERCE_DB_PASSWORD}" psql -h localhost -p 15432 -U "${COMMERCE_DB_USER}" -d optima_stage_commerce -c "SELECT COUNT(*) FROM products"
+
+# 6. 关闭 SSH 隧道（可选）
+pkill -f "ssh.*15432:${DATABASE_HOST}:5432"
 ```
 
-**数据库配置**（需要设置 GitHub Variables）：
-- `STAGE_DB_HOST` - RDS 端点
-- `STAGE_DB_PASSWORD` - 数据库密码
-- 每个服务可能有独立的数据库
+**完整示例（四个服务）**:
+```bash
+# commerce-backend
+# 使用 COMMERCE_DB_USER, COMMERCE_DB_PASSWORD, 数据库: optima_stage_commerce
+
+# user-auth
+# 使用 AUTH_DB_USER, AUTH_DB_PASSWORD, 数据库: optima_stage_auth
+
+# mcp-host
+# 使用 MCP_DB_USER, MCP_DB_PASSWORD, 数据库: optima_stage_mcp
+
+# agentic-chat
+# 使用 CHAT_DB_USER, CHAT_DB_PASSWORD, 数据库: optima_stage_chat
+```
+
+**数据库配置映射**：
+- `commerce-backend`:
+  - 数据库: `optima_stage_commerce`
+  - 用户: Infisical `COMMERCE_DB_USER`
+  - 密码: Infisical `COMMERCE_DB_PASSWORD`
+
+- `user-auth`:
+  - 数据库: `optima_stage_auth`
+  - 用户: Infisical `AUTH_DB_USER`
+  - 密码: Infisical `AUTH_DB_PASSWORD`
+
+- `mcp-host`:
+  - 数据库: `optima_stage_mcp`
+  - 用户: Infisical `MCP_DB_USER`
+  - 密码: Infisical `MCP_DB_PASSWORD`
+
+- `agentic-chat`:
+  - 数据库: `optima_stage_chat`
+  - 用户: Infisical `CHAT_DB_USER`
+  - 密码: Infisical `CHAT_DB_PASSWORD`
+
+**说明**:
+- Infisical 配置从 GitHub Variables 获取
+- 数据库密钥从 Infisical 动态获取（项目: optima-secrets, 环境: staging, 路径: /infrastructure）
+- DATABASE_HOST: `optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com`
+- Stage EC2 IP: `54.179.132.102`
+- SSH 隧道: 本地端口 `15432` → EC2 → RDS `5432`
+- Stage 和 Prod 共享同一个 RDS 实例，通过不同的数据库名隔离
 
 ### 2. Prod 环境（environment = "prod"）
 
-**访问方式**: AWS RDS 直连（⚠️ 只读用户）
+**访问方式**: 通过 EC2 SSH 隧道访问 RDS（通过 Infisical 获取密钥）
+
+**前置条件**:
+1. 获取 `optima-ec2-key` SSH 密钥文件（联系 xbfool）
+2. 保存到 `~/.ssh/optima-ec2-key` 并设置权限: `chmod 600 ~/.ssh/optima-ec2-key`
 
 **步骤**:
 ```bash
 # IMPORTANT: 使用单行命令
-# ⚠️ 生产环境只允许只读查询
+# ⚠️ 生产环境谨慎操作
 
-# 从 GitHub Variables 获取 RDS 配置
-PROD_DB_HOST=$(gh variable get PROD_DB_HOST -R Optima-Chat/optima-dev-skills)
-PROD_DB_PASSWORD=$(gh variable get PROD_DB_PASSWORD -R Optima-Chat/optima-dev-skills)
+# 1. 获取 Infisical 配置
+INFISICAL_URL=$(gh variable get INFISICAL_URL -R Optima-Chat/optima-dev-skills)
+INFISICAL_CLIENT_ID=$(gh variable get INFISICAL_CLIENT_ID -R Optima-Chat/optima-dev-skills)
+INFISICAL_CLIENT_SECRET=$(gh variable get INFISICAL_CLIENT_SECRET -R Optima-Chat/optima-dev-skills)
+INFISICAL_PROJECT_ID=$(gh variable get INFISICAL_PROJECT_ID -R Optima-Chat/optima-dev-skills)
 
-# 执行查询（只读）
-PGPASSWORD="$PROD_DB_PASSWORD" psql -h "$PROD_DB_HOST" -U commerce_readonly -d commerce -c "SELECT COUNT(*) FROM products"
+# 2. 获取 Infisical Access Token
+INFISICAL_TOKEN=$(curl -s -X POST "${INFISICAL_URL}/api/v1/auth/universal-auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"clientId\": \"${INFISICAL_CLIENT_ID}\", \"clientSecret\": \"${INFISICAL_CLIENT_SECRET}\"}" \
+  | python3 -c "import sys, json; print(json.load(sys.stdin)['accessToken'])")
+
+# 3. 从 Infisical 获取数据库配置（以 commerce-backend 为例）
+curl -s "${INFISICAL_URL}/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=prod&secretPath=/infrastructure" \
+  -H "Authorization: Bearer ${INFISICAL_TOKEN}" | python3 -c "
+import sys, json
+secrets = {s['secretKey']: s['secretValue'] for s in json.load(sys.stdin)['secrets']}
+print(f\"DATABASE_HOST={secrets['DATABASE_HOST']}\")
+print(f\"COMMERCE_DB_USER={secrets['COMMERCE_DB_USER']}\")
+print(f\"COMMERCE_DB_PASSWORD={secrets['COMMERCE_DB_PASSWORD']}\")
+" > /tmp/prod_db_config.sh && source /tmp/prod_db_config.sh
+
+# 4. 建立 SSH 隧道到 Prod EC2，通过隧道访问 RDS
+ssh -i ~/.ssh/optima-ec2-key -f -N -L 15433:${DATABASE_HOST}:5432 ec2-user@18.136.25.239
+
+# 5. 通过本地端口 15433 连接到 RDS
+PGPASSWORD="${COMMERCE_DB_PASSWORD}" psql -h localhost -p 15433 -U "${COMMERCE_DB_USER}" -d optima_commerce -c "SELECT COUNT(*) FROM products"
+
+# 6. 关闭 SSH 隧道（可选）
+pkill -f "ssh.*15433:${DATABASE_HOST}:5432"
 ```
 
+**完整示例（四个服务）**:
+```bash
+# commerce-backend
+# 使用 COMMERCE_DB_USER, COMMERCE_DB_PASSWORD, 数据库: optima_commerce
+
+# user-auth
+# 使用 AUTH_DB_USER, AUTH_DB_PASSWORD, 数据库: optima_auth
+
+# mcp-host
+# 使用 MCP_DB_USER, MCP_DB_PASSWORD, 数据库: optima_mcp
+
+# agentic-chat
+# 使用 CHAT_DB_USER, CHAT_DB_PASSWORD, 数据库: optima_chat
+```
+
+**数据库配置映射**：
+- `commerce-backend`:
+  - 数据库: `optima_commerce`
+  - 用户: Infisical `COMMERCE_DB_USER`
+  - 密码: Infisical `COMMERCE_DB_PASSWORD`
+
+- `user-auth`:
+  - 数据库: `optima_auth`
+  - 用户: Infisical `AUTH_DB_USER`
+  - 密码: Infisical `AUTH_DB_PASSWORD`
+
+- `mcp-host`:
+  - 数据库: `optima_mcp`
+  - 用户: Infisical `MCP_DB_USER`
+  - 密码: Infisical `MCP_DB_PASSWORD`
+
+- `agentic-chat`:
+  - 数据库: `optima_chat`
+  - 用户: Infisical `CHAT_DB_USER`
+  - 密码: Infisical `CHAT_DB_PASSWORD`
+
+**说明**:
+- Infisical 配置从 GitHub Variables 获取
+- 数据库密钥从 Infisical 动态获取（项目: optima-secrets, 环境: prod, 路径: /infrastructure）
+- DATABASE_HOST: `optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com`
+- Prod EC2 IP: `18.136.25.239`
+- SSH 隧道: 本地端口 `15433` → EC2 → RDS `5432` (注意 Prod 用 15433，Stage 用 15432)
+- Stage 和 Prod 共享同一个 RDS 实例，通过不同的数据库名隔离
+
 **⚠️ 生产环境安全规则**：
-1. **只使用只读用户** (`commerce_readonly`, `userauth_readonly`)
-2. **禁止 INSERT/UPDATE/DELETE**
-3. **谨慎使用 SELECT***，优先指定列名
-4. **添加 LIMIT** 防止查询过多数据
+1. **谨慎操作** - 生产数据库，避免误操作
+2. **避免 DELETE/UPDATE** - 除非明确需要
+3. **使用 LIMIT** - 防止查询过多数据
+4. **不查敏感数据** - 避免查询密码、密钥等
 
 ## 安全注意事项
 
