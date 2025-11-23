@@ -30,7 +30,7 @@ Optima Dev Skills 让 Claude Code 能够直接在 **CI、Stage、Prod** 三个�
 Claude:
   → 执行 /backend-logs commerce-backend 100 stage
   → 分析日志，发现数据库查询错误
-  → 执行 /db-connect commerce stage
+  → 执行 /query-db commerce stage
   → 定位问题：某个商品的 merchant_id 不存在
 
 开发者: "明白了，我去修复数据"
@@ -182,7 +182,7 @@ Claude:
 | 查看 Stage 日志 | 登录 AWS Console → CloudWatch → 筛选 | `/backend-logs service 100 stage` | **90%** |
 | 获取 API Token | 找密码 → Postman → 复制粘贴 | `/get-token user@optima.ai` | **85%** |
 | 创建测试数据 | 手动调用 API 10 次 | `/create-test-product 10` | **95%** |
-| 连接 Stage 数据库 | 找密码 → 复制连接串 → psql | `/db-connect commerce stage` | **90%** |
+| 连接 Stage 数据库 | 找密码 → 复制连接串 → psql | `/query-db commerce stage` | **90%** |
 
 **平均节省时间**: **90%+**
 

@@ -171,7 +171,7 @@ docker logs -f optima-commerce-backend-prod --tail 50
 ✅ redis: Connected
 ```
 
-### 4. `/db-connect` - 连接数据库
+### 4. `/query-db` - 查询数据库
 
 **优先级**: P0（每天 5-10 次）
 
@@ -297,7 +297,7 @@ allowed-tools: ["Bash", "Read"]
 
 **解决步骤**:
 1. `/backend-logs commerce-backend 100` - 查看错误日志
-2. `/db-connect commerce` - 检查数据库数据
+2. `/query-db commerce` - 检查数据库数据
 3. `/test-api /products GET` - 重现问题
 
 ### 2. 需要测试数据
@@ -333,7 +333,7 @@ allowed-tools: ["Bash", "Read"]
 - ✅ `/backend-logs`
 - ✅ `/restart-service`
 - ✅ `/health-check`
-- ✅ `/db-connect`
+- ✅ `/query-db`
 - ✅ `/get-token`
 - ✅ `/create-test-product`
 - ✅ `/create-test-user`

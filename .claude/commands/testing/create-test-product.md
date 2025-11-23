@@ -265,4 +265,4 @@ done
 - /get-token - 获取认证 Token
 - /create-test-user - 创建测试用户
 - /test-api - 测试商品 API
-- /db-connect - 查看数据库中的商品数据
+- /query-db - 查看数据库中的商品数据

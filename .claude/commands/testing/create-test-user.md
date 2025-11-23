@@ -334,5 +334,5 @@ Error: Invalid email format
 
 - /get-token - 获取用户 Token
 - /create-test-product - 创建测试商品（商家权限）
-- /db-connect - 查看数据库中的用户数据
+- /query-db - 查看数据库中的用户数据
 - /test-api - 测试用户相关 API
