@@ -10,7 +10,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 
 ## 🎯 适用情况
 
-- 本地数据库是空的，需要测试数据
+- CI 环境数据库是空的，需要测试数据
 - 测试前端功能，需要商品、订单数据
 - 测试 API，需要用户、商家账户
 - 演示功能，需要完整的测试场景
@@ -254,10 +254,28 @@ docker compose up -d
 docker compose exec commerce-backend alembic upgrade head
 ```
 
+## 📊 预置测试账户
+
+**CI 环境已有的测试账户**：
+
+| 邮箱 | 密码 | 角色 | 用途 |
+|------|------|------|------|
+| test@optima.ai | test123 | user | 普通用户测试 |
+| merchant@optima.ai | merchant123 | merchant | 商家功能测试 |
+| admin@optima.ai | admin123 | admin | 管理员功能测试 |
+
+**使用方式**：
+```
+/get-token test@optima.ai      # 普通用户
+/get-token merchant@optima.ai  # 商家
+/get-token admin@optima.ai     # 管理员
+```
+
 ## ⚠️ 注意事项
 
 ### 1. 环境隔离
 
+- **CI 环境**：随意创建、删除测试数据
 - **Stage 环境**：可以创建测试数据，但要标记清楚
 - **Prod 环境**：⚠️ **禁止**创建测试数据
 
@@ -274,7 +292,7 @@ docker compose exec commerce-backend alembic upgrade head
 
 ### 4. 数据量控制
 
-- 开发测试：创建少量数据即可（10-50 个商品）
+- CI 环境：创建少量数据即可（10-50 个商品）
 - 性能测试：需要大量数据时，使用脚本批量创建
 - 避免创建过多数据导致数据库膨胀
 
@@ -332,5 +350,5 @@ docker compose exec commerce-backend alembic upgrade head
 1. **按需创建** - 不要一次创建过多数据
 2. **及时清理** - 定期清理不用的测试数据
 3. **数据真实** - 测试数据应尽量模拟真实场景
-4. **环境隔离** - 测试数据只在 Stage，不要污染 Prod
+4. **环境隔离** - 测试数据只在 CI/Stage，不要污染 Prod
 5. **文档记录** - 如果创建了特殊测试数据，记录下来方便团队使用

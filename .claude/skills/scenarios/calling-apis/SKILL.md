@@ -24,6 +24,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 ```
 
 **自动打开 Swagger UI**：
+- CI：http://localhost:8280/docs
 - Stage：https://api.stage.optima.onl/docs
 - Prod：https://api.optima.shop/docs
 
@@ -58,7 +59,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 
 **自动处理**：
 - 自动添加 Authorization header
-- 自动选择正确的环境（Stage/Prod）
+- 自动选择正确的环境（CI/Stage/Prod）
 - 格式化显示响应结果
 
 ## 📖 常用 API 端点
@@ -268,6 +269,14 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ## 🌐 不同环境的 API 地址
 
+### CI 环境
+
+| 服务 | 地址 | Swagger |
+|------|------|---------|
+| Commerce Backend | http://localhost:8280 | /docs |
+| User Auth | http://localhost:8290 | /docs |
+| MCP Host | http://localhost:8300 | /docs |
+
 ### Stage-ECS
 
 | 服务 | 地址 | Swagger |
@@ -287,7 +296,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 ## 💡 最佳实践
 
 1. **先看文档，再调用** - 用 /swagger 确认 API 格式
-2. **使用测试环境** - Stage 测试通过后再上 Prod
+2. **使用测试环境** - CI 或 Stage 测试通过后再上 Prod
 3. **保存 Token** - 避免频繁重新获取
 4. **错误处理** - 前端代码要处理 401、403、500 等错误
 5. **日志排查** - API 出错时，用 /backend-logs 查看详细信息

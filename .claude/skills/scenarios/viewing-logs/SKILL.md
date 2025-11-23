@@ -1,6 +1,6 @@
 ---
 name: "Viewing Server Logs"
-description: "查看服务器日志 - Stage、Prod 环境的日志查看，快速定位问题"
+description: "查看服务器日志 - CI、Stage、Prod 环境的日志查看，快速定位问题"
 allowed-tools: ["Bash", "SlashCommand"]
 ---
 
@@ -17,7 +17,31 @@ allowed-tools: ["Bash", "SlashCommand"]
 
 ## 🚀 快速操作
 
-### 1. 查看 Stage 环境日志
+### 1. 查看 CI 环境日志
+
+```
+/backend-logs commerce-backend
+```
+
+**说明**：
+- 自动识别 Docker 容器
+- 默认显示最近 50 行
+- 实时跟踪新日志
+
+**常用服务**：
+- `commerce-backend` - 电商 API
+- `user-auth` - 用户认证
+- `mcp-host` - MCP 协调器
+
+### 2. 查看更多日志行数
+
+```
+/backend-logs commerce-backend 200
+```
+
+查看最近 200 行日志，用于排查历史问题。
+
+### 3. 查看 Stage 环境日志
 
 ```
 /backend-logs commerce-backend 100 stage
@@ -25,7 +49,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 
 查看 Stage-ECS 环境的日志（通过 AWS CloudWatch）。
 
-### 2. 查看 Prod 环境日志
+### 4. 查看 Prod 环境日志
 
 ```
 /backend-logs commerce-backend 100 prod
@@ -112,6 +136,17 @@ docker compose logs -f commerce-backend user-auth mcp-host
 
 ## 🌐 不同环境的日志查看
 
+### CI 环境
+
+```
+/backend-logs commerce-backend
+```
+
+使用 Docker Compose logs：
+```bash
+docker compose logs -f commerce-backend --tail 50
+```
+
 ### Stage-ECS
 
 ```
@@ -141,7 +176,7 @@ ssh -i ~/.ssh/optima-ec2-key ec2-user@ec2-prod.optima.shop \
 2. **查足够多的行数** - 有时错误原因在更早的日志里
 3. **关注时间戳** - 确认错误发生的时间点
 4. **保留错误日志** - 复制错误信息，方便分享讨论
-5. **对比环境差异** - Stage 和 Prod 行为不一致？对比日志差异
+5. **对比环境差异** - CI 正常、Stage 出错？对比日志差异
 
 ## 🔗 相关命令
 
