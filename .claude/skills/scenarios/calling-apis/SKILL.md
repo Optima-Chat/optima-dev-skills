@@ -14,24 +14,25 @@ allowed-tools: ["Bash", "SlashCommand"]
 - 测试 API 功能是否正常
 - 了解 API 参数和响应格式
 - 调试 API 集成问题
+- 创建测试数据（用户、商品）
 
 ## 🚀 快速开始（3 步）
 
 ### 步骤 1：查看 API 文档
 
 ```
-/swagger commerce-backend
+/api commerce-backend
 ```
 
-**自动打开 Swagger UI**：
-- CI：https://api.optima.chat/docs
-- Stage：https://api.stage.optima.onl/docs
-- Prod：https://api.optima.shop/docs
+**Claude Code 会自动**：
+- 读取 openapi.json 文件
+- 分析 API 端点和参数
+- 回答你的问题
 
-**Swagger UI 功能**：
-- 查看所有 API 端点
-- 查看请求参数和响应格式
-- 直接在浏览器测试 API（Try it out）
+**OpenAPI 文档地址**：
+- CI：https://api.optima.chat/openapi.json
+- Stage：https://api.stage.optima.onl/openapi.json
+- Prod：https://api.optima.shop/openapi.json
 
 ### 步骤 2：获取认证 Token
 
@@ -51,16 +52,19 @@ allowed-tools: ["Bash", "SlashCommand"]
 /get-token admin@optima.ai         # 管理员
 ```
 
-### 步骤 3：测试 API
+### 步骤 3：调用 API
 
-```
-/test-api /products GET
+使用 Claude Code 的 Bash 工具调用 API：
+
+```bash
+curl -H "Authorization: Bearer $OPTIMA_TOKEN" \
+  https://api.optima.chat/products
 ```
 
-**自动处理**：
-- 自动添加 Authorization header
-- 自动选择正确的环境（CI/Stage/Prod）
-- 格式化显示响应结果
+或直接让 Claude Code 帮你调用：
+```
+"帮我调用商品列表 API"
+```
 
 ## 📖 常用 API 端点
 
@@ -109,10 +113,11 @@ GET    /users/me              # 当前用户信息
 /get-token merchant@optima.ai
 
 # 2. 查看 API 文档
-/swagger commerce-backend
+/api commerce-backend
 
-# 3. 测试 API
-/test-api /products GET
+# 3. 调用 API
+curl -H "Authorization: Bearer $OPTIMA_TOKEN" \
+  https://api.optima.chat/products
 ```
 
 **响应示例**：
@@ -137,23 +142,48 @@ GET    /users/me              # 当前用户信息
 /get-token merchant@optima.ai
 
 # 2. 创建商品
-/test-api /products POST '{
-  "title": "Pearl Necklace",
-  "price": 599.00,
-  "description": "Beautiful pearl necklace",
-  "stock_quantity": 50
-}'
+curl -X POST https://api.optima.chat/products \
+  -H "Authorization: Bearer $OPTIMA_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Pearl Necklace",
+    "price": 599.00,
+    "description": "Beautiful pearl necklace",
+    "stock_quantity": 50
+  }'
 ```
 
 ### 示例 3：带参数的 API 调用
 
-```
+```bash
 # 按分类过滤商品
-/test-api "/products?collections=jewelry&status=active" GET
+curl -H "Authorization: Bearer $OPTIMA_TOKEN" \
+  "https://api.optima.chat/products?collections=jewelry&status=active"
 
 # 分页查询
-/test-api "/products?page=1&limit=20" GET
+curl -H "Authorization: Bearer $OPTIMA_TOKEN" \
+  "https://api.optima.chat/products?page=1&limit=20"
 ```
+
+### 示例 4：批量创建测试数据
+
+```
+# 1. 创建测试用户
+/create-test-user test@optima.ai customer
+/create-test-user merchant@optima.ai merchant
+
+# 2. 创建测试商品
+/create-test-product 20
+
+# 3. 验证数据
+curl -H "Authorization: Bearer $OPTIMA_TOKEN" \
+  https://api.optima.chat/products
+```
+
+**使用场景**：
+- 前端开发需要测试数据
+- API 集成测试
+- 演示环境数据准备
 
 ## 🔧 在代码中使用 API
 
@@ -303,9 +333,10 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ## 🔗 相关命令
 
-- `/swagger` - 查看 API 文档
+- `/api` - 查看 API 文档
 - `/get-token` - 获取认证 Token
-- `/test-api` - 测试 API 端点
+- `/create-test-product` - 创建测试商品
+- `/create-test-user` - 创建测试用户
 - `/backend-logs` - 查看 API 错误日志
 - `/health-check` - 检查 API 服务是否运行
 
