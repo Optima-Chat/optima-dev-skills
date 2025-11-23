@@ -2,7 +2,7 @@
 
 快速查看服务日志，支持 Stage/Prod 两个环境。
 
-**版本**: v0.1.6
+**版本**: v0.1.7
 
 ## 使用场景
 
@@ -48,20 +48,13 @@
 
 **步骤**:
 ```bash
+# IMPORTANT: 必须使用单行命令，不要使用反斜杠换行
+
 # 1. 获取最新的 log stream
-STREAM=$(aws logs describe-log-streams \
-  --log-group-name /ecs/commerce-backend-stage \
-  --order-by LastEventTime \
-  --descending \
-  --max-items 1 \
-  | jq -r '.logStreams[0].logStreamName')
+STREAM=$(aws logs describe-log-streams --log-group-name /ecs/commerce-backend-stage --order-by LastEventTime --descending --max-items 1 | jq -r '.logStreams[0].logStreamName')
 
 # 2. 获取日志内容（纯文本）
-aws logs get-log-events \
-  --log-group-name /ecs/commerce-backend-stage \
-  --log-stream-name "$STREAM" \
-  --limit 50 \
-  | jq -r '.events[] | .message'
+aws logs get-log-events --log-group-name /ecs/commerce-backend-stage --log-stream-name "$STREAM" --limit 50 | jq -r '.events[] | .message'
 ```
 
 **服务映射**:
@@ -79,12 +72,8 @@ aws logs get-log-events \
 # 获取日志内容（纯文本）
 # 注意：Prod 环境的 log stream 通常是固定的 "backend"
 # 使用 --no-start-from-head 从最新日志开始读取
-aws logs get-log-events \
-  --log-group-name /optima/prod/commerce-backend \
-  --log-stream-name backend \
-  --limit 50 \
-  --no-start-from-head \
-  | jq -r '.events[] | .message'
+# IMPORTANT: 必须使用单行命令，不要使用反斜杠换行
+aws logs get-log-events --log-group-name /optima/prod/commerce-backend --log-stream-name backend --limit 50 --no-start-from-head | jq -r '.events[] | .message'
 ```
 
 **服务映射**:
@@ -102,35 +91,23 @@ aws logs get-log-events \
 
 ### Stage 环境
 ```bash
+# IMPORTANT: 使用单行命令
 SERVICE="commerce-backend"
 LINES=50
 
-# 获取最新 stream
-STREAM=$(aws logs describe-log-streams \
-  --log-group-name /ecs/${SERVICE}-stage \
-  --order-by LastEventTime --descending --max-items 1 \
-  | jq -r '.logStreams[0].logStreamName')
-
-# 显示日志
-aws logs get-log-events \
-  --log-group-name /ecs/${SERVICE}-stage \
-  --log-stream-name "$STREAM" \
-  --limit $LINES \
-  | jq -r '.events[] | .message'
+# 获取最新 stream 并显示日志
+STREAM=$(aws logs describe-log-streams --log-group-name /ecs/${SERVICE}-stage --order-by LastEventTime --descending --max-items 1 | jq -r '.logStreams[0].logStreamName')
+aws logs get-log-events --log-group-name /ecs/${SERVICE}-stage --log-stream-name "$STREAM" --limit $LINES | jq -r '.events[] | .message'
 ```
 
 ### Prod 环境
 ```bash
+# IMPORTANT: 使用单行命令
 SERVICE="commerce-backend"
 LINES=50
 
 # 显示主服务日志（从最新开始）
-aws logs get-log-events \
-  --log-group-name /optima/prod/${SERVICE} \
-  --log-stream-name backend \
-  --limit $LINES \
-  --no-start-from-head \
-  | jq -r '.events[] | .message'
+aws logs get-log-events --log-group-name /optima/prod/${SERVICE} --log-stream-name backend --limit $LINES --no-start-from-head | jq -r '.events[] | .message'
 ```
 
 ## 常见错误处理
