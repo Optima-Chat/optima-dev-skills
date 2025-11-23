@@ -2,7 +2,7 @@
 
 快速查看服务日志，支持 CI/Stage/Prod 三个环境。
 
-**版本**: v0.1.10
+**版本**: v0.2.0
 
 ## 使用场景
 
@@ -24,18 +24,18 @@
   - `mcp-host` - MCP 协调器
   - `agentic-chat` - AI 聊天服务
 - `lines` (可选): 显示行数，默认 50
-- `environment` (可选): 环境，默认 stage
-  - `ci` - CI 持续集成环境
+- `environment` (可选): 环境，默认 ci
+  - `ci` - CI 持续集成环境（开发环境，默认）
   - `stage` - Stage 预发布环境
   - `prod` - 生产环境
 
 ## 示例
 
 ```bash
-/logs commerce-backend           # 查看 Stage 环境最近 50 行
-/logs user-auth 100              # 查看 Stage 环境最近 100 行
-/logs mcp-host 200 prod          # 查看 Prod 环境最近 200 行
-/logs commerce-backend 100 ci    # 查看 CI 环境最近 100 行
+/logs commerce-backend           # 查看 CI 环境最近 50 行（默认）
+/logs user-auth 100              # 查看 CI 环境最近 100 行（默认）
+/logs mcp-host 200 stage         # 查看 Stage 环境最近 200 行
+/logs user-auth 100 prod         # 查看 Prod 环境最近 100 行
 ```
 
 ## 特殊参数处理
@@ -45,11 +45,11 @@
 ## Claude Code 执行步骤
 
 **重要提示**：根据用户指定的 `environment` 参数选择执行方式：
-- `ci` → 使用 SSH + Docker Compose（第 0 节）
+- `ci` 或未指定 → 使用 SSH + Docker Compose（第 0 节，默认）
 - `stage` → 使用 AWS CloudWatch Logs - ECS（第 1 节）
 - `prod` → 使用 AWS CloudWatch Logs - EC2（第 2 节）
 
-### 0. CI 环境（environment = "ci"）
+### 0. CI 环境（environment = "ci" 或默认）
 
 **访问方式**: SSH + Docker Compose
 
@@ -92,7 +92,7 @@ sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} 
 sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/agentic-chat && docker compose logs --tail 50 optima-ai-chat"
 ```
 
-### 1. Stage 环境（environment = "stage" 或默认）
+### 1. Stage 环境（environment = "stage"）
 
 **日志路径格式**: `/ecs/{service}-stage`
 
