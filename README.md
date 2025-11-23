@@ -12,30 +12,7 @@ npm install -g @optima-chat/dev-skills@latest
 
 安装后会自动将 skills 复制到 `~/.claude/` 目录。
 
-### 方式 2：验证安装
-
-```bash
-# 查看版本
-optima-dev-skills --version
-
-# 查看帮助
-optima-dev-skills --help
-
-# 检查文件
-ls ~/.claude/commands/
-ls ~/.claude/skills/logs/
-```
-
-### 已安装的能力
-
-- ✅ `/logs` 命令 - 查看 Stage/Prod 环境日志
-- ✅ `logs` skill - 自动识别日志查看需求
-
-### 更新
-
-```bash
-npm update -g @optima-chat/dev-skills@latest
-```
+安装后，`/logs` 命令和 `logs` skill 会自动可用。
 
 ## 🎯 核心理念
 
@@ -180,7 +157,7 @@ Claude:
 
 ## 🛠️ 开发状态
 
-**当前版本**: 0.2.0
+**当前版本**: 0.2.1
 
 **已完成**:
 - ✅ 1 个跨环境命令：`/logs`

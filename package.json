@@ -1,6 +1,6 @@
 {
   "name": "@optima-chat/dev-skills",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Claude Code Skills for Optima development team - cross-environment collaboration tools",
   "main": "index.js",
   "bin": {
