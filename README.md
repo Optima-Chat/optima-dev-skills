@@ -50,20 +50,22 @@ Claude:
 - **Stage** - 预发布环境，用于上线前的最终验证
 - **Prod** - 生产环境，服务真实用户
 
-## 🚀 核心命令（10 个）
+## 🚀 可用命令
 
-| 命令 | 说明 | 示例 |
-|------|------|------|
-| `/backend-logs` | 查看后端日志 | `/backend-logs commerce-backend 100 stage` |
-| `/health-check` | 健康检查 | `/health-check stage` |
-| `/test-api` | 测试 API 端点 | `/test-api /products GET` |
-| `/get-token` | 获取 JWT Token | `/get-token merchant@optima.ai` |
-| `/restart-service` | 重启服务 | `/restart-service commerce-backend` |
-| `/db-connect` | 连接数据库 | `/db-connect commerce stage` |
-| `/service-status` | 查看服务状态 | `/service-status` |
-| `/swagger` | 打开 API 文档 | `/swagger commerce-backend` |
-| `/create-test-product` | 创建测试商品 | `/create-test-product 10` |
-| `/create-test-user` | 创建测试用户 | `/create-test-user test@optima.ai merchant` |
+| 命令 | 说明 | 示例 | 跨环境 |
+|------|------|------|--------|
+| `/backend-logs` | 查看后端日志 | `/backend-logs commerce-backend 100 stage` | ✅ |
+| `/get-token` | 获取 JWT Token | `/get-token merchant@optima.ai` | ✅ |
+| `/db-connect` | 连接数据库 | `/db-connect commerce stage` | ✅ |
+| `/api` | 查看 API 定义 | `/api commerce-backend` | ✅ |
+| `/health-check` | 健康检查 | `/health-check stage` | ✅ |
+| `/create-test-product` | 创建测试商品 | `/create-test-product 10` | ✅ |
+| `/create-test-user` | 创建测试用户 | `/create-test-user test@optima.ai merchant` | ✅ |
+
+**说明**：
+- 所有命令都支持 CI、Stage、Prod 三个环境
+- Claude Code 会根据上下文自动选择环境
+- 命令提供信息和入口，具体操作由 Claude Code 智能完成
 
 ## 📋 任务场景（6 个）
 
@@ -81,21 +83,18 @@ Claude:
 ```
 optima-dev-skills/
 ├── .claude/
-│   ├── commands/              # 10 个可执行命令
+│   ├── commands/              # 7 个跨环境命令
 │   │   ├── logs/
 │   │   │   └── backend-logs.md
-│   │   ├── services/
-│   │   │   ├── restart-service.md
-│   │   │   ├── health-check.md
-│   │   │   └── service-status.md
 │   │   ├── database/
 │   │   │   └── db-connect.md
+│   │   ├── api/
+│   │   │   └── api.md              # 查看 API 定义
 │   │   └── testing/
 │   │       ├── get-token.md
-│   │       ├── create-test-user.md
+│   │       ├── health-check.md
 │   │       ├── create-test-product.md
-│   │       ├── test-api.md
-│   │       └── swagger.md
+│   │       └── create-test-user.md
 │   │
 │   └── skills/                # 6 个任务场景
 │       └── scenarios/
@@ -212,14 +211,21 @@ Claude:
 **当前版本**: 0.1.0 (MVP)
 
 **已完成**:
-- ✅ 10 个核心命令
+- ✅ 7 个跨环境命令
 - ✅ 6 个任务场景 Skills
 - ✅ 支持 CI、Stage、Prod 三个环境
 - ✅ 命令设计文档
 
-**已知问题**:
-- ⚠️ 部分命令还未实现具体逻辑（只有文档）
-- ⚠️ 需要逐步验证每个命令在三个环境的可用性
+**设计原则**:
+- 命令提供信息（URL、路径、凭证位置），不实现复杂逻辑
+- Claude Code 利用自身工具（WebFetch、Bash）完成实际操作
+- 聚焦跨环境协作，避免与服务文档重复
+
+**已移除的命令**:
+- ❌ `/test-api` - 直接用 curl 更灵活
+- ❌ `/restart-service` - 环境差异大，不适合统一命令
+- ❌ `/service-status` - 合并到 `/health-check`
+- ❌ `/swagger` - 改为 `/api`，直接读取 openapi.json
 
 ## 📚 相关文档
 
