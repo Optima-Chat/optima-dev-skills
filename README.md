@@ -23,11 +23,12 @@ Optima Dev Skills 让 Claude Code 能够直接在 **CI、Stage、Prod** 三个�
 - **任务驱动** - 基于具体任务场景（查看日志、调用 API），不是抽象分类
 - **跨环境协作** - 统一的命令在 CI、Stage、Prod 三个环境中使用
 
-## 📋 任务场景（1 个）
+## 📋 任务场景（2 个）
 
 当 Claude Code 识别到以下任务时，会自动加载对应的 Skill：
 
 - **logs** - 查看 CI/Stage/Prod 的服务器日志
+- **query-db** - 查询 CI/Stage/Prod 的数据库
 
 ## 👤 用户故事
 
@@ -69,12 +70,13 @@ Claude:
 
 | 命令 | 说明 | 示例 | 跨环境 |
 |------|------|------|--------|
-| `/logs` | 查看服务日志 | `/logs commerce-backend 100 stage` | ✅ |
+| `/logs` | 查看服务日志 | `/logs commerce-backend 100` | ✅ |
+| `/query-db` | 查询数据库 | `/query-db user-auth "SELECT COUNT(*) FROM users"` | ✅ |
 
 **说明**：
 - 命令支持 CI、Stage、Prod 三个环境
-- Claude Code 会根据上下文自动选择环境
-- 命令提供信息和入口，具体操作由 Claude Code 智能完成
+- 默认使用 CI 环境，适合日常开发
+- Claude Code 会根据上下文自动选择环境和执行方式
 
 ## 🏗️ 项目结构
 
@@ -82,10 +84,13 @@ Claude:
 optima-dev-skills/
 ├── .claude/
 │   ├── commands/
-│   │   └── logs.md              # /logs - 查看服务日志
+│   │   ├── logs.md              # /logs - 查看服务日志
+│   │   └── query-db.md          # /query-db - 查询数据库
 │   │
 │   └── skills/
-│       └── logs/                # 日志查看 skill
+│       ├── logs/                # 日志查看 skill
+│       │   └── SKILL.md
+│       └── query-db/            # 数据库查询 skill
 │           └── SKILL.md
 │
 └── docs/
@@ -157,14 +162,15 @@ Claude:
 
 ## 🛠️ 开发状态
 
-**当前版本**: 0.2.1
+**当前版本**: 0.3.0
 
 **已完成**:
-- ✅ 1 个跨环境命令：`/logs`
-- ✅ 1 个任务场景：`logs` skill
+- ✅ 2 个跨环境命令：`/logs`、`/query-db`
+- ✅ 2 个任务场景：`logs` skill、`query-db` skill
 - ✅ 支持 CI、Stage、Prod 三个环境
-- ✅ CI 环境通过 SSH + Docker Compose 访问
-- ✅ Stage/Prod 通过 AWS CloudWatch Logs 访问
+- ✅ CI 环境通过 SSH + Docker 访问
+- ✅ Stage/Prod 通过 AWS 服务访问
+- ✅ 数据库查询支持只读模式（Prod）
 
 **设计原则**:
 - 命令提供信息（URL、路径、凭证位置），不实现复杂逻辑

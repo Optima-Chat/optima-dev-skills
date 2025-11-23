@@ -7,7 +7,8 @@ const os = require('os');
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const SKILLS_SOURCE = path.join(__dirname, '..', '.claude');
 const COMMANDS_DEST = path.join(CLAUDE_DIR, 'commands');
-const SKILLS_DEST = path.join(CLAUDE_DIR, 'skills', 'logs');
+const LOGS_SKILL_DEST = path.join(CLAUDE_DIR, 'skills', 'logs');
+const QUERY_DB_SKILL_DEST = path.join(CLAUDE_DIR, 'skills', 'query-db');
 
 // 颜色输出
 const colors = {
@@ -50,34 +51,47 @@ function install() {
   }
 
   // 安装命令
-  const commandsSource = path.join(SKILLS_SOURCE, 'commands', 'logs.md');
-  const commandsDest = path.join(COMMANDS_DEST, 'logs.md');
-  if (fs.existsSync(commandsSource)) {
-    if (!fs.existsSync(COMMANDS_DEST)) {
-      fs.mkdirSync(COMMANDS_DEST, { recursive: true });
-    }
-    fs.copyFileSync(commandsSource, commandsDest);
-    log(`✓ Installed /logs command to ${commandsDest}`, 'green');
-  } else {
-    log(`✗ Commands not found at ${commandsSource}`, 'red');
+  if (!fs.existsSync(COMMANDS_DEST)) {
+    fs.mkdirSync(COMMANDS_DEST, { recursive: true });
   }
 
-  // 安装 skills
-  const skillsSource = path.join(SKILLS_SOURCE, 'skills', 'logs');
-  if (fs.existsSync(skillsSource)) {
-    copyRecursive(skillsSource, SKILLS_DEST);
-    log(`✓ Installed logs skill to ${SKILLS_DEST}`, 'green');
-  } else {
-    log(`✗ Skills not found at ${skillsSource}`, 'red');
+  // 安装 /logs 命令
+  const logsCommandSource = path.join(SKILLS_SOURCE, 'commands', 'logs.md');
+  const logsCommandDest = path.join(COMMANDS_DEST, 'logs.md');
+  if (fs.existsSync(logsCommandSource)) {
+    fs.copyFileSync(logsCommandSource, logsCommandDest);
+    log(`✓ Installed /logs command`, 'green');
+  }
+
+  // 安装 /query-db 命令
+  const queryDbCommandSource = path.join(SKILLS_SOURCE, 'commands', 'query-db.md');
+  const queryDbCommandDest = path.join(COMMANDS_DEST, 'query-db.md');
+  if (fs.existsSync(queryDbCommandSource)) {
+    fs.copyFileSync(queryDbCommandSource, queryDbCommandDest);
+    log(`✓ Installed /query-db command`, 'green');
+  }
+
+  // 安装 logs skill
+  const logsSkillSource = path.join(SKILLS_SOURCE, 'skills', 'logs');
+  if (fs.existsSync(logsSkillSource)) {
+    copyRecursive(logsSkillSource, LOGS_SKILL_DEST);
+    log(`✓ Installed logs skill`, 'green');
+  }
+
+  // 安装 query-db skill
+  const queryDbSkillSource = path.join(SKILLS_SOURCE, 'skills', 'query-db');
+  if (fs.existsSync(queryDbSkillSource)) {
+    copyRecursive(queryDbSkillSource, QUERY_DB_SKILL_DEST);
+    log(`✓ Installed query-db skill`, 'green');
   }
 
   log('\n✨ Installation complete!\n', 'green');
   log('Available commands:', 'blue');
   log('  /logs <service> [lines] [environment]', 'yellow');
+  log('  /query-db <service> <sql> [environment]', 'yellow');
   log('\nExamples:', 'blue');
-  log('  /logs commerce-backend              # Stage, 50 lines', 'yellow');
-  log('  /logs user-auth 100                 # Stage, 100 lines', 'yellow');
-  log('  /logs mcp-host 200 prod             # Prod, 200 lines', 'yellow');
+  log('  /logs commerce-backend                                    # CI logs', 'yellow');
+  log('  /query-db commerce-backend "SELECT COUNT(*) FROM orders"  # CI query', 'yellow');
   log('\nDocumentation: https://github.com/Optima-Chat/optima-dev-skills\n', 'blue');
 }
 
