@@ -55,7 +55,7 @@ npm install -g @optima-ai/dev-skills
 ```
 optima-dev-skills/
 ├── .claude/                   # ⭐ Claude Code 配置目录
-│   ├── commands/              # Slash commands（50+ 可执行命令）
+│   ├── commands/              # ⭐ 核心：Slash commands（50+ 可执行命令）
 │   │   ├── logs/
 │   │   │   └── backend-logs.md
 │   │   ├── services/
@@ -72,23 +72,21 @@ optima-dev-skills/
 │   │   │   └── swagger.md
 │   │   └── ...
 │   │
-│   └── skills/                # Claude Skills（场景驱动）
-│       ├── scenarios/         # ⭐ 场景驱动 Skills
-│       │   ├── frontend-dev/
-│       │   └── backend-dev/
-│       ├── backend/           # 后端服务参考
-│       │   ├── commerce-backend/
-│       │   ├── user-auth/
-│       │   └── mcp-host/
-│       └── mcp-tools/         # MCP 工具参考
-│           ├── commerce-mcp/
-│           ├── scout-mcp/
-│           ├── comfy-mcp/
-│           └── google-ads-mcp/
+│   └── skills/                # 场景工作流指导（仅 2 个）
+│       └── scenarios/
+│           ├── frontend-dev/  # 前端开发场景（引用命令）
+│           └── backend-dev/   # 后端开发场景（引用命令）
 │
 └── docs/
     ├── TECHNICAL_DESIGN.md    # 技术设计（V1 - 已弃用）
     └── COMMANDS_DESIGN.md     # 命令设计（V2 - 当前版本）
+```
+
+**设计理念**：
+- **命令是核心** - 直接可执行的操作
+- **场景是引导** - 告诉你什么时候用什么命令
+- **避免重复** - 每个服务自己的 CLAUDE.md 更权威
+- **聚焦协作** - dev-skills 是"跨仓库协作"工具，不替代单仓库文档
 ```
 
 ## 💡 使用示例
@@ -166,25 +164,31 @@ Claude:
 - ✅ `/swagger` - 打开 Swagger 文档
 
 **场景 Skills（2 个）**:
-- ✅ `scenarios/frontend-dev` - 前端开发场景
-- ✅ `scenarios/backend-dev` - 后端开发场景
+- ✅ `scenarios/frontend-dev` - 前端开发场景（API 调试、测试数据、Token 管理）
+- ✅ `scenarios/backend-dev` - 后端开发场景（数据库迁移、API 测试、部署）
 
-## 🎯 覆盖的系统
+**已删除的冗余内容**:
+- ❌ 服务级别 Skills（commerce-backend、user-auth 等）→ 用各服务自己的 CLAUDE.md
+- ❌ MCP 工具 Skills → 用各 MCP 工具自己的 CLAUDE.md
+- ❌ 核心索引 Skill → 已被命令取代
 
-### 核心电商系统
-- **commerce-backend** - 电商核心 API（23 模块，95+ API）
-- **user-auth** - OAuth 统一认证（JWT Token）
-- **mcp-host** - MCP 协调器（9 技能域，43+ 工具）
-- **agentic-chat** - 卖家 AI 对话界面
-- **optima-store** - 买家购物前端
+## 🎯 核心价值
 
-### MCP 工具集
-- **commerce-mcp** - 电商 MCP 工具（21 个工具）
-- **scout-mcp** - 智能选品 MCP（3 个工具）
-- **comfy-mcp** - 图像生成 MCP（3 个工具）
-- **google-ads-mcp** - Google Ads MCP（16 个工具）
+### 跨仓库协作工具
 
-### 环境覆盖
+dev-skills 专注于**团队协作场景**，而非单仓库开发：
+
+**✅ dev-skills 提供**：
+- 跨服务操作命令（查日志、健康检查、获取 Token）
+- 场景工作流指导（前端开发、后端开发）
+- 团队共享的快捷操作
+
+**❌ dev-skills 不提供**：
+- 单个服务的详细开发文档 → 看各服务的 CLAUDE.md
+- 服务内部架构说明 → 看各服务的 CLAUDE.md
+- API 详细文档 → 用 /swagger 命令查看
+
+### 覆盖的环境
 - **本地环境** (Docker Compose) - 完整支持
 - **Stage-ECS** (AWS ECS) - 日志、部署、健康检查
 - **Prod** (EC2 + Docker) - 只读操作、日志查看

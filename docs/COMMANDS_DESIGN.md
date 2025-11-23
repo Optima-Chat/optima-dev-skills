@@ -22,7 +22,7 @@ Skills = 可执行命令 + 场景驱动 + 快速操作
 ```
 optima-dev-skills/
 ├── .claude/                   # ⭐ Claude Code 配置目录
-│   ├── commands/              # Slash commands（50+ 可执行命令）
+│   ├── commands/              # ⭐ 核心：Slash commands（50+ 可执行命令）
 │   │   ├── logs/              # 日志查看命令组
 │   │   │   ├── backend-logs.md
 │   │   │   ├── ecs-logs.md
@@ -52,34 +52,23 @@ optima-dev-skills/
 │   │       ├── workspace-sync.md
 │   │       └── workspace-status.md
 │   │
-│   └── skills/                # Claude Skills（精简版）
-│       ├── core/
-│       │   └── SKILL.md       # 快速索引 + 常用命令速查
-│       ├── scenarios/         # ⭐ 场景驱动 Skills
-│       │   ├── frontend-dev/
-│       │   │   └── SKILL.md   # 前端开发场景（引用命令）
-│       │   ├── backend-dev/
-│       │   │   └── SKILL.md   # 后端开发场景
-│       │   ├── mcp-dev/
-│       │   │   └── SKILL.md   # MCP 工具开发场景
-│       │   ├── debugging/
-│       │   │   └── SKILL.md   # 问题排查场景
-│       │   └── onboarding/
-│       │       └── SKILL.md   # 新人入职场景
-│       └── references/        # 参考信息（保留部分原 Skills）
-│           ├── services-map.md   # 服务地址、端口映射
-│           ├── database-info.md  # 数据库连接信息
-│           └── architecture.md   # 系统架构概述
-│
-├── scripts/                   # 自动化脚本（命令调用）
-│   ├── logs.sh
-│   ├── restart.sh
-│   ├── db-connect.sh
-│   └── get-token.sh
+│   └── skills/                # 场景工作流指导（仅保留场景）
+│       └── scenarios/         # ⭐ 场景驱动 Skills
+│           ├── frontend-dev/
+│           │   └── SKILL.md   # 前端开发场景（引用命令）
+│           └── backend-dev/
+│               └── SKILL.md   # 后端开发场景（引用命令）
 │
 └── docs/
-    ├── TECHNICAL_DESIGN.md
-    └── COMMANDS_DESIGN.md    # 本文档
+    ├── TECHNICAL_DESIGN.md    # V1 设计（已弃用）
+    └── COMMANDS_DESIGN.md     # V2 命令驱动设计（当前版本）
+```
+
+**设计原则**：
+- **命令是核心** - 提供直接可执行的操作
+- **场景是引导** - 告诉开发者什么时候用什么命令
+- **避免重复** - 不复制各服务自己的 CLAUDE.md 内容
+- **聚焦协作** - dev-skills 是"跨仓库协作"工具，不替代单仓库开发文档
 ```
 
 ## 命令设计规范
@@ -370,15 +359,19 @@ allowed-tools: ["Bash", "Read"]
 - `/get-env`
 - `/deploy-status`
 
-**场景 Skills**（3 个）:
-- `scenarios/debugging`
-- `scenarios/mcp-dev`
-- `scenarios/onboarding`
+**❌ 不再实现服务级别 Skills**：
+- 原计划：为每个服务创建 SKILL.md（commerce-backend、user-auth 等）
+- **问题**：与各服务自己的 CLAUDE.md 重复，且角色错位
+- **解决**：只保留场景 Skills，引用命令提供工作流指导
 
 ### Phase 3: 增强（两周后）
 
 **P2 命令**（20+ 个）:
 - 性能分析、备份恢复、配置验证等
+
+**可能新增的场景 Skills**（根据实际需求）:
+- `scenarios/debugging` - 问题排查场景
+- `scenarios/onboarding` - 新人入职场景
 
 ## 成功指标
 
