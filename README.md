@@ -105,13 +105,11 @@ Claude:
 optima-dev-skills/
 ├── .claude/
 │   ├── commands/
-│   │   └── logs/
-│   │       └── logs.md           # /logs - 查看服务日志
+│   │   └── logs.md              # /logs - 查看服务日志
 │   │
 │   └── skills/
-│       └── scenarios/
-│           └── viewing-logs/     # 查看日志场景
-│               └── SKILL.md
+│       └── viewing-logs/        # 查看日志场景
+│           └── SKILL.md
 │
 └── docs/
     └── COMMANDS_DESIGN.md
