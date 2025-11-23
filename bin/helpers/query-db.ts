@@ -1,0 +1,190 @@
+#!/usr/bin/env node
+
+import { execSync } from 'child_process';
+import * as fs from 'fs';
+
+interface InfisicalConfig {
+  url: string;
+  clientId: string;
+  clientSecret: string;
+  projectId: string;
+}
+
+interface DatabaseConfig {
+  host: string;
+  user: string;
+  password: string;
+  database: string;
+}
+
+const SERVICE_DB_MAP = {
+  'commerce-backend': {
+    ci: { container: 'commerce-postgres', user: 'commerce', password: 'commerce123', database: 'commerce' },
+    stage: { userKey: 'COMMERCE_DB_USER', passwordKey: 'COMMERCE_DB_PASSWORD', database: 'optima_stage_commerce' },
+    prod: { userKey: 'COMMERCE_DB_USER', passwordKey: 'COMMERCE_DB_PASSWORD', database: 'optima_commerce' }
+  },
+  'user-auth': {
+    ci: { container: 'user-auth-postgres-1', user: 'userauth', password: 'password123', database: 'userauth' },
+    stage: { userKey: 'AUTH_DB_USER', passwordKey: 'AUTH_DB_PASSWORD', database: 'optima_stage_auth' },
+    prod: { userKey: 'AUTH_DB_USER', passwordKey: 'AUTH_DB_PASSWORD', database: 'optima_auth' }
+  },
+  'mcp-host': {
+    ci: { container: 'mcp-host-db-1', user: 'mcp_user', password: 'mcp_password', database: 'mcp_host' },
+    stage: { userKey: 'MCP_DB_USER', passwordKey: 'MCP_DB_PASSWORD', database: 'optima_stage_mcp' },
+    prod: { userKey: 'MCP_DB_USER', passwordKey: 'MCP_DB_PASSWORD', database: 'optima_mcp' }
+  },
+  'agentic-chat': {
+    ci: { container: 'optima-postgres', user: 'postgres', password: 'postgres123', database: 'optima_chat' },
+    stage: { userKey: 'CHAT_DB_USER', passwordKey: 'CHAT_DB_PASSWORD', database: 'optima_stage_chat' },
+    prod: { userKey: 'CHAT_DB_USER', passwordKey: 'CHAT_DB_PASSWORD', database: 'optima_chat' }
+  }
+};
+
+const EC2_HOSTS = {
+  stage: '54.179.132.102',
+  prod: '18.136.25.239'
+};
+
+function getGitHubVariable(name: string): string {
+  return execSync(`gh variable get ${name} -R Optima-Chat/optima-dev-skills`, { encoding: 'utf-8' }).trim();
+}
+
+function getInfisicalConfig(): InfisicalConfig {
+  return {
+    url: getGitHubVariable('INFISICAL_URL'),
+    clientId: getGitHubVariable('INFISICAL_CLIENT_ID'),
+    clientSecret: getGitHubVariable('INFISICAL_CLIENT_SECRET'),
+    projectId: getGitHubVariable('INFISICAL_PROJECT_ID')
+  };
+}
+
+function getInfisicalToken(config: InfisicalConfig): string {
+  const response = execSync(
+    `curl -s -X POST "${config.url}/api/v1/auth/universal-auth/login" -H "Content-Type: application/json" -d '{"clientId": "${config.clientId}", "clientSecret": "${config.clientSecret}"}'`,
+    { encoding: 'utf-8' }
+  );
+  return JSON.parse(response).accessToken;
+}
+
+function getInfisicalSecrets(config: InfisicalConfig, token: string, environment: string): Record<string, string> {
+  const response = execSync(
+    `curl -s "${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=/infrastructure" -H "Authorization: Bearer ${token}"`,
+    { encoding: 'utf-8' }
+  );
+  const data = JSON.parse(response);
+  const secrets: Record<string, string> = {};
+  for (const secret of data.secrets) {
+    secrets[secret.secretKey] = secret.secretValue;
+  }
+  return secrets;
+}
+
+function setupSSHTunnel(ec2Host: string, dbHost: string, localPort: number): void {
+  // 检查是否已有隧道
+  try {
+    execSync(`lsof -ti:${localPort}`, { stdio: 'ignore' });
+    console.log(`✓ SSH tunnel already exists on port ${localPort}`);
+    return;
+  } catch {
+    // 端口未占用，创建隧道
+  }
+
+  const sshKeyPath = `${process.env.HOME}/.ssh/optima-ec2-key`;
+  if (!fs.existsSync(sshKeyPath)) {
+    throw new Error(`SSH key not found: ${sshKeyPath}. Please obtain optima-ec2-key from xbfool.`);
+  }
+
+  console.log(`Creating SSH tunnel: localhost:${localPort} -> ${ec2Host} -> ${dbHost}:5432`);
+  execSync(
+    `ssh -i ${sshKeyPath} -f -N -o StrictHostKeyChecking=no -L ${localPort}:${dbHost}:5432 ec2-user@${ec2Host}`,
+    { stdio: 'inherit' }
+  );
+  console.log(`✓ SSH tunnel established on port ${localPort}`);
+}
+
+function queryDatabase(host: string, port: number, user: string, password: string, database: string, sql: string): string {
+  const psqlPath = '/usr/local/opt/postgresql@16/bin/psql';
+
+  if (!fs.existsSync(psqlPath)) {
+    throw new Error('PostgreSQL client not found. Install with: brew install postgresql@16');
+  }
+
+  const result = execSync(
+    `PGPASSWORD="${password}" ${psqlPath} -h ${host} -p ${port} -U ${user} -d ${database} -c "${sql}"`,
+    { encoding: 'utf-8' }
+  );
+  return result;
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+
+  if (args.length < 2) {
+    console.error('Usage: query-db.ts <service> <sql> [environment]');
+    console.error('');
+    console.error('Services: commerce-backend, user-auth, mcp-host, agentic-chat');
+    console.error('Environments: ci (default), stage, prod');
+    console.error('');
+    console.error('Example: query-db.ts user-auth "SELECT COUNT(*) FROM users" prod');
+    process.exit(1);
+  }
+
+  const [service, sql, environment = 'ci'] = args;
+
+  if (!SERVICE_DB_MAP[service as keyof typeof SERVICE_DB_MAP]) {
+    console.error(`Unknown service: ${service}`);
+    console.error('Available services:', Object.keys(SERVICE_DB_MAP).join(', '));
+    process.exit(1);
+  }
+
+  const serviceConfig = SERVICE_DB_MAP[service as keyof typeof SERVICE_DB_MAP][environment as 'ci' | 'stage' | 'prod'];
+
+  console.log(`\n🔍 Querying ${service} (${environment.toUpperCase()})...`);
+
+  if (environment === 'ci') {
+    // CI 环境：通过 SSH + Docker Exec
+    const ciUser = getGitHubVariable('CI_SSH_USER');
+    const ciHost = getGitHubVariable('CI_SSH_HOST');
+    const ciPassword = getGitHubVariable('CI_SSH_PASSWORD');
+
+    const { container, user, database } = serviceConfig as any;
+
+    const result = execSync(
+      `sshpass -p "${ciPassword}" ssh -o StrictHostKeyChecking=no ${ciUser}@${ciHost} "docker exec ${container} psql -U ${user} -d ${database} -c \\"${sql}\\""`,
+      { encoding: 'utf-8' }
+    );
+
+    console.log('\n' + result);
+  } else {
+    // Stage/Prod 环境：通过 SSH 隧道访问 RDS
+    const infisicalConfig = getInfisicalConfig();
+    console.log('✓ Loaded Infisical config from GitHub Variables');
+
+    const token = getInfisicalToken(infisicalConfig);
+    console.log('✓ Obtained Infisical access token');
+
+    const secrets = getInfisicalSecrets(infisicalConfig, token, environment === 'stage' ? 'staging' : 'prod');
+    console.log('✓ Retrieved database credentials from Infisical');
+
+    const { userKey, passwordKey, database } = serviceConfig as any;
+    const dbHost = secrets.DATABASE_HOST;
+    const dbUser = secrets[userKey];
+    const dbPassword = secrets[passwordKey];
+
+    const localPort = environment === 'stage' ? 15432 : 15433;
+    const ec2Host = EC2_HOSTS[environment as 'stage' | 'prod'];
+
+    setupSSHTunnel(ec2Host, dbHost, localPort);
+
+    // 等待隧道建立
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const result = queryDatabase('localhost', localPort, dbUser, dbPassword, database, sql);
+    console.log('\n' + result);
+  }
+}
+
+main().catch(error => {
+  console.error('\n❌ Error:', error.message);
+  process.exit(1);
+});

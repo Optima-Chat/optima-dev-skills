@@ -2,13 +2,36 @@
 
 执行 SQL 查询，支持 CI/Stage/Prod 三个环境。
 
-**版本**: v0.3.0
+**版本**: v0.5.0
 
 ## 使用场景
 
 **开发者**: 快速查询数据验证功能
 **调试**: 检查数据库状态、排查数据问题
 **运维**: 查看生产数据、统计分析
+
+## 🎯 推荐方式：使用 CLI 工具
+
+**最简单的方式**是使用 `optima-query-db` CLI 工具，它会自动处理所有连接细节：
+
+```bash
+# 查询 CI 环境（默认）
+optima-query-db commerce-backend "SELECT COUNT(*) FROM products"
+
+# 查询 Stage 环境
+optima-query-db user-auth "SELECT COUNT(*) FROM users" stage
+
+# 查询 Prod 环境
+optima-query-db commerce-backend "SELECT * FROM products LIMIT 5" prod
+```
+
+**优点**：
+- ✅ 自动管理 SSH 隧道
+- ✅ 自动从 Infisical 获取密钥
+- ✅ 无需手动执行多个步骤
+- ✅ 支持所有环境
+
+如果 CLI 工具不可用，可以使用下面的手动方式。
 
 ## 用法
 
@@ -45,10 +68,12 @@
 
 ## Claude Code 执行步骤
 
-**重要提示**：根据用户指定的 `environment` 参数选择执行方式：
+**首选方法**：使用 `optima-query-db` CLI 工具（见上方）
+
+**备用方法**：如果 CLI 工具不可用，根据用户指定的 `environment` 参数选择执行方式：
 - `ci` 或未指定 → 通过 SSH 连接 Docker Postgres（第 0 节，默认）
-- `stage` → 通过 AWS RDS 端点连接（第 1 节）
-- `prod` → 通过 AWS RDS 端点连接（第 2 节，⚠️ 只读）
+- `stage` → 通过 SSH 隧道访问 RDS（第 1 节）
+- `prod` → 通过 SSH 隧道访问 RDS（第 2 节）
 
 ### 0. CI 环境（environment = "ci" 或默认）
 

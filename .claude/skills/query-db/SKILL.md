@@ -1,12 +1,38 @@
 ---
 name: "query-db"
-description: "当用户请求查询数据库、执行SQL、查看数据、统计数据、检查数据库、查询表、数据库查询时，使用此技能。支持 CI、Stage、Prod 三个环境的 commerce-backend、user-auth、mcp-host、agentic-chat 服务的数据库查询。"
+description: "当用户请求查询数据库、执行SQL、查看数据、统计数据、检查数据库、查询表、数据库查询时，使用此技能。支持 CI、Stage、Prod 三个环境的 commerce-backend、user-auth、mcp-host、agentic-chat 服务的数据库查询。优先使用 optima-query-db CLI 工具。"
 allowed-tools: ["Bash", "SlashCommand"]
 ---
 
 # 查询数据库
 
 当你需要执行 SQL 查询检查数据时，使用这个场景。
+
+## 🎯 推荐方式：使用 CLI 工具
+
+**最简单的方式**是直接使用 `optima-query-db` CLI 工具：
+
+```bash
+optima-query-db <service> "<sql>" [environment]
+```
+
+这个工具会自动处理：
+- ✅ 获取 Infisical 配置
+- ✅ 获取数据库密钥
+- ✅ 建立 SSH 隧道（Stage/Prod）
+- ✅ 执行查询
+
+**示例**：
+```bash
+# CI 环境（默认）
+optima-query-db user-auth "SELECT COUNT(*) FROM users"
+
+# Stage 环境
+optima-query-db commerce-backend "SELECT COUNT(*) FROM products" stage
+
+# Prod 环境
+optima-query-db user-auth "SELECT COUNT(*) FROM users" prod
+```
 
 ## 🎯 适用情况
 
@@ -18,39 +44,27 @@ allowed-tools: ["Bash", "SlashCommand"]
 
 ## 🚀 快速操作
 
-### 1. 查询 CI 环境数据库（默认）
+### 使用 CLI 工具（推荐）
+
+```bash
+# CI 环境（默认）
+optima-query-db commerce-backend "SELECT COUNT(*) FROM products"
+optima-query-db user-auth "SELECT email FROM users LIMIT 5"
+
+# Stage 环境
+optima-query-db commerce-backend "SELECT COUNT(*) FROM orders" stage
+
+# Prod 环境
+optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY status" prod
+```
+
+### 使用 Slash 命令（备用）
 
 ```
 /query-db commerce-backend "SELECT COUNT(*) FROM products"
-/query-db user-auth "SELECT email FROM users LIMIT 5"
+/query-db user-auth "SELECT COUNT(*) FROM users" stage
+/query-db commerce-backend "SELECT * FROM products LIMIT 5" prod
 ```
-
-**说明**：
-- 查询 CI 开发环境数据库
-- 默认环境，不需要指定 `ci` 参数
-- 通过 SSH + Docker Exec 访问
-- 可以执行任何 SQL 语句
-
-### 2. 查询 Stage 环境数据库
-
-```
-/query-db commerce-backend "SELECT COUNT(*) FROM orders" stage
-```
-
-**说明**：
-- 查询 Stage 预发布环境
-- 通过 AWS RDS 直连
-
-### 3. 查询 Prod 环境数据库
-
-```
-/query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY status" prod
-```
-
-**说明**：
-- 查询生产环境数据库
-- ⚠️ **只读查询**，不能修改数据
-- 使用只读用户连接
 
 **常用服务**：
 - `commerce-backend` - 电商数据库
@@ -58,20 +72,20 @@ allowed-tools: ["Bash", "SlashCommand"]
 - `mcp-host` - MCP 协调器数据库
 - `agentic-chat` - AI 聊天数据库
 
-### 4. 常用查询示例
+### 常用查询示例
 
-```
+```bash
 # 统计查询
-/query-db commerce-backend "SELECT COUNT(*) FROM products WHERE status='active'"
+optima-query-db commerce-backend "SELECT COUNT(*) FROM products WHERE status='active'"
 
 # 查看最新数据
-/query-db user-auth "SELECT id, email, created_at FROM users ORDER BY created_at DESC LIMIT 10"
+optima-query-db user-auth "SELECT id, email, created_at FROM users ORDER BY created_at DESC LIMIT 10"
 
 # 聚合统计
-/query-db commerce-backend "SELECT status, COUNT(*) as count FROM orders GROUP BY status"
+optima-query-db commerce-backend "SELECT status, COUNT(*) as count FROM orders GROUP BY status"
 
 # 检查特定记录
-/query-db user-auth "SELECT * FROM users WHERE email='user@example.com'"
+optima-query-db user-auth "SELECT * FROM users WHERE email='user@example.com'"
 ```
 
 ## 📋 常见使用场景
@@ -79,20 +93,20 @@ allowed-tools: ["Bash", "SlashCommand"]
 ### 场景 1：验证新功能
 
 **步骤**：
-1. 创建数据后查询：`/query-db commerce-backend "SELECT * FROM products WHERE title='新商品'"`
-2. 检查关联数据：`/query-db commerce-backend "SELECT * FROM product_variants WHERE product_id=123"`
+1. 创建数据后查询：`optima-query-db commerce-backend "SELECT * FROM products WHERE title='新商品'"`
+2. 检查关联数据：`optima-query-db commerce-backend "SELECT * FROM product_variants WHERE product_id=123"`
 
 ### 场景 2：数据统计
 
 **步骤**：
-1. 统计总数：`/query-db user-auth "SELECT COUNT(*) FROM users"`
-2. 分组统计：`/query-db commerce-backend "SELECT DATE(created_at), COUNT(*) FROM orders GROUP BY DATE(created_at)"`
+1. 统计总数：`optima-query-db user-auth "SELECT COUNT(*) FROM users"`
+2. 分组统计：`optima-query-db commerce-backend "SELECT DATE(created_at), COUNT(*) FROM orders GROUP BY DATE(created_at)"`
 
 ### 场景 3：排查问题
 
 **步骤**：
-1. 查找异常数据：`/query-db commerce-backend "SELECT * FROM orders WHERE status IS NULL"`
-2. 检查重复数据：`/query-db user-auth "SELECT email, COUNT(*) FROM users GROUP BY email HAVING COUNT(*) > 1"`
+1. 查找异常数据：`optima-query-db commerce-backend "SELECT * FROM orders WHERE status IS NULL"`
+2. 检查重复数据：`optima-query-db user-auth "SELECT email, COUNT(*) FROM users GROUP BY email HAVING COUNT(*) > 1"`
 
 ## ⚠️ 安全提示
 
@@ -105,14 +119,14 @@ allowed-tools: ["Bash", "SlashCommand"]
 
 ### 安全查询示例
 
-```
+```bash
 # ✅ 好的查询
-/query-db commerce-backend "SELECT COUNT(*) FROM orders WHERE created_at > NOW() - INTERVAL '1 day'" prod
-/query-db user-auth "SELECT id, email FROM users LIMIT 10" prod
+optima-query-db commerce-backend "SELECT COUNT(*) FROM orders WHERE created_at > NOW() - INTERVAL '1 day'" prod
+optima-query-db user-auth "SELECT id, email FROM users LIMIT 10" prod
 
 # ❌ 不好的查询
-# /query-db commerce-backend "SELECT * FROM orders" prod  (全表扫描)
-# /query-db user-auth "SELECT password_hash FROM users" prod  (敏感数据)
+# optima-query-db commerce-backend "SELECT * FROM orders" prod  (全表扫描)
+# optima-query-db user-auth "SELECT password_hash FROM users" prod  (敏感数据)
 ```
 
 ## 💡 最佳实践
@@ -127,37 +141,39 @@ allowed-tools: ["Bash", "SlashCommand"]
 
 ### CI 环境
 
-```
-/query-db commerce-backend "SELECT COUNT(*) FROM products"
+```bash
+optima-query-db commerce-backend "SELECT COUNT(*) FROM products"
 ```
 
 **特点**：
 - 开发环境，可以任意查询和修改
 - 数据可以随时重置
-- 通过 Docker 容器访问
+- 通过 SSH + Docker 容器访问
 
 ### Stage 环境
 
-```
-/query-db commerce-backend "SELECT COUNT(*) FROM orders" stage
+```bash
+optima-query-db commerce-backend "SELECT COUNT(*) FROM orders" stage
 ```
 
 **特点**：
 - 预发布环境
 - 数据接近生产
-- 通过 AWS RDS 访问
+- 通过 SSH 隧道访问 RDS
 
 ### Prod 环境
 
-```
-/query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY status" prod
+```bash
+optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY status" prod
 ```
 
 **特点**：
-- 生产环境，只读访问
+- 生产环境
 - 真实用户数据
+- 通过 SSH 隧道访问 RDS
 - ⚠️ 谨慎使用
 
 ## 🔗 相关命令
 
-- `/query-db` - 查询数据库（详细使用方法请查看 `/query-db --help`）
+- `optima-query-db` - CLI 查询工具（推荐）
+- `/query-db` - Slash 命令（备用方式，详细使用方法请查看 `/query-db --help`）

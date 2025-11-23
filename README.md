@@ -72,6 +72,7 @@ Claude:
 |------|------|------|--------|
 | `/logs` | 查看服务日志 | `/logs commerce-backend 100` | ✅ |
 | `/query-db` | 查询数据库 | `/query-db user-auth "SELECT COUNT(*) FROM users"` | ✅ |
+| `optima-query-db` | 数据库查询工具（CLI） | `optima-query-db user-auth "SELECT COUNT(*) FROM users" prod` | ✅ |
 
 **说明**：
 - 命令支持 CI、Stage、Prod 三个环境
@@ -99,7 +100,7 @@ optima-dev-skills/
 
 ## 💡 使用示例
 
-### 示例：排查 Stage 环境问题
+### 示例 1：排查 Stage 环境问题
 
 ```
 开发者: "Stage 的 /products API 返回 500"
@@ -111,6 +112,27 @@ Claude:
 2. 发现错误：Database connection timeout
 
 3. 问题定位：Stage RDS 连接配置问题
+```
+
+### 示例 2：使用 CLI 工具快速查询
+
+```bash
+# 查询 Prod 用户数
+$ optima-query-db user-auth "SELECT COUNT(*) FROM users" prod
+
+🔍 Querying user-auth (PROD)...
+✓ Loaded Infisical config from GitHub Variables
+✓ Obtained Infisical access token
+✓ Retrieved database credentials from Infisical
+✓ SSH tunnel established on port 15433
+
+ count
+-------
+    26
+(1 行记录)
+
+# 查询 Stage 商品列表
+$ optima-query-db commerce-backend "SELECT id, title FROM products LIMIT 5" stage
 ```
 
 ## 🎯 设计原则
@@ -162,15 +184,16 @@ Claude:
 
 ## 🛠️ 开发状态
 
-**当前版本**: 0.3.0
+**当前版本**: 0.5.0
 
 **已完成**:
 - ✅ 2 个跨环境命令：`/logs`、`/query-db`
 - ✅ 2 个任务场景：`logs` skill、`query-db` skill
 - ✅ 支持 CI、Stage、Prod 三个环境
 - ✅ CI 环境通过 SSH + Docker 访问
-- ✅ Stage/Prod 通过 AWS 服务访问
-- ✅ 数据库查询支持只读模式（Prod）
+- ✅ Stage/Prod 通过 SSH 隧道访问 RDS
+- ✅ TypeScript CLI 工具：`optima-query-db`
+- ✅ 通过 Infisical 动态获取密钥
 
 **设计原则**:
 - 命令提供信息（URL、路径、凭证位置），不实现复杂逻辑
