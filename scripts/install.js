@@ -7,7 +7,7 @@ const os = require('os');
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const SKILLS_SOURCE = path.join(__dirname, '..', '.claude');
 const COMMANDS_DEST = path.join(CLAUDE_DIR, 'commands');
-const SKILLS_DEST = path.join(CLAUDE_DIR, 'skills', 'viewing-logs');
+const SKILLS_DEST = path.join(CLAUDE_DIR, 'skills', 'logs');
 
 // 颜色输出
 const colors = {
@@ -63,10 +63,10 @@ function install() {
   }
 
   // 安装 skills
-  const skillsSource = path.join(SKILLS_SOURCE, 'skills', 'viewing-logs');
+  const skillsSource = path.join(SKILLS_SOURCE, 'skills', 'logs');
   if (fs.existsSync(skillsSource)) {
     copyRecursive(skillsSource, SKILLS_DEST);
-    log(`✓ Installed viewing-logs skill to ${SKILLS_DEST}`, 'green');
+    log(`✓ Installed logs skill to ${SKILLS_DEST}`, 'green');
   } else {
     log(`✗ Skills not found at ${skillsSource}`, 'red');
   }

@@ -22,14 +22,14 @@ optima-dev-skills --version
 optima-dev-skills --help
 
 # 检查文件
-ls ~/.claude/commands/logs/
-ls ~/.claude/skills/scenarios/viewing-logs/
+ls ~/.claude/commands/
+ls ~/.claude/skills/logs/
 ```
 
 ### 已安装的能力
 
 - ✅ `/logs` 命令 - 查看 Stage/Prod 环境日志
-- ✅ `viewing-logs` 场景 - 完整的日志查看指导
+- ✅ `logs` skill - 自动识别日志查看需求
 
 ### 更新
 
@@ -50,7 +50,7 @@ Optima Dev Skills 让 Claude Code 能够直接在 **CI、Stage、Prod** 三个�
 
 当 Claude Code 识别到以下任务时，会自动加载对应的 Skill：
 
-- **viewing-logs** - 查看 CI/Stage/Prod 的服务器日志
+- **logs** - 查看 CI/Stage/Prod 的服务器日志
 
 ## 👤 用户故事
 
@@ -108,7 +108,7 @@ optima-dev-skills/
 │   │   └── logs.md              # /logs - 查看服务日志
 │   │
 │   └── skills/
-│       └── viewing-logs/        # 查看日志场景
+│       └── logs/                # 日志查看 skill
 │           └── SKILL.md
 │
 └── docs/
@@ -184,7 +184,7 @@ Claude:
 
 **已完成**:
 - ✅ 1 个跨环境命令：`/logs`
-- ✅ 1 个任务场景：`viewing-logs`
+- ✅ 1 个任务场景：`logs` skill
 - ✅ 支持 CI、Stage、Prod 三个环境
 
 **设计原则**:
