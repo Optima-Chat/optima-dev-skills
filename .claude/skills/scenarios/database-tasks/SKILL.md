@@ -25,7 +25,6 @@ allowed-tools: ["Bash", "SlashCommand"]
 ```
 
 **自动连接到**：
-- 本地：PostgreSQL (端口 8282)
 - Stage：RDS
 - Prod：RDS（只读权限）
 
@@ -433,12 +432,6 @@ CREATE INDEX idx_products_status_created ON products(status, created_at DESC);
 ```
 
 ## ⚠️ 安全注意事项
-
-### 本地环境
-
-- ✅ 可以随意增删改查
-- ✅ 可以删除所有数据
-- ✅ 可以运行实验性查询
 
 ### Stage 环境
 
