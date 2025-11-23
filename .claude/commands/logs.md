@@ -1,8 +1,8 @@
 # /logs - 查看服务日志
 
-快速查看服务日志，支持 Stage/Prod 两个环境。
+快速查看服务日志，支持 CI/Stage/Prod 三个环境。
 
-**版本**: v0.1.7
+**版本**: v0.1.8
 
 ## 使用场景
 
@@ -25,6 +25,7 @@
   - `agentic-chat` - AI 聊天服务
 - `lines` (可选): 显示行数，默认 50
 - `environment` (可选): 环境，默认 stage
+  - `ci` - CI 持续集成环境
   - `stage` - Stage 预发布环境
   - `prod` - 生产环境
 
@@ -34,6 +35,7 @@
 /logs commerce-backend           # 查看 Stage 环境最近 50 行
 /logs user-auth 100              # 查看 Stage 环境最近 100 行
 /logs mcp-host 200 prod          # 查看 Prod 环境最近 200 行
+/logs commerce-backend 100 ci    # 查看 CI 环境最近 100 行
 ```
 
 ## 特殊参数处理
@@ -41,6 +43,49 @@
 如果用户输入 `/logs` 或 `/logs --help` 或 `/logs help`，显示此帮助文档，不执行查询。
 
 ## Claude Code 执行步骤
+
+### 0. CI 环境
+
+**访问方式**: SSH + Docker Compose
+
+**步骤**:
+```bash
+# IMPORTANT: 使用单行命令，使用 sshpass 进行密码认证
+
+# 获取 CI 服务器配置（从 GitHub Variables）
+CI_USER=$(gh variable get CI_SSH_USER -R Optima-Chat/optima-dev-skills)
+CI_HOST=$(gh variable get CI_SSH_HOST -R Optima-Chat/optima-dev-skills)
+CI_PASSWORD=$(gh variable get CI_SSH_PASSWORD -R Optima-Chat/optima-dev-skills)
+
+# 查看日志（根据服务选择不同的 docker-compose.yml 路径）
+sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/commerce-backend && docker compose logs --tail 50 commerce-backend"
+```
+
+**服务映射**（路径 + 服务名）:
+- `commerce-backend` → `/data/xuhao/commerce-backend` → `commerce-backend`
+- `user-auth` → `/data/xuhao/user-auth` → `user-auth`
+- `mcp-host` → `/data/xuhao/mcp-host` → `app`
+- `agentic-chat` → `/data/xuhao/agentic-chat` → `optima-ai-chat`
+
+**完整命令示例**（先获取配置）:
+```bash
+# 获取配置
+CI_USER=$(gh variable get CI_SSH_USER -R Optima-Chat/optima-dev-skills)
+CI_HOST=$(gh variable get CI_SSH_HOST -R Optima-Chat/optima-dev-skills)
+CI_PASSWORD=$(gh variable get CI_SSH_PASSWORD -R Optima-Chat/optima-dev-skills)
+
+# commerce-backend
+sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/commerce-backend && docker compose logs --tail 50 commerce-backend"
+
+# user-auth
+sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/user-auth && docker compose logs --tail 50 user-auth"
+
+# mcp-host
+sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/mcp-host && docker compose logs --tail 50 app"
+
+# agentic-chat
+sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/agentic-chat && docker compose logs --tail 50 optima-ai-chat"
+```
 
 ### 1. Stage 环境
 

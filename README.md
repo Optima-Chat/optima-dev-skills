@@ -180,12 +180,14 @@ Claude:
 
 ## 🛠️ 开发状态
 
-**当前版本**: 0.1.0 (MVP)
+**当前版本**: 0.1.8
 
 **已完成**:
 - ✅ 1 个跨环境命令：`/logs`
 - ✅ 1 个任务场景：`logs` skill
 - ✅ 支持 CI、Stage、Prod 三个环境
+- ✅ CI 环境通过 SSH + Docker Compose 访问
+- ✅ Stage/Prod 通过 AWS CloudWatch Logs 访问
 
 **设计原则**:
 - 命令提供信息（URL、路径、凭证位置），不实现复杂逻辑
