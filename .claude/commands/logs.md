@@ -2,7 +2,7 @@
 
 快速查看服务日志，支持 CI/Stage/Prod 三个环境。
 
-**版本**: v0.1.8
+**版本**: v0.1.10
 
 ## 使用场景
 
@@ -44,7 +44,12 @@
 
 ## Claude Code 执行步骤
 
-### 0. CI 环境
+**重要提示**：根据用户指定的 `environment` 参数选择执行方式：
+- `ci` → 使用 SSH + Docker Compose（第 0 节）
+- `stage` → 使用 AWS CloudWatch Logs - ECS（第 1 节）
+- `prod` → 使用 AWS CloudWatch Logs - EC2（第 2 节）
+
+### 0. CI 环境（environment = "ci"）
 
 **访问方式**: SSH + Docker Compose
 
@@ -87,7 +92,7 @@ sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} 
 sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/agentic-chat && docker compose logs --tail 50 optima-ai-chat"
 ```
 
-### 1. Stage 环境
+### 1. Stage 环境（environment = "stage" 或默认）
 
 **日志路径格式**: `/ecs/{service}-stage`
 
@@ -108,7 +113,7 @@ aws logs get-log-events --log-group-name /ecs/commerce-backend-stage --log-strea
 - `mcp-host` → `/ecs/mcp-host-stage`
 - `agentic-chat` → `/ecs/agentic-chat-stage`
 
-### 2. Prod 环境
+### 2. Prod 环境（environment = "prod"）
 
 **日志路径格式**: `/optima/prod/{service}`
 
