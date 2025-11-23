@@ -2,18 +2,10 @@
 
 **命令驱动的 Claude Skills - 为 Optima AI 开发团队提供即时可执行的开发操作**
 
-Optima Dev Skills 是为 Optima AI 开发团队设计的 Claude Skills 集合，采用**命令驱动**理念，让 Claude Code 能够直接执行开发任务，而不仅仅是提供文档。
-
 ## 🎯 核心理念
 
-### ❌ 旧模式（文档驱动）
-```
-开发者: "如何获取 Token？"
-Claude: "你可以运行以下命令..."
-开发者: 自己复制粘贴命令
-```
+Optima Dev Skills 让 Claude Code 能够直接执行开发任务：
 
-### ✅ 新模式（命令驱动）
 ```
 开发者: "获取 Token"
 Claude: 自动执行 /get-token，返回 Token
@@ -22,12 +14,10 @@ Claude: 自动执行 /get-token，返回 Token
 
 **核心价值**:
 - **即时执行** - Claude 直接执行操作，开发者零手动操作
-- **场景驱动** - 从实际开发场景出发，提供最高频的操作命令
+- **任务驱动** - 基于具体任务场景（查看日志、调用 API），不是抽象分类
 - **智能识别** - 自动识别环境（本地/Stage/Prod）和上下文
 
 ## 🚀 高频命令（Top 10）
-
-开发者每天最常用的命令：
 
 | 命令 | 使用频率 | 说明 |
 |------|---------|------|
@@ -54,8 +44,8 @@ npm install -g @optima-ai/dev-skills
 
 ```
 optima-dev-skills/
-├── .claude/                   # ⭐ Claude Code 配置目录
-│   ├── commands/              # ⭐ 核心：Slash commands（50+ 可执行命令）
+├── .claude/
+│   ├── commands/              # ⭐ 核心：50+ 可执行命令
 │   │   ├── logs/
 │   │   │   └── backend-logs.md
 │   │   ├── services/
@@ -64,13 +54,12 @@ optima-dev-skills/
 │   │   │   └── service-status.md
 │   │   ├── database/
 │   │   │   └── db-connect.md
-│   │   ├── testing/
-│   │   │   ├── get-token.md
-│   │   │   ├── create-test-user.md
-│   │   │   ├── create-test-product.md
-│   │   │   ├── test-api.md
-│   │   │   └── swagger.md
-│   │   └── ...
+│   │   └── testing/
+│   │       ├── get-token.md
+│   │       ├── create-test-user.md
+│   │       ├── create-test-product.md
+│   │       ├── test-api.md
+│   │       └── swagger.md
 │   │
 │   └── skills/                # 任务场景指导（6 个）
 │       └── scenarios/
@@ -82,20 +71,18 @@ optima-dev-skills/
 │           └── deploying/             # 部署服务
 │
 └── docs/
-    ├── TECHNICAL_DESIGN.md    # 技术设计（V1 - 已弃用）
-    └── COMMANDS_DESIGN.md     # 命令设计（V2 - 当前版本）
+    └── COMMANDS_DESIGN.md     # 命令设计文档
 ```
 
-**设计理念**：
+**设计原则**：
 - **命令是核心** - 直接可执行的操作
-- **任务驱动** - 基于具体任务场景，不是抽象的角色分类
-- **即学即用** - 场景 Skill 提供完整的操作流程
-- **聚焦协作** - dev-skills 是"跨仓库协作"工具
-```
+- **任务驱动** - 基于具体任务，不是抽象角色
+- **即学即用** - 场景提供完整操作流程
+- **聚焦协作** - 跨仓库协作工具
 
 ## 💡 使用示例
 
-### 场景 1：前端开发者调试 API
+### 示例 1：调试 API 错误
 
 ```
 开发者: "API 返回 500 错误，帮我查一下"
@@ -111,7 +98,7 @@ Claude:
    建议：修复数据或调整查询逻辑
 ```
 
-### 场景 2：前端开发者需要测试数据
+### 示例 2：准备测试数据
 
 ```
 开发者: "我需要 10 个测试商品"
@@ -131,7 +118,7 @@ Claude:
 🔗 查看: http://localhost:3001/products
 ```
 
-### 场景 3：后端开发者数据库迁移
+### 示例 3：数据库迁移
 
 ```
 开发者: "我要给 products 表添加 collections 字段"
@@ -153,9 +140,9 @@ Claude:
    [测试新字段]
 ```
 
-## 📋 Phase 1 实现状态
+## 📋 功能清单
 
-**P0 命令（10 个）**:
+### 10 个核心命令
 - ✅ `/backend-logs` - 查看后端日志
 - ✅ `/restart-service` - 重启服务
 - ✅ `/health-check` - 健康检查
@@ -167,7 +154,7 @@ Claude:
 - ✅ `/test-api` - 测试 API
 - ✅ `/swagger` - 打开 Swagger 文档
 
-**任务场景 Skills（6 个）**:
+### 6 个任务场景
 - ✅ `viewing-logs` - 查看服务器日志（本地、Stage、Prod）
 - ✅ `calling-apis` - 调用 API（Token、文档、测试）
 - ✅ `preparing-test-data` - 准备测试数据（用户、商品、订单）
@@ -175,26 +162,17 @@ Claude:
 - ✅ `database-tasks` - 数据库操作（查询、迁移、分析）
 - ✅ `deploying` - 部署服务（Stage/Prod、回滚）
 
-**设计转变**:
-- ❌ 旧设计：抽象的角色分类（frontend-dev、backend-dev）
-- ✅ 新设计：具体的任务场景（查看日志、调用 API）
-- **原因**：开发者不会想"我在做前端开发"，而是想"我要查看日志"
+## 🎯 适用场景
 
-## 🎯 核心价值
+### dev-skills 提供
+- ✅ 跨服务操作命令（查日志、健康检查、获取 Token）
+- ✅ 任务场景工作流指导
+- ✅ 团队共享的快捷操作
 
-### 跨仓库协作工具
-
-dev-skills 专注于**团队协作场景**，而非单仓库开发：
-
-**✅ dev-skills 提供**：
-- 跨服务操作命令（查日志、健康检查、获取 Token）
-- 场景工作流指导（前端开发、后端开发）
-- 团队共享的快捷操作
-
-**❌ dev-skills 不提供**：
-- 单个服务的详细开发文档 → 看各服务的 CLAUDE.md
-- 服务内部架构说明 → 看各服务的 CLAUDE.md
-- API 详细文档 → 用 /swagger 命令查看
+### dev-skills 不提供
+- ❌ 单个服务的详细开发文档 → 看各服务的 CLAUDE.md
+- ❌ 服务内部架构说明 → 看各服务的 CLAUDE.md
+- ❌ API 详细文档 → 用 /swagger 命令查看
 
 ### 覆盖的环境
 - **本地环境** (Docker Compose) - 完整支持
@@ -205,10 +183,10 @@ dev-skills 专注于**团队协作场景**，而非单仓库开发：
 
 | 操作 | 传统方式 | 使用命令 | 节省时间 |
 |------|---------|---------|---------|
-| 查看日志 | 2 分钟（找命令、SSH、执行） | 10 秒 | **92%** |
-| 获取 Token | 1 分钟（找 API、构造请求） | 5 秒 | **92%** |
-| 创建测试数据 | 5 分钟（写脚本、执行） | 30 秒 | **90%** |
-| 健康检查 | 3 分钟（逐个检查服务） | 15 秒 | **92%** |
+| 查看日志 | 2 分钟 | 10 秒 | **92%** |
+| 获取 Token | 1 分钟 | 5 秒 | **92%** |
+| 创建测试数据 | 5 分钟 | 30 秒 | **90%** |
+| 健康检查 | 3 分钟 | 15 秒 | **92%** |
 
 **平均节省时间**: **90%+**
 
@@ -225,44 +203,24 @@ dev-skills 专注于**团队协作场景**，而非单仓库开发：
 
 **当前版本**: 0.1.0 (Phase 1 MVP)
 
-**完成进度**:
-- ✅ 命令设计文档 (docs/COMMANDS_DESIGN.md)
-- ✅ Phase 1 - 10 个 P0 命令
-- ✅ 2 个场景驱动 Skills
-- ⏳ Phase 2 - 10 个 P1 命令（下周）
-- ⏳ Phase 3 - 增强命令（两周后）
+**已完成**:
+- ✅ 10 个 P0 命令
+- ✅ 6 个任务场景 Skills
+- ✅ 命令设计文档
+
+**计划中**:
+- ⏳ Phase 2 - 10 个 P1 命令
 - ⏳ NPM 包发布
 
 ## 📚 文档
 
-- [命令设计方案](docs/COMMANDS_DESIGN.md) - 完整的命令驱动设计（**当前版本**）
-- [技术设计文档](docs/TECHNICAL_DESIGN.md) - 原始技术设计（V1，已弃用）
-- 使用指南 - 待完成
-- 贡献指南 - 待完成
-
-## 🚀 下一步计划
-
-### Phase 2（下周）- P1 命令
-- `/deploy` - 部署服务
-- `/db-migrate` - 运行数据库迁移
-- `/clear-redis` - 清理 Redis 缓存
-- `/ecs-status` - ECS 服务状态
-- `/workspace-sync` - 同步工作空间
-- `/list-mcp-tools` - 列出 MCP 工具
-- `/call-mcp-tool` - 调用 MCP 工具
-- `/ssh` - SSH 连接服务器
-- `/get-env` - 获取环境变量
-- `/deploy-status` - 查看部署状态
-
-### Phase 3（两周后）- 场景 Skills
-- `scenarios/debugging` - 问题排查场景
-- `scenarios/mcp-dev` - MCP 工具开发场景
-- `scenarios/onboarding` - 新人入职场景
+- [命令设计方案](docs/COMMANDS_DESIGN.md) - 完整的命令驱动设计
 
 ## 📝 维护
 
-Skills 和命令内容由 Optima AI 开发团队维护。如发现问题：
+Skills 和命令内容由 Optima AI 开发团队维护。
 
+如发现问题：
 1. 提交 Issue
 2. 或直接提交 PR 修复
 3. Review 通过后，自动发布新版本
