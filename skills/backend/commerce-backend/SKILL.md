@@ -74,28 +74,57 @@ docker compose up
 
 ## 🔑 认证信息
 
-### API Key 格式
+### OAuth 统一认证
 
-Commerce Backend 使用自定义 API Key 认证：
+Commerce Backend 使用 User Auth 服务的 OAuth 统一认证（JWT Token）。
 
+### 获取 Token
+
+**步骤 1：登录获取 JWT Token**
+
+```bash
+# 从 User Auth 服务获取 Token
+curl -X POST https://auth.optima.shop/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@optima.ai",
+    "password": "test123"
+  }'
 ```
-生产环境: ock_live_xxxxx
-测试环境: ock_test_xxxxx
+
+**响应**:
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer"
+}
 ```
 
-### 获取 API Key
-
-**开发环境**:
-查看仓库 `.env.example` 文件中的 `TEST_API_KEY`
-
-**生产环境**:
-从 Infisical 获取：`/prod/commerce-backend/COMMERCE_API_KEY`
-
-### 使用 API Key
+**步骤 2：使用 Token 调用 Commerce Backend API**
 
 ```bash
 curl -X GET https://api.optima.shop/products \
-  -H "Authorization: Bearer ock_live_xxxxx"
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### 开发环境快速获取 Token
+
+```bash
+# 本地开发环境
+curl -X POST http://localhost:8290/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@optima.ai","password":"test123"}'
+```
+
+### Token 刷新
+
+当 Access Token 过期时，使用 Refresh Token 获取新的 Token：
+
+```bash
+curl -X POST https://auth.optima.shop/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."}'
 ```
 
 ## 📖 核心 API 端点
