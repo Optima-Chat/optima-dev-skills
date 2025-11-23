@@ -265,8 +265,8 @@ docker compose exec commerce-backend alembic upgrade head
 
 **症状**（浏览器控制台）：
 ```
-Access to fetch at 'http://localhost:8280/products' from origin
-'http://localhost:3001' has been blocked by CORS policy
+Access to fetch at 'https://api.optima.chat/products' from origin
+'http://localhost:3000' has been blocked by CORS policy
 ```
 
 **排查步骤**：
@@ -323,13 +323,14 @@ Error: Failed to fetch
 2. **检查 API 地址是否正确**：
 ```typescript
 // 前端代码
-const API_URL = 'http://localhost:8280';  // 本地
+const API_URL = 'https://api.optima.chat';  // CI
 // const API_URL = 'https://api.stage.optima.onl';  // Stage
+// const API_URL = 'https://api.optima.shop';  // Prod
 ```
 
 3. **测试 API 可访问性**：
 ```
-curl http://localhost:8280/health
+curl https://api.optima.chat/health
 ```
 
 4. **检查防火墙或代理**

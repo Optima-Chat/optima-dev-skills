@@ -24,7 +24,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 ```
 
 **自动打开 Swagger UI**：
-- CI：http://localhost:8280/docs
+- CI：https://api.optima.chat/docs
 - Stage：https://api.stage.optima.onl/docs
 - Prod：https://api.optima.shop/docs
 
@@ -163,8 +163,8 @@ GET    /users/me              # 当前用户信息
 // 1. 保存 Token 到 localStorage
 localStorage.setItem('optima_token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...');
 
-// 2. 调用 API
-const response = await fetch('http://localhost:8280/products', {
+// 2. 调用 API（CI 环境）
+const response = await fetch('https://api.optima.chat/products', {
   headers: {
     'Authorization': `Bearer ${localStorage.getItem('optima_token')}`,
     'Content-Type': 'application/json'
@@ -180,7 +180,7 @@ const data = await response.json();
 import requests
 
 # 1. 获取 Token
-response = requests.post('http://localhost:8290/auth/login', json={
+response = requests.post('https://auth.optima.chat/auth/login', json={
     'email': 'test@optima.ai',
     'password': 'test123'
 })
@@ -188,7 +188,7 @@ token = response.json()['access_token']
 
 # 2. 调用 API
 headers = {'Authorization': f'Bearer {token}'}
-response = requests.get('http://localhost:8280/products', headers=headers)
+response = requests.get('https://api.optima.chat/products', headers=headers)
 products = response.json()
 ```
 
@@ -196,14 +196,14 @@ products = response.json()
 
 ```bash
 # 1. 获取 Token（使用 /get-token 更简单）
-TOKEN=$(curl -s -X POST http://localhost:8290/auth/login \
+TOKEN=$(curl -s -X POST https://auth.optima.chat/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"test@optima.ai","password":"test123"}' \
   | jq -r '.access_token')
 
 # 2. 调用 API
 curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8280/products
+  https://api.optima.chat/products
 ```
 
 ## ⚠️ 常见错误和解决
@@ -273,9 +273,9 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 | 服务 | 地址 | Swagger |
 |------|------|---------|
-| Commerce Backend | http://localhost:8280 | /docs |
-| User Auth | http://localhost:8290 | /docs |
-| MCP Host | http://localhost:8300 | /docs |
+| Commerce Backend | https://api.optima.chat | /docs |
+| User Auth | https://auth.optima.chat | /docs |
+| MCP Host | https://mcp.optima.chat | /docs |
 
 ### Stage-ECS
 

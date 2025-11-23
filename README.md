@@ -39,11 +39,16 @@ Claude:
 
 ## 🌐 支持的环境
 
-| 环境 | 部署方式 | 用途 | 访问方式 |
-|------|---------|------|---------|
-| **CI** | Docker Compose | 团队共享测试环境 | localhost:8280/8290/8300 |
-| **Stage** | AWS ECS | 预发布环境 | api.stage.optima.onl |
-| **Prod** | EC2 + Docker | 生产环境 | api.optima.shop |
+| 环境 | 部署方式 | 服务器 | 访问地址示例 |
+|------|---------|--------|------------|
+| **CI** | Docker Compose | dev.optima.chat | api.optima.chat<br>auth.optima.chat<br>mcp.optima.chat |
+| **Stage** | AWS ECS | AWS ECS | api.stage.optima.onl<br>auth.stage.optima.onl<br>mcp.stage.optima.onl |
+| **Prod** | EC2 + Docker | AWS EC2 | api.optima.shop<br>auth.optima.shop<br>mcp.optima.shop |
+
+**说明**：
+- **CI** - 团队共享的持续集成测试环境，部署在 dev.optima.chat 服务器
+- **Stage** - 预发布环境，用于上线前的最终验证
+- **Prod** - 生产环境，服务真实用户
 
 ## 🚀 核心命令（10 个）
 

@@ -25,7 +25,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 ```
 
 **自动连接到**：
-- CI：PostgreSQL (端口 5432)
+- CI：PostgreSQL on dev.optima.chat
 - Stage：RDS
 - Prod：RDS（只读权限）
 
