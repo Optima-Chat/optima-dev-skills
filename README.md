@@ -66,18 +66,31 @@ Claude:
 - **Stage** - 预发布环境，用于上线前的最终验证
 - **Prod** - 生产环境，服务真实用户
 
-## 🚀 可用命令
+## 🚀 Claude Code 命令
 
 | 命令 | 说明 | 示例 | 跨环境 |
 |------|------|------|--------|
 | `/logs` | 查看服务日志 | `/logs commerce-backend 100` | ✅ |
 | `/query-db` | 查询数据库 | `/query-db user-auth "SELECT COUNT(*) FROM users"` | ✅ |
-| `optima-query-db` | 数据库查询工具（CLI） | `optima-query-db user-auth "SELECT COUNT(*) FROM users" prod` | ✅ |
 
 **说明**：
 - 命令支持 CI、Stage、Prod 三个环境
 - 默认使用 CI 环境，适合日常开发
 - Claude Code 会根据上下文自动选择环境和执行方式
+
+## 🛠️ CLI 工具
+
+安装此包后，会全局安装以下 CLI 工具：
+
+| 工具 | 说明 | 示例 |
+|------|------|------|
+| `optima-query-db` | 数据库查询工具 | `optima-query-db user-auth "SELECT COUNT(*) FROM users" prod` |
+
+**特点**：
+- ✅ 支持 CI、Stage、Prod 三个环境
+- ✅ 自动管理 SSH 隧道和密钥
+- ✅ 可在任何终端直接使用
+- ✅ Claude Code 的 `/query-db` 命令内部也使用此工具
 
 ## 🏗️ 项目结构
 
