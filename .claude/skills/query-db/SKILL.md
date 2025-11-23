@@ -8,29 +8,33 @@ allowed-tools: ["Bash", "SlashCommand"]
 
 当你需要执行 SQL 查询检查数据时，使用这个场景。
 
-## 🎯 推荐方式：使用 CLI 工具
+## 🎯 执行方式：统一使用 CLI 工具
 
-**最简单的方式**是直接使用 `optima-query-db` CLI 工具：
+**重要**：无论用户使用 `/query-db` 命令还是直接请求查询数据库，都应该使用 `optima-query-db` CLI 工具：
 
 ```bash
 optima-query-db <service> "<sql>" [environment]
 ```
 
-这个工具会自动处理：
-- ✅ 获取 Infisical 配置
-- ✅ 获取数据库密钥
-- ✅ 建立 SSH 隧道（Stage/Prod）
-- ✅ 执行查询
+**为什么使用 CLI 工具**：
+- ✅ 统一实现，避免重复代码
+- ✅ 自动处理所有环境差异
+- ✅ 自动获取 Infisical 配置和密钥
+- ✅ 自动管理 SSH 隧道（Stage/Prod）
+- ✅ 更简洁，一条命令搞定
 
 **示例**：
 ```bash
-# CI 环境（默认）
+# 用户说："查一下 CI 环境的 user-auth 数据库有多少用户"
+# 执行:
 optima-query-db user-auth "SELECT COUNT(*) FROM users"
 
-# Stage 环境
+# 用户说："查询 Stage 环境的商品数量"
+# 执行:
 optima-query-db commerce-backend "SELECT COUNT(*) FROM products" stage
 
-# Prod 环境
+# 用户输入: /query-db user-auth "SELECT COUNT(*) FROM users" prod
+# 执行:
 optima-query-db user-auth "SELECT COUNT(*) FROM users" prod
 ```
 

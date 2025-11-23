@@ -68,9 +68,37 @@ optima-query-db commerce-backend "SELECT * FROM products LIMIT 5" prod
 
 ## Claude Code 执行步骤
 
-**首选方法**：使用 `optima-query-db` CLI 工具（见上方）
+**统一实现**：直接调用 `optima-query-db` CLI 工具
 
-**备用方法**：如果 CLI 工具不可用，根据用户指定的 `environment` 参数选择执行方式：
+```bash
+optima-query-db <service> "<sql>" [environment]
+```
+
+**示例**：
+```bash
+# 用户输入: /query-db user-auth "SELECT COUNT(*) FROM users"
+# 执行:
+optima-query-db user-auth "SELECT COUNT(*) FROM users"
+
+# 用户输入: /query-db commerce-backend "SELECT * FROM products LIMIT 5" stage
+# 执行:
+optima-query-db commerce-backend "SELECT * FROM products LIMIT 5" stage
+
+# 用户输入: /query-db user-auth "SELECT COUNT(*) FROM users" prod
+# 执行:
+optima-query-db user-auth "SELECT COUNT(*) FROM users" prod
+```
+
+**说明**：
+- CLI 工具会自动处理所有环境差异（CI/Stage/Prod）
+- 自动获取 Infisical 密钥
+- 自动管理 SSH 隧道
+
+---
+
+## 备用方法（仅当 CLI 工具不可用时）
+
+如果 `optima-query-db` 命令不存在，根据用户指定的 `environment` 参数选择执行方式：
 - `ci` 或未指定 → 通过 SSH 连接 Docker Postgres（第 0 节，默认）
 - `stage` → 通过 SSH 隧道访问 RDS（第 1 节）
 - `prod` → 通过 SSH 隧道访问 RDS（第 2 节）
