@@ -21,54 +21,55 @@ Skills = 可执行命令 + 场景驱动 + 快速操作
 
 ```
 optima-dev-skills/
-├── .claude/commands/          # ⭐ 核心：50+ 可执行命令
-│   ├── logs/                  # 日志查看命令组
-│   │   ├── backend-logs.md
-│   │   ├── ecs-logs.md
-│   │   └── all-logs.md
-│   ├── services/              # 服务管理命令组
-│   │   ├── restart-service.md
-│   │   ├── health-check.md
-│   │   └── service-status.md
-│   ├── database/              # 数据库命令组
-│   │   ├── db-connect.md
-│   │   ├── db-migrate.md
-│   │   └── db-query.md
-│   ├── testing/               # 测试数据命令组
-│   │   ├── get-token.md
-│   │   ├── create-test-user.md
-│   │   ├── create-test-product.md
-│   │   └── test-api.md
-│   ├── deployment/            # 部署命令组
-│   │   ├── deploy.md
-│   │   ├── deploy-status.md
-│   │   └── rollback.md
-│   ├── mcp/                   # MCP 工具命令组
-│   │   ├── list-mcp-tools.md
-│   │   ├── call-mcp-tool.md
-│   │   └── register-mcp.md
-│   └── workspace/             # 工作空间命令组
-│       ├── workspace-sync.md
-│       └── workspace-status.md
-│
-├── skills/                    # Skills（精简版）
-│   ├── core/
-│   │   └── SKILL.md          # 快速索引 + 常用命令速查
-│   ├── scenarios/             # ⭐ 场景驱动 Skills
-│   │   ├── frontend-dev/
-│   │   │   └── SKILL.md      # 前端开发场景（引用命令）
-│   │   ├── backend-dev/
-│   │   │   └── SKILL.md      # 后端开发场景
-│   │   ├── mcp-dev/
-│   │   │   └── SKILL.md      # MCP 工具开发场景
-│   │   ├── debugging/
-│   │   │   └── SKILL.md      # 问题排查场景
-│   │   └── onboarding/
-│   │       └── SKILL.md      # 新人入职场景
-│   └── references/            # 参考信息（保留部分原 Skills）
-│       ├── services-map.md   # 服务地址、端口映射
-│       ├── database-info.md  # 数据库连接信息
-│       └── architecture.md   # 系统架构概述
+├── .claude/                   # ⭐ Claude Code 配置目录
+│   ├── commands/              # Slash commands（50+ 可执行命令）
+│   │   ├── logs/              # 日志查看命令组
+│   │   │   ├── backend-logs.md
+│   │   │   ├── ecs-logs.md
+│   │   │   └── all-logs.md
+│   │   ├── services/          # 服务管理命令组
+│   │   │   ├── restart-service.md
+│   │   │   ├── health-check.md
+│   │   │   └── service-status.md
+│   │   ├── database/          # 数据库命令组
+│   │   │   ├── db-connect.md
+│   │   │   ├── db-migrate.md
+│   │   │   └── db-query.md
+│   │   ├── testing/           # 测试数据命令组
+│   │   │   ├── get-token.md
+│   │   │   ├── create-test-user.md
+│   │   │   ├── create-test-product.md
+│   │   │   └── test-api.md
+│   │   ├── deployment/        # 部署命令组
+│   │   │   ├── deploy.md
+│   │   │   ├── deploy-status.md
+│   │   │   └── rollback.md
+│   │   ├── mcp/               # MCP 工具命令组
+│   │   │   ├── list-mcp-tools.md
+│   │   │   ├── call-mcp-tool.md
+│   │   │   └── register-mcp.md
+│   │   └── workspace/         # 工作空间命令组
+│   │       ├── workspace-sync.md
+│   │       └── workspace-status.md
+│   │
+│   └── skills/                # Claude Skills（精简版）
+│       ├── core/
+│       │   └── SKILL.md       # 快速索引 + 常用命令速查
+│       ├── scenarios/         # ⭐ 场景驱动 Skills
+│       │   ├── frontend-dev/
+│       │   │   └── SKILL.md   # 前端开发场景（引用命令）
+│       │   ├── backend-dev/
+│       │   │   └── SKILL.md   # 后端开发场景
+│       │   ├── mcp-dev/
+│       │   │   └── SKILL.md   # MCP 工具开发场景
+│       │   ├── debugging/
+│       │   │   └── SKILL.md   # 问题排查场景
+│       │   └── onboarding/
+│       │       └── SKILL.md   # 新人入职场景
+│       └── references/        # 参考信息（保留部分原 Skills）
+│           ├── services-map.md   # 服务地址、端口映射
+│           ├── database-info.md  # 数据库连接信息
+│           └── architecture.md   # 系统架构概述
 │
 ├── scripts/                   # 自动化脚本（命令调用）
 │   ├── logs.sh

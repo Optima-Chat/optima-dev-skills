@@ -54,36 +54,37 @@ npm install -g @optima-ai/dev-skills
 
 ```
 optima-dev-skills/
-├── .claude/commands/          # ⭐ 核心：50+ 可执行命令
-│   ├── logs/                  # 日志查看命令
-│   │   └── backend-logs.md
-│   ├── services/              # 服务管理命令
-│   │   ├── restart-service.md
-│   │   ├── health-check.md
-│   │   └── service-status.md
-│   ├── database/              # 数据库命令
-│   │   └── db-connect.md
-│   ├── testing/               # 测试数据命令
-│   │   ├── get-token.md
-│   │   ├── create-test-user.md
-│   │   ├── create-test-product.md
-│   │   ├── test-api.md
-│   │   └── swagger.md
-│   └── ...                    # 更多命令组
-│
-├── skills/                    # Skills（场景驱动）
-│   ├── scenarios/             # ⭐ 场景驱动 Skills
-│   │   ├── frontend-dev/      # 前端开发场景
-│   │   └── backend-dev/       # 后端开发场景
-│   ├── backend/               # 后端服务参考
-│   │   ├── commerce-backend/
-│   │   ├── user-auth/
-│   │   └── mcp-host/
-│   └── mcp-tools/             # MCP 工具参考
-│       ├── commerce-mcp/
-│       ├── scout-mcp/
-│       ├── comfy-mcp/
-│       └── google-ads-mcp/
+├── .claude/                   # ⭐ Claude Code 配置目录
+│   ├── commands/              # Slash commands（50+ 可执行命令）
+│   │   ├── logs/
+│   │   │   └── backend-logs.md
+│   │   ├── services/
+│   │   │   ├── restart-service.md
+│   │   │   ├── health-check.md
+│   │   │   └── service-status.md
+│   │   ├── database/
+│   │   │   └── db-connect.md
+│   │   ├── testing/
+│   │   │   ├── get-token.md
+│   │   │   ├── create-test-user.md
+│   │   │   ├── create-test-product.md
+│   │   │   ├── test-api.md
+│   │   │   └── swagger.md
+│   │   └── ...
+│   │
+│   └── skills/                # Claude Skills（场景驱动）
+│       ├── scenarios/         # ⭐ 场景驱动 Skills
+│       │   ├── frontend-dev/
+│       │   └── backend-dev/
+│       ├── backend/           # 后端服务参考
+│       │   ├── commerce-backend/
+│       │   ├── user-auth/
+│       │   └── mcp-host/
+│       └── mcp-tools/         # MCP 工具参考
+│           ├── commerce-mcp/
+│           ├── scout-mcp/
+│           ├── comfy-mcp/
+│           └── google-ads-mcp/
 │
 └── docs/
     ├── TECHNICAL_DESIGN.md    # 技术设计（V1 - 已弃用）
