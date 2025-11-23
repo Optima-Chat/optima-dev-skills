@@ -51,7 +51,7 @@ Traceback:
 4. **解决方案**：
 ```
 # 检查数据库
-/db-connect commerce
+/query-db commerce
 SELECT * FROM products WHERE id = 'xxx';
 
 # 如果是代码问题，修复后重启
@@ -231,7 +231,7 @@ docker compose ps postgres
 
 3. **尝试手动连接**：
 ```
-/db-connect commerce
+/query-db commerce
 ```
 
 4. **查看后端日志中的数据库错误**：
@@ -372,7 +372,7 @@ npm run dev
 
 ### 3. 检查数据库
 ```
-/db-connect commerce
+/query-db commerce
 ```
 
 ### 4. 重启服务（如果需要）
@@ -461,7 +461,7 @@ docker compose logs commerce-backend --since 5m | grep ERROR
 1. **不要慌，不要随意操作**
 2. **连接数据库检查**：
 ```
-/db-connect commerce prod
+/query-db commerce prod
 ```
 3. **如果有备份，从备份恢复**
 4. **如果没有备份，联系 DBA 或 DevOps**
@@ -472,7 +472,7 @@ docker compose logs commerce-backend --since 5m | grep ERROR
 - `/health-check` - 健康检查
 - `/service-status` - 服务状态
 - `/restart-service` - 重启服务
-- `/db-connect` - 连接数据库
+- `/query-db` - 连接数据库
 - `/get-token` - 获取 Token
 - `/test-api` - 测试 API
 

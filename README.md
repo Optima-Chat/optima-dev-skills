@@ -56,7 +56,7 @@ Claude:
 |------|------|------|--------|
 | `/backend-logs` | 查看后端日志 | `/backend-logs commerce-backend 100 stage` | ✅ |
 | `/get-token` | 获取 JWT Token | `/get-token merchant@optima.ai` | ✅ |
-| `/db-connect` | 连接数据库 | `/db-connect commerce stage` | ✅ |
+| `/query-db` | 查询数据库 | `/query-db commerce stage` | ✅ |
 | `/api` | 查看 API 定义 | `/api commerce-backend` | ✅ |
 | `/health-check` | 健康检查 | `/health-check stage` | ✅ |
 | `/create-test-product` | 创建测试商品 | `/create-test-product 10` | ✅ |
@@ -87,7 +87,7 @@ optima-dev-skills/
 │   │   ├── logs/
 │   │   │   └── backend-logs.md
 │   │   ├── database/
-│   │   │   └── db-connect.md
+│   │   │   └── query-db.md         # 查询数据库
 │   │   ├── api/
 │   │   │   └── api.md              # 查看 API 定义
 │   │   └── testing/
@@ -122,8 +122,8 @@ Claude:
 
 2. 发现错误：商品的 merchant_id 在数据库中不存在
 
-3. /db-connect commerce stage
-   → 连接 Stage RDS 查看数据
+3. /query-db commerce stage
+   → 查询 Stage RDS 数据
 
 4. 问题定位：某个商品数据损坏
    建议：修复数据或调整查询逻辑

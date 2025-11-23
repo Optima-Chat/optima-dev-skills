@@ -1,6 +1,6 @@
-# /db-connect - 连接数据库
+# /query-db - 查询数据库
 
-快速连接到 PostgreSQL 数据库，支持本地、Stage、Prod 环境。
+查询 PostgreSQL 数据库中的数据，支持 CI、Stage、Prod 环境。
 
 ## 使用场景
 
@@ -10,7 +10,7 @@
 
 ## 用法
 
-/db-connect [database] [environment]
+/query-db [database] [environment]
 
 ## 参数
 

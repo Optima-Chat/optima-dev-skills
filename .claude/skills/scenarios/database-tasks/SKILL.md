@@ -21,7 +21,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 ### 连接数据库
 
 ```
-/db-connect commerce
+/query-db commerce
 ```
 
 **自动连接到**：
@@ -469,7 +469,7 @@ DELETE FROM products ...;  -- ERROR: permission denied
 
 ## 🔗 相关命令
 
-- `/db-connect` - 连接数据库
+- `/query-db` - 连接数据库
 - `/backend-logs` - 查看数据库相关日志
 - `/test-api` - 测试 API 并验证数据
 - `/create-test-product` - 创建测试数据

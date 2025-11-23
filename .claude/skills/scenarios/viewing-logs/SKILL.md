@@ -183,7 +183,7 @@ ssh -i ~/.ssh/optima-ec2-key ec2-user@ec2-prod.optima.shop \
 - `/health-check` - 检查服务是否运行
 - `/service-status` - 查看所有服务状态
 - `/restart-service` - 重启异常服务
-- `/db-connect` - 连接数据库查看数据
+- `/query-db` - 连接数据库查看数据
 
 ## 📚 相关文档
 

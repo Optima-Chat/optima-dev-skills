@@ -224,7 +224,7 @@ done
 
 ```
 # 连接数据库查看
-/db-connect commerce
+/query-db commerce
 
 # 查看用户
 SELECT id, email, role FROM users WHERE email LIKE '%test%';
@@ -240,7 +240,7 @@ SELECT id, user_id, total_amount, status FROM orders;
 
 ```
 # 连接数据库
-/db-connect commerce
+/query-db commerce
 
 # 删除测试用户
 DELETE FROM users WHERE email LIKE '%test%';
@@ -343,7 +343,7 @@ docker compose exec commerce-backend alembic upgrade head
 - `/create-test-product` - 创建测试商品
 - `/get-token` - 获取用户 Token
 - `/test-api` - 测试 API
-- `/db-connect` - 查看数据库数据
+- `/query-db` - 查看数据库数据
 
 ## 💡 最佳实践
 

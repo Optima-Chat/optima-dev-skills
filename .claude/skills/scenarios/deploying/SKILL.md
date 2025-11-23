@@ -180,7 +180,7 @@ aws ecs list-tasks \
 
 ```
 # 连接数据库检查
-/db-connect commerce stage
+/query-db commerce stage
 
 # 查看迁移版本
 \c optima_stage_commerce
@@ -250,7 +250,7 @@ git push origin v1.1.0-rollback
 
 ```bash
 # 1. 连接数据库
-/db-connect commerce stage
+/query-db commerce stage
 
 # 2. 查看当前版本
 SELECT * FROM alembic_version;
@@ -390,7 +390,7 @@ Error: Required environment variable not set
 - `/backend-logs` - 查看部署日志
 - `/service-status` - 查看服务状态
 - `/test-api` - 测试 API 功能
-- `/db-connect` - 验证数据库迁移
+- `/query-db` - 验证数据库迁移
 
 ## 📚 相关文档
 
