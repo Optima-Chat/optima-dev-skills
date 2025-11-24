@@ -23,12 +23,13 @@ Optima Dev Skills 让 Claude Code 能够直接在 **CI、Stage、Prod** 三个�
 - **任务驱动** - 基于具体任务场景（查看日志、调用 API），不是抽象分类
 - **跨环境协作** - 统一的命令在 CI、Stage、Prod 三个环境中使用
 
-## 📋 任务场景（2 个）
+## 📋 任务场景（3 个）
 
 当 Claude Code 识别到以下任务时，会自动加载对应的 Skill：
 
 - **logs** - 查看 CI/Stage/Prod 的服务器日志
 - **query-db** - 查询 CI/Stage/Prod 的数据库
+- **generate-test-token** - 生成测试 Access Token 用于 API 测试
 
 ## 👤 用户故事
 
@@ -72,10 +73,12 @@ Claude:
 |------|------|------|--------|
 | `/logs` | 查看服务日志 | `/logs commerce-backend 100` | ✅ |
 | `/query-db` | 查询数据库 | `/query-db user-auth "SELECT COUNT(*) FROM users"` | ✅ |
+| `/generate-test-token` | 生成测试 token | `/generate-test-token` | 🔧 Development |
 
 **说明**：
 - 命令支持 CI、Stage、Prod 三个环境
 - 默认使用 CI 环境，适合日常开发
+- `/generate-test-token` 生成的账户用于 development 环境（api.optima.chat）
 - Claude Code 会根据上下文自动选择环境和执行方式
 
 ## 🛠️ CLI 工具
@@ -85,12 +88,14 @@ Claude:
 | 工具 | 说明 | 示例 |
 |------|------|------|
 | `optima-query-db` | 数据库查询工具 | `optima-query-db user-auth "SELECT COUNT(*) FROM users" prod` |
+| `optima-generate-test-token` | 生成测试 token | `optima-generate-test-token --business-name "测试店铺"` |
 
 **特点**：
-- ✅ 支持 CI、Stage、Prod 三个环境
+- ✅ 支持 CI、Stage、Prod 三个环境（query-db）
 - ✅ 自动管理 SSH 隧道和密钥
 - ✅ 可在任何终端直接使用
-- ✅ Claude Code 的 `/query-db` 命令内部也使用此工具
+- ✅ 自动注册账户、获取 token、设置 merchant profile（generate-test-token）
+- ✅ Claude Code 的命令内部也使用这些工具
 
 ## 🏗️ 项目结构
 
