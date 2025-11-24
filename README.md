@@ -142,15 +142,17 @@ Claude:
 ### 示例 2：生成测试 token 并管理店铺
 
 ```bash
-# 1. 生成测试 token
-$ optima-generate-test-token
+# 1. 生成 production 环境测试 token
+$ optima-generate-test-token --env production
 
+Environment: production
+Auth API: https://auth.optima.shop
 ✅ Test token generated successfully!
 📁 Token File Path: /tmp/optima-test-token-xxx.txt
 
 # 2. 使用 token 创建商品
 $ OPTIMA_TOKEN=$(cat /tmp/optima-test-token-xxx.txt) \
-  OPTIMA_ENV=development \
+  OPTIMA_ENV=production \
   commerce product create --title "测试商品" --price 99.99 --stock 100
 
 {
@@ -222,7 +224,7 @@ $ optima-query-db commerce-backend "SELECT id, title FROM products LIMIT 5" stag
 
 ## 🛠️ 开发状态
 
-**当前版本**: 0.5.4
+**当前版本**: 0.6.0
 
 **已完成**:
 - ✅ 3 个跨环境命令：`/logs`、`/query-db`、`/generate-test-token`
@@ -233,6 +235,7 @@ $ optima-query-db commerce-backend "SELECT id, title FROM products LIMIT 5" stag
 - ✅ TypeScript CLI 工具：`optima-query-db`、`optima-generate-test-token`
 - ✅ 通过 Infisical 动态获取密钥
 - ✅ 自动生成测试 token 并设置 merchant profile
+- ✅ `generate-test-token` 支持 development 和 production 环境
 
 **设计原则**:
 - 命令提供信息（URL、路径、凭证位置），不实现复杂逻辑
