@@ -53,6 +53,12 @@ commerce init
 
 ## 环境说明
 
-`optima-generate-test-token` 生成的 token 连接到：
+`optima-generate-test-token` 支持两个环境：
+
+**Development**（默认）：
 - API: `api.optima.chat`
 - 环境变量：`OPTIMA_ENV=development`
+
+**Production**（使用 `--env production`）：
+- API: `api.optima.shop`
+- 环境变量：`OPTIMA_ENV=production`

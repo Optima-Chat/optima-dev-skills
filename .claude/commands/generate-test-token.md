@@ -15,18 +15,22 @@
 使用 `optima-generate-test-token` CLI 工具，它会自动完成所有设置：
 
 ```bash
-# 使用默认配置（随机生成账户信息）
+# Development 环境（默认）
 optima-generate-test-token
 
+# Production 环境
+optima-generate-test-token --env production
+
 # 自定义商户名称
-optima-generate-test-token --business-name "我的测试店铺"
+optima-generate-test-token --business-name "我的测试店铺" --env production
 
 # 完全自定义
 optima-generate-test-token \
   --email "custom@example.com" \
   --password "MyPass123" \
   --business-name "Custom Shop" \
-  --phone "+1234567890"
+  --phone "+1234567890" \
+  --env production
 ```
 
 ## 工作流程
@@ -85,6 +89,7 @@ curl -H "Authorization: Bearer $(cat /tmp/optima-test-token-xxx.txt)" \
 - `--business-name <name>` - 商户名称（默认：自动生成）
 - `--phone <phone>` - 联系电话（可选）
 - `--address <address>` - 地址（可选）
+- `--env <environment>` - 环境：development（默认）或 production
 - `--help, -h` - 显示帮助信息
 
 ## 示例
@@ -136,10 +141,10 @@ commerce product create \
 
 ## ⚠️ 注意事项
 
-1. **仅用于开发环境** - 这些测试账户连接到 development 环境（api.optima.chat）
+1. **支持两个环境** - Development（默认）和 Production，通过 `--env` 参数指定
 2. **Token 有效期** - Token 默认有效期 15 分钟，请及时使用
 3. **临时文件** - Token 保存在系统临时目录，重启后可能被清理
-4. **环境变量** - 使用 commerce CLI 时需要设置 `OPTIMA_ENV=development`
+4. **环境变量** - 使用 commerce CLI 时需要设置对应的 `OPTIMA_ENV`（development 或 production）
 
 ## 🔗 相关资源
 
@@ -154,7 +159,12 @@ commerce product create \
 2. `POST /api/v1/oauth/token` - 获取 access token（password grant）
 3. `POST /api/merchants/me` - 设置 merchant profile
 
-**使用的 Client ID**: `dev-skill-cli-he7fjmsp`
+**环境配置**：
+
+| 环境 | Auth API | Commerce API | Client ID |
+|------|----------|--------------|-----------|
+| Development（默认） | auth.optima.chat | api.optima.chat | dev-skill-cli-he7fjmsp |
+| Production | auth.optima.shop | api.optima.shop | dev-skill-cli-0cyyqxox |
 
 **默认 Merchant 信息**：
 - 发货地址：中国深圳南山区科技园

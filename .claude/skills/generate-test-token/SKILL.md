@@ -36,17 +36,21 @@ optima-generate-test-token [options]
 ### 基本使用
 
 ```bash
-# 使用默认配置（最简单）
+# Development 环境（默认）
 optima-generate-test-token
 
+# Production 环境
+optima-generate-test-token --env production
+
 # 自定义商户名称
-optima-generate-test-token --business-name "我的测试店铺"
+optima-generate-test-token --business-name "我的测试店铺" --env production
 
 # 完全自定义
 optima-generate-test-token \
   --email "test@example.com" \
   --password "MyPassword123" \
-  --business-name "测试商店"
+  --business-name "测试商店" \
+  --env production
 ```
 
 ### 使用生成的 Token

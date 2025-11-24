@@ -24,9 +24,29 @@ interface MerchantSetupResponse {
   user_id: string;
 }
 
-const AUTH_BASE_URL = 'https://auth.optima.chat';
-const COMMERCE_API_URL = 'https://api.optima.chat';
-const DEFAULT_CLIENT_ID = 'dev-skill-cli-he7fjmsp';
+type Environment = 'development' | 'production';
+
+interface EnvironmentConfig {
+  authUrl: string;
+  apiUrl: string;
+  clientId: string;
+  envName: string;
+}
+
+const ENV_CONFIG: Record<Environment, EnvironmentConfig> = {
+  development: {
+    authUrl: 'https://auth.optima.chat',
+    apiUrl: 'https://api.optima.chat',
+    clientId: 'dev-skill-cli-he7fjmsp',
+    envName: 'development'
+  },
+  production: {
+    authUrl: 'https://auth.optima.shop',
+    apiUrl: 'https://api.optima.shop',
+    clientId: 'dev-skill-cli-0cyyqxox',
+    envName: 'production'
+  }
+};
 
 async function httpRequest<T>(url: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(url, {
@@ -49,6 +69,7 @@ async function registerMerchant(
   email: string,
   password: string,
   businessName: string,
+  config: EnvironmentConfig,
   phone?: string,
   address?: string
 ): Promise<RegisterResponse> {
@@ -59,7 +80,7 @@ async function registerMerchant(
   if (address) payload.address = address;
 
   try {
-    const result = await httpRequest<RegisterResponse>(`${AUTH_BASE_URL}/api/v1/auth/register/merchant`, {
+    const result = await httpRequest<RegisterResponse>(`${config.authUrl}/api/v1/auth/register/merchant`, {
       method: 'POST',
       body: JSON.stringify(payload)
     });
@@ -75,16 +96,16 @@ async function registerMerchant(
   }
 }
 
-async function getToken(email: string, password: string, clientId: string = DEFAULT_CLIENT_ID): Promise<string> {
+async function getToken(email: string, password: string, config: EnvironmentConfig): Promise<string> {
   console.log(`\n🔑 Obtaining access token...`);
 
   const formData = new URLSearchParams();
   formData.append('username', email);
   formData.append('password', password);
   formData.append('grant_type', 'password');
-  formData.append('client_id', clientId);
+  formData.append('client_id', config.clientId);
 
-  const result = await httpRequest<TokenResponse>(`${AUTH_BASE_URL}/api/v1/oauth/token`, {
+  const result = await httpRequest<TokenResponse>(`${config.authUrl}/api/v1/oauth/token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded'
@@ -96,7 +117,7 @@ async function getToken(email: string, password: string, clientId: string = DEFA
   return result.access_token;
 }
 
-async function setupMerchantProfile(token: string, businessName: string): Promise<MerchantSetupResponse> {
+async function setupMerchantProfile(token: string, businessName: string, config: EnvironmentConfig): Promise<MerchantSetupResponse> {
   console.log(`\n🏪 Setting up merchant profile in Commerce API...`);
 
   const payload = {
@@ -111,7 +132,7 @@ async function setupMerchantProfile(token: string, businessName: string): Promis
   };
 
   try {
-    const result = await httpRequest<MerchantSetupResponse>(`${COMMERCE_API_URL}/api/merchants/me`, {
+    const result = await httpRequest<MerchantSetupResponse>(`${config.apiUrl}/api/merchants/me`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`
@@ -145,6 +166,7 @@ async function main() {
   let businessName = defaultBusinessName;
   let phone: string | undefined;
   let address: string | undefined;
+  let environment: Environment = 'development';
 
   // 解析命令行参数
   for (let i = 0; i < args.length; i++) {
@@ -160,6 +182,14 @@ async function main() {
       phone = args[++i];
     } else if (arg === '--address' && args[i + 1]) {
       address = args[++i];
+    } else if (arg === '--env' && args[i + 1]) {
+      const envArg = args[++i];
+      if (envArg === 'development' || envArg === 'production') {
+        environment = envArg;
+      } else {
+        console.error(`❌ Invalid environment: ${envArg}. Must be 'development' or 'production'.`);
+        process.exit(1);
+      }
     } else if (arg === '--help' || arg === '-h') {
       console.log(`
 Usage: generate-test-token [options]
@@ -170,32 +200,39 @@ Options:
   --business-name <name>       Merchant business name (default: auto-generated)
   --phone <phone>              Merchant phone number (optional)
   --address <address>          Merchant address (optional)
+  --env <environment>          Environment: development (default) or production
   --help, -h                   Show this help message
 
 Example:
   generate-test-token
+  generate-test-token --env production
   generate-test-token --business-name "My Test Shop" --phone "+1234567890"
-  generate-test-token --email "custom@example.com" --password "MyPass123"
+  generate-test-token --email "custom@example.com" --password "MyPass123" --env production
       `);
       process.exit(0);
     }
   }
 
+  const config = ENV_CONFIG[environment];
+
   try {
     console.log('🚀 Starting test token generation...\n');
+    console.log(`Environment: ${config.envName}`);
+    console.log(`Auth API: ${config.authUrl}`);
+    console.log(`Commerce API: ${config.apiUrl}\n`);
     console.log(`Using credentials:`);
     console.log(`  Email: ${email}`);
     console.log(`  Password: ${password}`);
     console.log(`  Business Name: ${businessName}`);
 
     // 1. 注册 merchant（直接注册为商家）
-    const user = await registerMerchant(email, password, businessName, phone, address);
+    const user = await registerMerchant(email, password, businessName, config, phone, address);
 
     // 2. 获取 token
-    const token = await getToken(email, password);
+    const token = await getToken(email, password, config);
 
     // 3. 设置 merchant profile（Commerce API）
-    const merchantProfile = await setupMerchantProfile(token, businessName);
+    const merchantProfile = await setupMerchantProfile(token, businessName, config);
 
     // 4. 保存 token 到临时文件
     const tmpDir = os.tmpdir();
@@ -209,6 +246,7 @@ Example:
     console.log('\n' + '='.repeat(80));
     console.log('✅ Test token generated successfully!\n');
     console.log('📋 Details:');
+    console.log(`  Environment:   ${config.envName}`);
     console.log(`  Email:         ${email}`);
     console.log(`  Password:      ${password}`);
     console.log(`  User ID:       ${user.user_id || 'N/A'}`);
@@ -221,9 +259,9 @@ Example:
     console.log(`  # Read token from file:`);
     console.log(`  TOKEN=$(cat ${tokenFilePath})\n`);
     console.log(`  # Use with commerce CLI:`);
-    console.log(`  OPTIMA_TOKEN=$(cat ${tokenFilePath}) OPTIMA_ENV=development commerce product list\n`);
+    console.log(`  OPTIMA_TOKEN=$(cat ${tokenFilePath}) OPTIMA_ENV=${config.envName} commerce product list\n`);
     console.log(`  # Use in curl:`);
-    console.log(`  curl -H "Authorization: Bearer $(cat ${tokenFilePath})" https://api.optima.chat/api/products\n`);
+    console.log(`  curl -H "Authorization: Bearer $(cat ${tokenFilePath})" ${config.apiUrl}/api/products\n`);
     console.log('='.repeat(80));
 
   } catch (error: any) {
