@@ -23,13 +23,14 @@ Optima Dev Skills 让 Claude Code 能够直接在 **CI、Stage、Prod** 三个�
 - **任务驱动** - 基于具体任务场景（查看日志、调用 API），不是抽象分类
 - **跨环境协作** - 统一的命令在 CI、Stage、Prod 三个环境中使用
 
-## 📋 任务场景（3 个）
+## 📋 任务场景（4 个）
 
 当 Claude Code 识别到以下任务时，会自动加载对应的 Skill：
 
 - **logs** - 查看 CI/Stage/Prod 的服务器日志
 - **query-db** - 查询 CI/Stage/Prod 的数据库
 - **generate-test-token** - 生成测试 Access Token 用于 API 测试
+- **use-commerce-cli** - 使用 Commerce CLI 管理电商店铺
 
 ## 👤 用户故事
 
@@ -103,14 +104,20 @@ Claude:
 optima-dev-skills/
 ├── .claude/
 │   ├── commands/
-│   │   ├── logs.md              # /logs - 查看服务日志
-│   │   └── query-db.md          # /query-db - 查询数据库
+│   │   ├── logs.md                    # /logs - 查看服务日志
+│   │   ├── query-db.md                # /query-db - 查询数据库
+│   │   └── generate-test-token.md     # /generate-test-token - 生成测试 token
 │   │
 │   └── skills/
-│       ├── logs/                # 日志查看 skill
-│       │   └── SKILL.md
-│       └── query-db/            # 数据库查询 skill
-│           └── SKILL.md
+│       ├── logs/                      # 日志查看 skill
+│       ├── query-db/                  # 数据库查询 skill
+│       ├── generate-test-token/       # 测试 token 生成 skill
+│       └── use-commerce-cli/          # Commerce CLI 使用 skill
+│
+├── bin/
+│   └── helpers/
+│       ├── query-db.ts                # CLI: 数据库查询
+│       └── generate-test-token.ts     # CLI: 生成测试 token
 │
 └── docs/
     └── COMMANDS_DESIGN.md
@@ -132,22 +139,35 @@ Claude:
 3. 问题定位：Stage RDS 连接配置问题
 ```
 
-### 示例 2：使用 CLI 工具快速查询
+### 示例 2：生成测试 token 并管理店铺
+
+```bash
+# 1. 生成测试 token
+$ optima-generate-test-token
+
+✅ Test token generated successfully!
+📁 Token File Path: /tmp/optima-test-token-xxx.txt
+
+# 2. 使用 token 创建商品
+$ OPTIMA_TOKEN=$(cat /tmp/optima-test-token-xxx.txt) \
+  OPTIMA_ENV=development \
+  commerce product create --title "测试商品" --price 99.99 --stock 100
+
+{
+  "success": true,
+  "data": {
+    "product_id": "xxx",
+    "name": "测试商品",
+    "price": "99.99"
+  }
+}
+```
+
+### 示例 3：使用 CLI 工具快速查询
 
 ```bash
 # 查询 Prod 用户数
 $ optima-query-db user-auth "SELECT COUNT(*) FROM users" prod
-
-🔍 Querying user-auth (PROD)...
-✓ Loaded Infisical config from GitHub Variables
-✓ Obtained Infisical access token
-✓ Retrieved database credentials from Infisical
-✓ SSH tunnel established on port 15433
-
- count
--------
-    26
-(1 行记录)
 
 # 查询 Stage 商品列表
 $ optima-query-db commerce-backend "SELECT id, title FROM products LIMIT 5" stage
@@ -202,16 +222,17 @@ $ optima-query-db commerce-backend "SELECT id, title FROM products LIMIT 5" stag
 
 ## 🛠️ 开发状态
 
-**当前版本**: 0.5.0
+**当前版本**: 0.5.4
 
 **已完成**:
-- ✅ 2 个跨环境命令：`/logs`、`/query-db`
-- ✅ 2 个任务场景：`logs` skill、`query-db` skill
+- ✅ 3 个跨环境命令：`/logs`、`/query-db`、`/generate-test-token`
+- ✅ 4 个任务场景：`logs`、`query-db`、`generate-test-token`、`use-commerce-cli`
 - ✅ 支持 CI、Stage、Prod 三个环境
 - ✅ CI 环境通过 SSH + Docker 访问
 - ✅ Stage/Prod 通过 SSH 隧道访问 RDS
-- ✅ TypeScript CLI 工具：`optima-query-db`
+- ✅ TypeScript CLI 工具：`optima-query-db`、`optima-generate-test-token`
 - ✅ 通过 Infisical 动态获取密钥
+- ✅ 自动生成测试 token 并设置 merchant profile
 
 **设计原则**:
 - 命令提供信息（URL、路径、凭证位置），不实现复杂逻辑
