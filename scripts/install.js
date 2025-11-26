@@ -9,6 +9,8 @@ const SKILLS_SOURCE = path.join(__dirname, '..', '.claude');
 const COMMANDS_DEST = path.join(CLAUDE_DIR, 'commands');
 const LOGS_SKILL_DEST = path.join(CLAUDE_DIR, 'skills', 'logs');
 const QUERY_DB_SKILL_DEST = path.join(CLAUDE_DIR, 'skills', 'query-db');
+const GENERATE_TOKEN_SKILL_DEST = path.join(CLAUDE_DIR, 'skills', 'generate-test-token');
+const USE_COMMERCE_CLI_SKILL_DEST = path.join(CLAUDE_DIR, 'skills', 'use-commerce-cli');
 
 // 颜色输出
 const colors = {
@@ -71,6 +73,14 @@ function install() {
     log(`✓ Installed /query-db command`, 'green');
   }
 
+  // 安装 /generate-test-token 命令
+  const generateTokenCommandSource = path.join(SKILLS_SOURCE, 'commands', 'generate-test-token.md');
+  const generateTokenCommandDest = path.join(COMMANDS_DEST, 'generate-test-token.md');
+  if (fs.existsSync(generateTokenCommandSource)) {
+    fs.copyFileSync(generateTokenCommandSource, generateTokenCommandDest);
+    log(`✓ Installed /generate-test-token command`, 'green');
+  }
+
   // 安装 logs skill
   const logsSkillSource = path.join(SKILLS_SOURCE, 'skills', 'logs');
   if (fs.existsSync(logsSkillSource)) {
@@ -85,13 +95,29 @@ function install() {
     log(`✓ Installed query-db skill`, 'green');
   }
 
+  // 安装 generate-test-token skill
+  const generateTokenSkillSource = path.join(SKILLS_SOURCE, 'skills', 'generate-test-token');
+  if (fs.existsSync(generateTokenSkillSource)) {
+    copyRecursive(generateTokenSkillSource, GENERATE_TOKEN_SKILL_DEST);
+    log(`✓ Installed generate-test-token skill`, 'green');
+  }
+
+  // 安装 use-commerce-cli skill
+  const useCommerceCliSkillSource = path.join(SKILLS_SOURCE, 'skills', 'use-commerce-cli');
+  if (fs.existsSync(useCommerceCliSkillSource)) {
+    copyRecursive(useCommerceCliSkillSource, USE_COMMERCE_CLI_SKILL_DEST);
+    log(`✓ Installed use-commerce-cli skill`, 'green');
+  }
+
   log('\n✨ Installation complete!\n', 'green');
   log('Available commands:', 'blue');
   log('  /logs <service> [lines] [environment]', 'yellow');
   log('  /query-db <service> <sql> [environment]', 'yellow');
+  log('  /generate-test-token [options]', 'yellow');
   log('\nExamples:', 'blue');
   log('  /logs commerce-backend                                    # CI logs', 'yellow');
   log('  /query-db commerce-backend "SELECT COUNT(*) FROM orders"  # CI query', 'yellow');
+  log('  optima-generate-test-token --env production              # Generate test token', 'yellow');
   log('\nDocumentation: https://github.com/Optima-Chat/optima-dev-skills\n', 'blue');
 }
 
