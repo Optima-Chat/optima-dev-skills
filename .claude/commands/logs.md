@@ -23,6 +23,8 @@
   - `user-auth` - 用户认证
   - `mcp-host` - MCP 协调器
   - `agentic-chat` - AI 聊天服务
+  - `commerce-mcp` - 电商 MCP 服务
+  - `comfy-mcp` - ComfyUI MCP 服务
 - `lines` (可选): 显示行数，默认 50
 - `environment` (可选): 环境，默认 ci
   - `ci` - CI 持续集成环境（开发环境，默认）
@@ -71,6 +73,8 @@ sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} 
 - `user-auth` → `/data/xuhao/user-auth` → `user-auth`
 - `mcp-host` → `/data/xuhao/mcp-host` → `app`
 - `agentic-chat` → `/data/xuhao/agentic-chat` → `optima-ai-chat`
+- `commerce-mcp` → `/data/xuhao/commerce-mcp` → `commerce-mcp`
+- `comfy-mcp` → `/data/xuhao/comfy-mcp` → `comfy-mcp`
 
 **完整命令示例**（先获取配置）:
 ```bash
@@ -90,6 +94,12 @@ sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} 
 
 # agentic-chat
 sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/agentic-chat && docker compose logs --tail 50 optima-ai-chat"
+
+# commerce-mcp
+sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/commerce-mcp && docker compose logs --tail 50 commerce-mcp"
+
+# comfy-mcp
+sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/comfy-mcp && docker compose logs --tail 50 comfy-mcp"
 ```
 
 ### 1. Stage 环境（environment = "stage"）
@@ -112,6 +122,8 @@ aws logs get-log-events --log-group-name /ecs/commerce-backend-stage --log-strea
 - `user-auth` → `/ecs/user-auth-stage`
 - `mcp-host` → `/ecs/mcp-host-stage`
 - `agentic-chat` → `/ecs/agentic-chat-stage`
+- `commerce-mcp` → `/ecs/commerce-mcp-stage`
+- `comfy-mcp` → `/ecs/comfy-mcp-stage`
 
 ### 2. Prod 环境（environment = "prod"）
 
@@ -131,6 +143,8 @@ aws logs get-log-events --log-group-name /optima/prod/commerce-backend --log-str
 - `user-auth` → `/optima/prod/user-auth`
 - `mcp-host` → `/optima/prod/mcp-host`
 - `agentic-chat` → `/optima/prod/agentic-chat`
+- `commerce-mcp` → `/optima/prod/commerce-mcp`
+- `comfy-mcp` → `/optima/prod/comfy-mcp`
 
 **Log Stream 名称**:
 - `backend` - 主服务日志
