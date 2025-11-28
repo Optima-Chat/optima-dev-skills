@@ -143,13 +143,15 @@ aws logs get-log-events --log-group-name /optima/prod/commerce-backend --log-str
 - `user-auth` → `/optima/prod/user-auth`
 - `mcp-host` → `/optima/prod/mcp-host`
 - `agentic-chat` → `/optima/prod/agentic-chat`
-- `commerce-mcp` → `/optima/prod/commerce-mcp`
-- `comfy-mcp` → `/optima/prod/comfy-mcp`
+- `commerce-mcp` → `/optima/prod/ec2-1az/commerce-mcp`
+- `comfy-mcp` → `/optima/prod/ec2-1az/comfy-mcp`
 
 **Log Stream 名称**:
-- `backend` - 主服务日志
+- `backend` - 主服务日志（核心服务和 commerce-mcp 使用）
 - `rq-worker` - 后台任务日志
 - `rq-scheduler` - 调度器日志
+
+**注意**: MCP 服务（commerce-mcp、comfy-mcp 等）部署在 ec2-1az，日志路径为 `/optima/prod/ec2-1az/{service}`
 
 ## 完整示例脚本
 
