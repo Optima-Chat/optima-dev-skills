@@ -23,7 +23,7 @@ Optima Dev Skills 让 Claude Code 能够直接在 **CI、Stage、Prod** 三个�
 - **任务驱动** - 基于具体任务场景（查看日志、调用 API），不是抽象分类
 - **跨环境协作** - 统一的命令在 CI、Stage、Prod 三个环境中使用
 
-## 📋 任务场景（4 个）
+## 📋 任务场景（5 个）
 
 当 Claude Code 识别到以下任务时，会自动加载对应的 Skill：
 
@@ -31,6 +31,7 @@ Optima Dev Skills 让 Claude Code 能够直接在 **CI、Stage、Prod** 三个�
 - **query-db** - 查询 CI/Stage/Prod 的数据库
 - **generate-test-token** - 生成测试 Access Token 用于 API 测试
 - **use-commerce-cli** - 使用 Commerce CLI 管理电商店铺
+- **read-code** - 阅读 Optima-Chat 组织下任意仓库的代码
 
 ## 👤 用户故事
 
@@ -112,7 +113,8 @@ optima-dev-skills/
 │       ├── logs/                      # 日志查看 skill
 │       ├── query-db/                  # 数据库查询 skill
 │       ├── generate-test-token/       # 测试 token 生成 skill
-│       └── use-commerce-cli/          # Commerce CLI 使用 skill
+│       ├── use-commerce-cli/          # Commerce CLI 使用 skill
+│       └── read-code/                 # 代码阅读 skill
 │
 ├── bin/
 │   └── helpers/
@@ -228,7 +230,7 @@ $ optima-query-db commerce-backend "SELECT id, title FROM products LIMIT 5" stag
 
 **已完成**:
 - ✅ 3 个跨环境命令：`/logs`、`/query-db`、`/generate-test-token`
-- ✅ 4 个任务场景：`logs`、`query-db`、`generate-test-token`、`use-commerce-cli`
+- ✅ 5 个任务场景：`logs`、`query-db`、`generate-test-token`、`use-commerce-cli`、`read-code`
 - ✅ 支持 CI、Stage、Prod 三个环境
 - ✅ CI 环境通过 SSH + Docker 访问
 - ✅ Stage/Prod 通过 SSH 隧道访问 RDS

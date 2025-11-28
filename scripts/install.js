@@ -11,6 +11,7 @@ const LOGS_SKILL_DEST = path.join(CLAUDE_DIR, 'skills', 'logs');
 const QUERY_DB_SKILL_DEST = path.join(CLAUDE_DIR, 'skills', 'query-db');
 const GENERATE_TOKEN_SKILL_DEST = path.join(CLAUDE_DIR, 'skills', 'generate-test-token');
 const USE_COMMERCE_CLI_SKILL_DEST = path.join(CLAUDE_DIR, 'skills', 'use-commerce-cli');
+const READ_CODE_SKILL_DEST = path.join(CLAUDE_DIR, 'skills', 'read-code');
 
 // 颜色输出
 const colors = {
@@ -107,6 +108,13 @@ function install() {
   if (fs.existsSync(useCommerceCliSkillSource)) {
     copyRecursive(useCommerceCliSkillSource, USE_COMMERCE_CLI_SKILL_DEST);
     log(`✓ Installed use-commerce-cli skill`, 'green');
+  }
+
+  // 安装 read-code skill
+  const readCodeSkillSource = path.join(SKILLS_SOURCE, 'skills', 'read-code');
+  if (fs.existsSync(readCodeSkillSource)) {
+    copyRecursive(readCodeSkillSource, READ_CODE_SKILL_DEST);
+    log(`✓ Installed read-code skill`, 'green');
   }
 
   log('\n✨ Installation complete!\n', 'green');
