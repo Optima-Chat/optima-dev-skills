@@ -228,7 +228,7 @@ $ optima-query-db commerce-backend "SELECT id, title FROM products LIMIT 5" stag
 
 ## 🛠️ 开发状态
 
-**当前版本**: 0.6.0
+**当前版本**: 0.7.0
 
 **已完成**:
 - ✅ 4 个命令：`/logs`、`/query-db`、`/generate-test-token`、`/read-code`
