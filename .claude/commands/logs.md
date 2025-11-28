@@ -68,13 +68,13 @@ CI_PASSWORD=$(gh variable get CI_SSH_PASSWORD -R Optima-Chat/optima-dev-skills)
 sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/commerce-backend && docker compose logs --tail 50 commerce-backend"
 ```
 
-**服务映射**（路径 + 服务名）:
+**服务映射**（路径 + docker compose 服务名）:
 - `commerce-backend` → `/data/xuhao/commerce-backend` → `commerce-backend`
 - `user-auth` → `/data/xuhao/user-auth` → `user-auth`
 - `mcp-host` → `/data/xuhao/mcp-host` → `app`
 - `agentic-chat` → `/data/xuhao/agentic-chat` → `optima-ai-chat`
-- `commerce-mcp` → `/data/xuhao/commerce-mcp` → `commerce-mcp`
-- `comfy-mcp` → `/data/xuhao/comfy-mcp` → `comfy-mcp`
+- `commerce-mcp` → `/data/xuhao/actions-runner/_work/commerce-mcp/commerce-mcp` → `commerce-mcp`
+- `comfy-mcp` → `/data/xuhao/actions-runner/_work/comfy-mcp/comfy-mcp` → `comfy-mcp`
 
 **完整命令示例**（先获取配置）:
 ```bash
@@ -95,11 +95,11 @@ sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} 
 # agentic-chat
 sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/agentic-chat && docker compose logs --tail 50 optima-ai-chat"
 
-# commerce-mcp
-sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/commerce-mcp && docker compose logs --tail 50 commerce-mcp"
+# commerce-mcp (via actions-runner)
+sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/actions-runner/_work/commerce-mcp/commerce-mcp && docker compose logs --tail 50 commerce-mcp"
 
-# comfy-mcp
-sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/comfy-mcp && docker compose logs --tail 50 comfy-mcp"
+# comfy-mcp (via actions-runner)
+sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "cd /data/xuhao/actions-runner/_work/comfy-mcp/comfy-mcp && docker compose logs --tail 50 comfy-mcp"
 ```
 
 ### 1. Stage 环境（environment = "stage"）
