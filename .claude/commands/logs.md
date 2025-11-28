@@ -127,15 +127,24 @@ aws logs get-log-events --log-group-name /ecs/commerce-backend-stage --log-strea
 
 ### 2. Prod 环境（environment = "prod"）
 
-**日志路径格式**: `/optima/prod/{service}`
+**日志路径格式**: `/optima/prod/{service}` 或 `/optima/prod/ec2-1az/{service}`
 
-**步骤**:
+**IMPORTANT**: Prod 环境必须指定 `--region ap-southeast-1`
+
+**推荐方式（使用 aws logs tail）**:
+```bash
+# 查看最近 1 小时的日志
+aws logs tail /optima/prod/commerce-backend --since 1h --region ap-southeast-1
+
+# 查看 MCP 服务日志（ec2-1az 路径）
+aws logs tail /optima/prod/ec2-1az/commerce-mcp --since 1h --region ap-southeast-1
+```
+
+**备用方式（使用 get-log-events）**:
 ```bash
 # 获取日志内容（纯文本）
-# 注意：Prod 环境的 log stream 通常是固定的 "backend"
-# 使用 --no-start-from-head 从最新日志开始读取
 # IMPORTANT: 必须使用单行命令，不要使用反斜杠换行
-aws logs get-log-events --log-group-name /optima/prod/commerce-backend --log-stream-name backend --limit 50 --no-start-from-head | jq -r '.events[] | .message'
+aws logs get-log-events --log-group-name /optima/prod/commerce-backend --log-stream-name backend --limit 50 --no-start-from-head --region ap-southeast-1 | jq -r '.events[] | .message'
 ```
 
 **服务映射**:
@@ -145,13 +154,20 @@ aws logs get-log-events --log-group-name /optima/prod/commerce-backend --log-str
 - `agentic-chat` → `/optima/prod/agentic-chat`
 - `commerce-mcp` → `/optima/prod/ec2-1az/commerce-mcp`
 - `comfy-mcp` → `/optima/prod/ec2-1az/comfy-mcp`
+- `fetch-mcp` → `/optima/prod/ec2-1az/fetch-mcp`
+- `shopify-mcp` → `/optima/prod/ec2-1az/shopify-mcp`
+- `perplexity-mcp` → `/optima/prod/ec2-1az/perplexity-mcp`
+- `google-ads-mcp` → `/optima/prod/ec2-1az/google-ads-mcp`
 
 **Log Stream 名称**:
-- `backend` - 主服务日志（核心服务和 commerce-mcp 使用）
+- `backend` - 主服务日志
 - `rq-worker` - 后台任务日志
 - `rq-scheduler` - 调度器日志
 
-**注意**: MCP 服务（commerce-mcp、comfy-mcp 等）部署在 ec2-1az，日志路径为 `/optima/prod/ec2-1az/{service}`
+**注意**:
+- MCP 服务部署在 EC2 (ec2-1az)，日志路径为 `/optima/prod/ec2-1az/{service}`
+- 核心服务（commerce-backend、user-auth 等）日志路径为 `/optima/prod/{service}`
+- **必须指定 `--region ap-southeast-1`**
 
 ## 完整示例脚本
 
@@ -168,12 +184,15 @@ aws logs get-log-events --log-group-name /ecs/${SERVICE}-stage --log-stream-name
 
 ### Prod 环境
 ```bash
-# IMPORTANT: 使用单行命令
-SERVICE="commerce-backend"
-LINES=50
+# 推荐方式：使用 aws logs tail
+# 核心服务
+aws logs tail /optima/prod/commerce-backend --since 1h --region ap-southeast-1
 
-# 显示主服务日志（从最新开始）
-aws logs get-log-events --log-group-name /optima/prod/${SERVICE} --log-stream-name backend --limit $LINES --no-start-from-head | jq -r '.events[] | .message'
+# MCP 服务（ec2-1az 路径）
+aws logs tail /optima/prod/ec2-1az/commerce-mcp --since 1h --region ap-southeast-1
+
+# 备用方式：使用 get-log-events
+aws logs get-log-events --log-group-name /optima/prod/commerce-backend --log-stream-name backend --limit 50 --no-start-from-head --region ap-southeast-1 | jq -r '.events[] | .message'
 ```
 
 ## 常见错误处理
