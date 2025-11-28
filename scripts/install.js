@@ -82,6 +82,14 @@ function install() {
     log(`✓ Installed /generate-test-token command`, 'green');
   }
 
+  // 安装 /read-code 命令
+  const readCodeCommandSource = path.join(SKILLS_SOURCE, 'commands', 'read-code.md');
+  const readCodeCommandDest = path.join(COMMANDS_DEST, 'read-code.md');
+  if (fs.existsSync(readCodeCommandSource)) {
+    fs.copyFileSync(readCodeCommandSource, readCodeCommandDest);
+    log(`✓ Installed /read-code command`, 'green');
+  }
+
   // 安装 logs skill
   const logsSkillSource = path.join(SKILLS_SOURCE, 'skills', 'logs');
   if (fs.existsSync(logsSkillSource)) {
@@ -122,10 +130,11 @@ function install() {
   log('  /logs <service> [lines] [environment]', 'yellow');
   log('  /query-db <service> <sql> [environment]', 'yellow');
   log('  /generate-test-token [options]', 'yellow');
+  log('  /read-code <repo> [path]', 'yellow');
   log('\nExamples:', 'blue');
   log('  /logs commerce-backend                                    # CI logs', 'yellow');
   log('  /query-db commerce-backend "SELECT COUNT(*) FROM orders"  # CI query', 'yellow');
-  log('  optima-generate-test-token --env production              # Generate test token', 'yellow');
+  log('  /read-code commerce-backend app/main.py                   # Read code', 'yellow');
   log('\nDocumentation: https://github.com/Optima-Chat/optima-dev-skills\n', 'blue');
 }
 

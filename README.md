@@ -76,6 +76,7 @@ Claude:
 | `/logs` | 查看服务日志 | `/logs commerce-backend 100` | ✅ |
 | `/query-db` | 查询数据库 | `/query-db user-auth "SELECT COUNT(*) FROM users"` | ✅ |
 | `/generate-test-token` | 生成测试 token | `/generate-test-token` | 🔧 Development |
+| `/read-code` | 阅读代码 | `/read-code commerce-backend app/main.py` | - |
 
 **说明**：
 - 命令支持 CI、Stage、Prod 三个环境
@@ -107,7 +108,8 @@ optima-dev-skills/
 │   ├── commands/
 │   │   ├── logs.md                    # /logs - 查看服务日志
 │   │   ├── query-db.md                # /query-db - 查询数据库
-│   │   └── generate-test-token.md     # /generate-test-token - 生成测试 token
+│   │   ├── generate-test-token.md     # /generate-test-token - 生成测试 token
+│   │   └── read-code.md               # /read-code - 阅读代码
 │   │
 │   └── skills/
 │       ├── logs/                      # 日志查看 skill
@@ -229,7 +231,7 @@ $ optima-query-db commerce-backend "SELECT id, title FROM products LIMIT 5" stag
 **当前版本**: 0.6.0
 
 **已完成**:
-- ✅ 3 个跨环境命令：`/logs`、`/query-db`、`/generate-test-token`
+- ✅ 4 个命令：`/logs`、`/query-db`、`/generate-test-token`、`/read-code`
 - ✅ 5 个任务场景：`logs`、`query-db`、`generate-test-token`、`use-commerce-cli`、`read-code`
 - ✅ 支持 CI、Stage、Prod 三个环境
 - ✅ CI 环境通过 SSH + Docker 访问
