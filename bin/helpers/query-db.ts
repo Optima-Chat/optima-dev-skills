@@ -102,16 +102,59 @@ function setupSSHTunnel(ec2Host: string, dbHost: string, localPort: number): voi
   console.log(`✓ SSH tunnel established on port ${localPort}`);
 }
 
-function queryDatabase(host: string, port: number, user: string, password: string, database: string, sql: string): string {
-  const psqlPath = '/usr/local/opt/postgresql@16/bin/psql';
-
-  if (!fs.existsSync(psqlPath)) {
-    throw new Error('PostgreSQL client not found. Install with: brew install postgresql@16');
+function findPsqlPath(): string {
+  // 1. 优先从 PATH 中查找
+  const whichCmd = process.platform === 'win32' ? 'where psql' : 'which psql';
+  try {
+    const result = execSync(whichCmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
+    const foundPath = result.trim().split(/\r?\n/)[0]; // Windows where 可能返回 \r\n
+    if (foundPath && fs.existsSync(foundPath)) {
+      return foundPath;
+    }
+  } catch {
+    // which/where 失败，继续尝试常见路径
   }
 
+  // 2. 回退到常见安装路径
+  const fallbackPaths = process.platform === 'win32'
+    ? [
+        'C:\\Program Files\\PostgreSQL\\16\\bin\\psql.exe',
+        'C:\\Program Files\\PostgreSQL\\15\\bin\\psql.exe',
+        'C:\\Program Files\\PostgreSQL\\14\\bin\\psql.exe',
+      ]
+    : [
+        '/usr/local/opt/postgresql@16/bin/psql',  // macOS Homebrew
+        '/usr/local/opt/postgresql@15/bin/psql',
+        '/opt/homebrew/bin/psql',                 // macOS ARM Homebrew
+        '/usr/bin/psql',                          // Linux
+        '/usr/local/bin/psql',
+      ];
+
+  for (const p of fallbackPaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+
+  // 3. 未找到
+  const installHint = process.platform === 'darwin'
+    ? 'brew install postgresql@16'
+    : process.platform === 'win32'
+    ? 'Download from https://www.postgresql.org/download/windows/'
+    : 'sudo apt install postgresql-client';
+
+  throw new Error(`PostgreSQL client (psql) not found. Install with: ${installHint}`);
+}
+
+function queryDatabase(host: string, port: number, user: string, password: string, database: string, sql: string): string {
+  const psqlPath = findPsqlPath();
+
   const result = execSync(
-    `PGPASSWORD="${password}" ${psqlPath} -h ${host} -p ${port} -U ${user} -d ${database} -c "${sql}"`,
-    { encoding: 'utf-8' }
+    `"${psqlPath}" -h ${host} -p ${port} -U ${user} -d ${database} -c "${sql}"`,
+    {
+      encoding: 'utf-8',
+      env: { ...process.env, PGPASSWORD: password }
+    }
   );
   return result;
 }
