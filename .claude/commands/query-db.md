@@ -45,6 +45,8 @@ optima-query-db commerce-backend "SELECT * FROM products LIMIT 5" prod
   - `commerce-backend` - 电商后端数据库
   - `user-auth` - 用户认证数据库
   - `agentic-chat` - AI 聊天服务数据库
+  - `bi-backend` - BI 后端数据库
+  - `session-gateway` - AI Shell 网关数据库
 - `sql` (必需): SQL 查询语句（用引号包裹）
 - `environment` (可选): 环境，默认 ci
   - `ci` - CI 持续集成环境（开发环境，默认）
@@ -199,7 +201,7 @@ PGPASSWORD="${COMMERCE_DB_PASSWORD}" psql -h localhost -p 15432 -U "${COMMERCE_D
 pkill -f "ssh.*15432:${DATABASE_HOST}:5432"
 ```
 
-**完整示例（三个服务）**:
+**完整示例（五个服务）**:
 ```bash
 # commerce-backend
 # 使用 COMMERCE_DB_USER, COMMERCE_DB_PASSWORD, 数据库: optima_commerce
@@ -209,6 +211,12 @@ pkill -f "ssh.*15432:${DATABASE_HOST}:5432"
 
 # agentic-chat
 # 使用 CHAT_DB_USER, CHAT_DB_PASSWORD, 数据库: optima_chat
+
+# bi-backend
+# 使用 BI_DB_USER, BI_DB_PASSWORD, 数据库: optima_bi
+
+# session-gateway (注意: Stage 数据库名是 optima_shell)
+# 使用 SHELL_DB_USER, SHELL_DB_PASSWORD, 数据库: optima_shell
 ```
 
 **数据库配置映射**：
@@ -227,6 +235,16 @@ pkill -f "ssh.*15432:${DATABASE_HOST}:5432"
   - 用户: Infisical `CHAT_DB_USER`
   - 密码: Infisical `CHAT_DB_PASSWORD`
 
+- `bi-backend`:
+  - 数据库: `optima_bi`
+  - 用户: Infisical `BI_DB_USER`
+  - 密码: Infisical `BI_DB_PASSWORD`
+
+- `session-gateway`:
+  - 数据库: `optima_shell` ⚠️ (Stage 与 Prod 不同)
+  - 用户: Infisical `SHELL_DB_USER`
+  - 密码: Infisical `SHELL_DB_PASSWORD`
+
 **说明**:
 - Infisical 配置从 GitHub Variables 获取
 - 数据库密钥从 Infisical 动态获取（项目: optima-secrets, 环境: staging, 路径: /infrastructure）
@@ -234,6 +252,7 @@ pkill -f "ssh.*15432:${DATABASE_HOST}:5432"
 - Shared EC2 IP: `13.251.46.219`
 - SSH 隧道: 本地端口 `15432` → Shared EC2 → Stage RDS `5432`
 - Stage 和 Prod 有独立的 RDS 实例
+- ⚠️ session-gateway 数据库名: Stage 用 `optima_shell`, Prod 用 `optima_ai_shell`
 
 ### 2. Prod 环境（environment = "prod"）
 
@@ -280,7 +299,7 @@ PGPASSWORD="${COMMERCE_DB_PASSWORD}" psql -h localhost -p 15433 -U "${COMMERCE_D
 pkill -f "ssh.*15433:${DATABASE_HOST}:5432"
 ```
 
-**完整示例（三个服务）**:
+**完整示例（五个服务）**:
 ```bash
 # commerce-backend
 # 使用 COMMERCE_DB_USER, COMMERCE_DB_PASSWORD, 数据库: optima_commerce
@@ -290,6 +309,12 @@ pkill -f "ssh.*15433:${DATABASE_HOST}:5432"
 
 # agentic-chat
 # 使用 CHAT_DB_USER, CHAT_DB_PASSWORD, 数据库: optima_chat
+
+# bi-backend
+# 使用 BI_DB_USER, BI_DB_PASSWORD, 数据库: optima_bi
+
+# session-gateway (注意: Prod 数据库名是 optima_ai_shell)
+# 使用 AI_SHELL_DB_USER, AI_SHELL_DB_PASSWORD, 数据库: optima_ai_shell
 ```
 
 **数据库配置映射**：
@@ -308,6 +333,16 @@ pkill -f "ssh.*15433:${DATABASE_HOST}:5432"
   - 用户: Infisical `CHAT_DB_USER`
   - 密码: Infisical `CHAT_DB_PASSWORD`
 
+- `bi-backend`:
+  - 数据库: `optima_bi`
+  - 用户: Infisical `BI_DB_USER`
+  - 密码: Infisical `BI_DB_PASSWORD`
+
+- `session-gateway`:
+  - 数据库: `optima_ai_shell` ⚠️ (Prod 与 Stage 不同)
+  - 用户: Infisical `AI_SHELL_DB_USER`
+  - 密码: Infisical `AI_SHELL_DB_PASSWORD`
+
 **说明**:
 - Infisical 配置从 GitHub Variables 获取
 - 数据库密钥从 Infisical 动态获取（项目: optima-secrets, 环境: prod, 路径: /infrastructure）
@@ -316,6 +351,7 @@ pkill -f "ssh.*15433:${DATABASE_HOST}:5432"
 - SSH 隧道: 本地端口 `15433` → Shared EC2 → Prod RDS `5432`
 - Stage 用端口 `15432`，Prod 用端口 `15433`
 - Stage 和 Prod 有独立的 RDS 实例
+- ⚠️ session-gateway 数据库名: Stage 用 `optima_shell`, Prod 用 `optima_ai_shell`
 
 **⚠️ 生产环境安全规则**：
 1. **谨慎操作** - 生产数据库，避免误操作
