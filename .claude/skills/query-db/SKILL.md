@@ -1,6 +1,6 @@
 ---
 name: "query-db"
-description: "当用户请求查询数据库、执行SQL、查看数据、统计数据、检查数据库、查询表、数据库查询时，使用此技能。支持 CI、Stage、Prod 三个环境的 commerce-backend、user-auth、mcp-host、agentic-chat 服务的数据库查询。优先使用 optima-query-db CLI 工具。"
+description: "当用户请求查询数据库、执行SQL、查看数据、统计数据、检查数据库、查询表、数据库查询时，使用此技能。支持 CI、Stage、Prod 三个环境的 commerce-backend、user-auth、agentic-chat 服务的数据库查询。优先使用 optima-query-db CLI 工具。"
 allowed-tools: ["Bash", "SlashCommand"]
 ---
 
@@ -73,7 +73,6 @@ optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY s
 **常用服务**：
 - `commerce-backend` - 电商数据库
 - `user-auth` - 用户认证数据库
-- `mcp-host` - MCP 协调器数据库
 - `agentic-chat` - AI 聊天数据库
 
 ### 常用查询示例

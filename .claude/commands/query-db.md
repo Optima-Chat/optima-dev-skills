@@ -2,7 +2,7 @@
 
 执行 SQL 查询，支持 CI/Stage/Prod 三个环境。
 
-**版本**: v0.5.0
+**版本**: v0.6.0
 
 ## 使用场景
 
@@ -44,7 +44,6 @@ optima-query-db commerce-backend "SELECT * FROM products LIMIT 5" prod
 - `service` (必需): 服务名称
   - `commerce-backend` - 电商后端数据库
   - `user-auth` - 用户认证数据库
-  - `mcp-host` - MCP 协调器数据库
   - `agentic-chat` - AI 聊天服务数据库
 - `sql` (必需): SQL 查询语句（用引号包裹）
 - `environment` (可选): 环境，默认 ci
@@ -133,12 +132,6 @@ sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} 
   - 密码: `password123`
   - 数据库: `userauth`
 
-- `mcp-host`:
-  - 容器: `mcp-host-db-1`
-  - 用户: `mcp_user`
-  - 密码: `mcp_password`
-  - 数据库: `mcp_host`
-
 - `agentic-chat`:
   - 容器: `optima-postgres`
   - 用户: `postgres`
@@ -157,9 +150,6 @@ sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} 
 
 # user-auth
 sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "docker exec user-auth-postgres-1 psql -U userauth -d userauth -c \"SELECT COUNT(*) FROM users\""
-
-# mcp-host
-sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "docker exec mcp-host-db-1 psql -U mcp_user -d mcp_host -c \"SELECT COUNT(*) FROM sessions\""
 
 # agentic-chat
 sshpass -p "$CI_PASSWORD" ssh -o StrictHostKeyChecking=no ${CI_USER}@${CI_HOST} "docker exec optima-postgres psql -U postgres -d optima_chat -c \"SELECT COUNT(*) FROM conversations\""
@@ -199,59 +189,51 @@ print(f\"COMMERCE_DB_USER={secrets['COMMERCE_DB_USER']}\")
 print(f\"COMMERCE_DB_PASSWORD={secrets['COMMERCE_DB_PASSWORD']}\")
 " > /tmp/stage_db_config.sh && source /tmp/stage_db_config.sh
 
-# 4. 建立 SSH 隧道到 Stage EC2，通过隧道访问 RDS
-ssh -i ~/.ssh/optima-ec2-key -f -N -L 15432:${DATABASE_HOST}:5432 ec2-user@54.179.132.102
+# 4. 建立 SSH 隧道到 Shared EC2，通过隧道访问 Stage RDS
+ssh -i ~/.ssh/optima-ec2-key -f -N -L 15432:optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com:5432 ec2-user@13.251.46.219
 
 # 5. 通过本地端口 15432 连接到 RDS
-PGPASSWORD="${COMMERCE_DB_PASSWORD}" psql -h localhost -p 15432 -U "${COMMERCE_DB_USER}" -d optima_stage_commerce -c "SELECT COUNT(*) FROM products"
+PGPASSWORD="${COMMERCE_DB_PASSWORD}" psql -h localhost -p 15432 -U "${COMMERCE_DB_USER}" -d optima_commerce -c "SELECT COUNT(*) FROM products"
 
 # 6. 关闭 SSH 隧道（可选）
 pkill -f "ssh.*15432:${DATABASE_HOST}:5432"
 ```
 
-**完整示例（四个服务）**:
+**完整示例（三个服务）**:
 ```bash
 # commerce-backend
-# 使用 COMMERCE_DB_USER, COMMERCE_DB_PASSWORD, 数据库: optima_stage_commerce
+# 使用 COMMERCE_DB_USER, COMMERCE_DB_PASSWORD, 数据库: optima_commerce
 
 # user-auth
-# 使用 AUTH_DB_USER, AUTH_DB_PASSWORD, 数据库: optima_stage_auth
-
-# mcp-host
-# 使用 MCP_DB_USER, MCP_DB_PASSWORD, 数据库: optima_stage_mcp
+# 使用 AUTH_DB_USER, AUTH_DB_PASSWORD, 数据库: optima_auth
 
 # agentic-chat
-# 使用 CHAT_DB_USER, CHAT_DB_PASSWORD, 数据库: optima_stage_chat
+# 使用 CHAT_DB_USER, CHAT_DB_PASSWORD, 数据库: optima_chat
 ```
 
 **数据库配置映射**：
 - `commerce-backend`:
-  - 数据库: `optima_stage_commerce`
+  - 数据库: `optima_commerce`
   - 用户: Infisical `COMMERCE_DB_USER`
   - 密码: Infisical `COMMERCE_DB_PASSWORD`
 
 - `user-auth`:
-  - 数据库: `optima_stage_auth`
+  - 数据库: `optima_auth`
   - 用户: Infisical `AUTH_DB_USER`
   - 密码: Infisical `AUTH_DB_PASSWORD`
 
-- `mcp-host`:
-  - 数据库: `optima_stage_mcp`
-  - 用户: Infisical `MCP_DB_USER`
-  - 密码: Infisical `MCP_DB_PASSWORD`
-
 - `agentic-chat`:
-  - 数据库: `optima_stage_chat`
+  - 数据库: `optima_chat`
   - 用户: Infisical `CHAT_DB_USER`
   - 密码: Infisical `CHAT_DB_PASSWORD`
 
 **说明**:
 - Infisical 配置从 GitHub Variables 获取
 - 数据库密钥从 Infisical 动态获取（项目: optima-secrets, 环境: staging, 路径: /infrastructure）
-- DATABASE_HOST: `optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com`
-- Stage EC2 IP: `54.179.132.102`
-- SSH 隧道: 本地端口 `15432` → EC2 → RDS `5432`
-- Stage 和 Prod 共享同一个 RDS 实例，通过不同的数据库名隔离
+- Stage RDS: `optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com`
+- Shared EC2 IP: `13.251.46.219`
+- SSH 隧道: 本地端口 `15432` → Shared EC2 → Stage RDS `5432`
+- Stage 和 Prod 有独立的 RDS 实例
 
 ### 2. Prod 环境（environment = "prod"）
 
@@ -288,8 +270,8 @@ print(f\"COMMERCE_DB_USER={secrets['COMMERCE_DB_USER']}\")
 print(f\"COMMERCE_DB_PASSWORD={secrets['COMMERCE_DB_PASSWORD']}\")
 " > /tmp/prod_db_config.sh && source /tmp/prod_db_config.sh
 
-# 4. 建立 SSH 隧道到 Prod EC2，通过隧道访问 RDS
-ssh -i ~/.ssh/optima-ec2-key -f -N -L 15433:${DATABASE_HOST}:5432 ec2-user@18.136.25.239
+# 4. 建立 SSH 隧道到 Shared EC2，通过隧道访问 Prod RDS
+ssh -i ~/.ssh/optima-ec2-key -f -N -L 15433:optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com:5432 ec2-user@13.251.46.219
 
 # 5. 通过本地端口 15433 连接到 RDS
 PGPASSWORD="${COMMERCE_DB_PASSWORD}" psql -h localhost -p 15433 -U "${COMMERCE_DB_USER}" -d optima_commerce -c "SELECT COUNT(*) FROM products"
@@ -298,16 +280,13 @@ PGPASSWORD="${COMMERCE_DB_PASSWORD}" psql -h localhost -p 15433 -U "${COMMERCE_D
 pkill -f "ssh.*15433:${DATABASE_HOST}:5432"
 ```
 
-**完整示例（四个服务）**:
+**完整示例（三个服务）**:
 ```bash
 # commerce-backend
 # 使用 COMMERCE_DB_USER, COMMERCE_DB_PASSWORD, 数据库: optima_commerce
 
 # user-auth
 # 使用 AUTH_DB_USER, AUTH_DB_PASSWORD, 数据库: optima_auth
-
-# mcp-host
-# 使用 MCP_DB_USER, MCP_DB_PASSWORD, 数据库: optima_mcp
 
 # agentic-chat
 # 使用 CHAT_DB_USER, CHAT_DB_PASSWORD, 数据库: optima_chat
@@ -324,11 +303,6 @@ pkill -f "ssh.*15433:${DATABASE_HOST}:5432"
   - 用户: Infisical `AUTH_DB_USER`
   - 密码: Infisical `AUTH_DB_PASSWORD`
 
-- `mcp-host`:
-  - 数据库: `optima_mcp`
-  - 用户: Infisical `MCP_DB_USER`
-  - 密码: Infisical `MCP_DB_PASSWORD`
-
 - `agentic-chat`:
   - 数据库: `optima_chat`
   - 用户: Infisical `CHAT_DB_USER`
@@ -337,10 +311,11 @@ pkill -f "ssh.*15433:${DATABASE_HOST}:5432"
 **说明**:
 - Infisical 配置从 GitHub Variables 获取
 - 数据库密钥从 Infisical 动态获取（项目: optima-secrets, 环境: prod, 路径: /infrastructure）
-- DATABASE_HOST: `optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com`
-- Prod EC2 IP: `18.136.25.239`
-- SSH 隧道: 本地端口 `15433` → EC2 → RDS `5432` (注意 Prod 用 15433，Stage 用 15432)
-- Stage 和 Prod 共享同一个 RDS 实例，通过不同的数据库名隔离
+- Prod RDS: `optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com`
+- Shared EC2 IP: `13.251.46.219`
+- SSH 隧道: 本地端口 `15433` → Shared EC2 → Prod RDS `5432`
+- Stage 用端口 `15432`，Prod 用端口 `15433`
+- Stage 和 Prod 有独立的 RDS 实例
 
 **⚠️ 生产环境安全规则**：
 1. **谨慎操作** - 生产数据库，避免误操作
