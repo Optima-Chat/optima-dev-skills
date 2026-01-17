@@ -20,30 +20,39 @@ interface DatabaseConfig {
 const SERVICE_DB_MAP = {
   'commerce-backend': {
     ci: { container: 'commerce-postgres', user: 'commerce', password: 'commerce123', database: 'commerce' },
-    stage: { userKey: 'COMMERCE_DB_USER', passwordKey: 'COMMERCE_DB_PASSWORD', database: 'optima_stage_commerce' },
+    stage: { userKey: 'COMMERCE_DB_USER', passwordKey: 'COMMERCE_DB_PASSWORD', database: 'optima_commerce' },
     prod: { userKey: 'COMMERCE_DB_USER', passwordKey: 'COMMERCE_DB_PASSWORD', database: 'optima_commerce' }
   },
   'user-auth': {
     ci: { container: 'user-auth-postgres-1', user: 'userauth', password: 'password123', database: 'userauth' },
-    stage: { userKey: 'AUTH_DB_USER', passwordKey: 'AUTH_DB_PASSWORD', database: 'optima_stage_auth' },
+    stage: { userKey: 'AUTH_DB_USER', passwordKey: 'AUTH_DB_PASSWORD', database: 'optima_auth' },
     prod: { userKey: 'AUTH_DB_USER', passwordKey: 'AUTH_DB_PASSWORD', database: 'optima_auth' }
-  },
-  'mcp-host': {
-    ci: { container: 'mcp-host-db-1', user: 'mcp_user', password: 'mcp_password', database: 'mcp_host' },
-    stage: { userKey: 'MCP_DB_USER', passwordKey: 'MCP_DB_PASSWORD', database: 'optima_stage_mcp' },
-    prod: { userKey: 'MCP_DB_USER', passwordKey: 'MCP_DB_PASSWORD', database: 'optima_mcp' }
   },
   'agentic-chat': {
     ci: { container: 'optima-postgres', user: 'postgres', password: 'postgres123', database: 'optima_chat' },
-    stage: { userKey: 'CHAT_DB_USER', passwordKey: 'CHAT_DB_PASSWORD', database: 'optima_stage_chat' },
+    stage: { userKey: 'CHAT_DB_USER', passwordKey: 'CHAT_DB_PASSWORD', database: 'optima_chat' },
     prod: { userKey: 'CHAT_DB_USER', passwordKey: 'CHAT_DB_PASSWORD', database: 'optima_chat' }
+  },
+  'bi-backend': {
+    ci: null, // CI 环境暂无 BI 数据库
+    stage: { userKey: 'BI_DB_USER', passwordKey: 'BI_DB_PASSWORD', database: 'optima_bi' },
+    prod: { userKey: 'BI_DB_USER', passwordKey: 'BI_DB_PASSWORD', database: 'optima_bi' }
+  },
+  'session-gateway': {
+    ci: null, // CI 环境暂无 session-gateway 数据库
+    stage: { userKey: 'SHELL_DB_USER', passwordKey: 'SHELL_DB_PASSWORD', database: 'optima_shell' },
+    prod: { userKey: 'AI_SHELL_DB_USER', passwordKey: 'AI_SHELL_DB_PASSWORD', database: 'optima_ai_shell' }
   }
 };
 
-const EC2_HOSTS = {
-  stage: '54.179.132.102',
-  prod: '18.136.25.239'
+// Stage 和 Prod 独立的 RDS 实例
+const RDS_HOSTS = {
+  stage: 'optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com',
+  prod: 'optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com'
 };
+
+// 统一使用 Shared EC2 作为跳板机
+const EC2_HOST = '13.251.46.219';
 
 function getGitHubVariable(name: string): string {
   return execSync(`gh variable get ${name} -R Optima-Chat/optima-dev-skills`, { encoding: 'utf-8' }).trim();
@@ -165,7 +174,7 @@ async function main() {
   if (args.length < 2) {
     console.error('Usage: query-db.ts <service> <sql> [environment]');
     console.error('');
-    console.error('Services: commerce-backend, user-auth, mcp-host, agentic-chat');
+    console.error('Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway');
     console.error('Environments: ci (default), stage, prod');
     console.error('');
     console.error('Example: query-db.ts user-auth "SELECT COUNT(*) FROM users" prod');
@@ -181,6 +190,14 @@ async function main() {
   }
 
   const serviceConfig = SERVICE_DB_MAP[service as keyof typeof SERVICE_DB_MAP][environment as 'ci' | 'stage' | 'prod'];
+
+  if (!serviceConfig) {
+    console.error(`Service ${service} is not available in ${environment.toUpperCase()} environment.`);
+    if (environment === 'ci') {
+      console.error('Try using stage or prod environment instead.');
+    }
+    process.exit(1);
+  }
 
   console.log(`\n🔍 Querying ${service} (${environment.toUpperCase()})...`);
 
@@ -210,14 +227,17 @@ async function main() {
     console.log('✓ Retrieved database credentials from Infisical');
 
     const { userKey, passwordKey, database } = serviceConfig as any;
-    const dbHost = secrets.DATABASE_HOST;
+    const dbHost = RDS_HOSTS[environment as 'stage' | 'prod'];
     const dbUser = secrets[userKey];
     const dbPassword = secrets[passwordKey];
 
-    const localPort = environment === 'stage' ? 15432 : 15433;
-    const ec2Host = EC2_HOSTS[environment as 'stage' | 'prod'];
+    if (!dbUser || !dbPassword) {
+      throw new Error(`Database credentials not found in Infisical for ${service}. Keys: ${userKey}, ${passwordKey}`);
+    }
 
-    setupSSHTunnel(ec2Host, dbHost, localPort);
+    const localPort = environment === 'stage' ? 15432 : 15433;
+
+    setupSSHTunnel(EC2_HOST, dbHost, localPort);
 
     // 等待隧道建立
     await new Promise(resolve => setTimeout(resolve, 1000));
