@@ -40,7 +40,7 @@ const SERVICE_DB_MAP = {
   },
   'session-gateway': {
     ci: null, // CI 环境暂无 session-gateway 数据库
-    stage: { userKey: 'SHELL_DB_USER', passwordKey: 'SHELL_DB_PASSWORD', database: 'optima_shell' },
+    stage: { userKey: 'AI_SHELL_DB_USER', passwordKey: 'AI_SHELL_DB_PASSWORD', database: 'optima_shell' },
     prod: { userKey: 'AI_SHELL_DB_USER', passwordKey: 'AI_SHELL_DB_PASSWORD', database: 'optima_ai_shell' }
   }
 };
@@ -75,14 +75,14 @@ function getInfisicalToken(config: InfisicalConfig): string {
   return JSON.parse(response).accessToken;
 }
 
-function getInfisicalSecrets(config: InfisicalConfig, token: string, environment: string): Record<string, string> {
+function getInfisicalSecrets(config: InfisicalConfig, token: string, environment: string, secretPath: string): Record<string, string> {
   const response = execSync(
-    `curl -s "${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=/infrastructure" -H "Authorization: Bearer ${token}"`,
+    `curl -s "${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${secretPath}" -H "Authorization: Bearer ${token}"`,
     { encoding: 'utf-8' }
   );
   const data = JSON.parse(response);
   const secrets: Record<string, string> = {};
-  for (const secret of data.secrets) {
+  for (const secret of data.secrets || []) {
     secrets[secret.secretKey] = secret.secretValue;
   }
   return secrets;
@@ -223,8 +223,10 @@ async function main() {
     const token = getInfisicalToken(infisicalConfig);
     console.log('✓ Obtained Infisical access token');
 
-    // 数据库凭证统一存储在 Infisical 的 prod 环境（Stage/Prod 共享相同凭证）
-    const secrets = getInfisicalSecrets(infisicalConfig, token, 'prod');
+    // 数据库凭证存储在 Infisical 的 /shared-secrets/database-users 路径
+    // Stage 从 staging 环境读取，Prod 从 prod 环境读取
+    const infisicalEnv = environment === 'stage' ? 'staging' : 'prod';
+    const secrets = getInfisicalSecrets(infisicalConfig, token, infisicalEnv, '/shared-secrets/database-users');
     console.log('✓ Retrieved database credentials from Infisical');
 
     const { userKey, passwordKey, database } = serviceConfig as any;
