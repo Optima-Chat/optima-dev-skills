@@ -36,3 +36,4 @@ coverage/
 tmp/
 temp/
 *.tmp
+database-connections*.md
