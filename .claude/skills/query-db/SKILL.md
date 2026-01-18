@@ -178,6 +178,33 @@ optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY s
 - 通过 SSH 隧道访问 RDS
 - ⚠️ 谨慎使用
 
+## 🔧 技术架构
+
+### Infisical 配置（v0.7.0+）
+
+数据库凭证从 Infisical 动态获取：
+- **项目**: `optima-secrets-v2`
+- **路径**: `/shared-secrets/database-users`
+- **环境**: Stage 用 `staging`，Prod 用 `prod`
+
+**凭证 Key 映射**：
+| 服务 | 用户 Key | 密码 Key |
+|------|----------|----------|
+| commerce-backend | `COMMERCE_DB_USER` | `COMMERCE_DB_PASSWORD` |
+| user-auth | `AUTH_DB_USER` | `AUTH_DB_PASSWORD` |
+| agentic-chat | `CHAT_DB_USER` | `CHAT_DB_PASSWORD` |
+| bi-backend | `BI_DB_USER` | `BI_DB_PASSWORD` |
+| session-gateway | `AI_SHELL_DB_USER` | `AI_SHELL_DB_PASSWORD` |
+
+### RDS 连接
+
+| 环境 | RDS Host | 本地端口 |
+|------|----------|----------|
+| Stage | `optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com` | 15432 |
+| Prod | `optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com` | 15433 |
+
+**跳板机**: `13.251.46.219` (Shared EC2)
+
 ## 🔗 相关命令
 
 - `optima-query-db` - CLI 查询工具（推荐）

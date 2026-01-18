@@ -2,7 +2,7 @@
 
 执行 SQL 查询，支持 CI/Stage/Prod 三个环境。
 
-**版本**: v0.6.0
+**版本**: v0.7.0
 
 ## 使用场景
 
@@ -182,11 +182,11 @@ INFISICAL_TOKEN=$(curl -s -X POST "${INFISICAL_URL}/api/v1/auth/universal-auth/l
   | python3 -c "import sys, json; print(json.load(sys.stdin)['accessToken'])")
 
 # 3. 从 Infisical 获取数据库配置（以 commerce-backend 为例）
-curl -s "${INFISICAL_URL}/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=staging&secretPath=/infrastructure" \
+# 项目: optima-secrets-v2, 路径: /shared-secrets/database-users
+curl -s "${INFISICAL_URL}/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=staging&secretPath=/shared-secrets/database-users" \
   -H "Authorization: Bearer ${INFISICAL_TOKEN}" | python3 -c "
 import sys, json
 secrets = {s['secretKey']: s['secretValue'] for s in json.load(sys.stdin)['secrets']}
-print(f\"DATABASE_HOST={secrets['DATABASE_HOST']}\")
 print(f\"COMMERCE_DB_USER={secrets['COMMERCE_DB_USER']}\")
 print(f\"COMMERCE_DB_PASSWORD={secrets['COMMERCE_DB_PASSWORD']}\")
 " > /tmp/stage_db_config.sh && source /tmp/stage_db_config.sh
@@ -216,7 +216,7 @@ pkill -f "ssh.*15432:${DATABASE_HOST}:5432"
 # 使用 BI_DB_USER, BI_DB_PASSWORD, 数据库: optima_bi
 
 # session-gateway (注意: Stage 数据库名是 optima_shell)
-# 使用 SHELL_DB_USER, SHELL_DB_PASSWORD, 数据库: optima_shell
+# 使用 AI_SHELL_DB_USER, AI_SHELL_DB_PASSWORD, 数据库: optima_shell
 ```
 
 **数据库配置映射**：
@@ -242,12 +242,12 @@ pkill -f "ssh.*15432:${DATABASE_HOST}:5432"
 
 - `session-gateway`:
   - 数据库: `optima_shell` ⚠️ (Stage 与 Prod 不同)
-  - 用户: Infisical `SHELL_DB_USER`
-  - 密码: Infisical `SHELL_DB_PASSWORD`
+  - 用户: Infisical `AI_SHELL_DB_USER`
+  - 密码: Infisical `AI_SHELL_DB_PASSWORD`
 
 **说明**:
 - Infisical 配置从 GitHub Variables 获取
-- 数据库密钥从 Infisical 动态获取（项目: optima-secrets, 环境: staging, 路径: /infrastructure）
+- 数据库密钥从 Infisical 动态获取（项目: optima-secrets-v2, 环境: staging, 路径: /shared-secrets/database-users）
 - Stage RDS: `optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com`
 - Shared EC2 IP: `13.251.46.219`
 - SSH 隧道: 本地端口 `15432` → Shared EC2 → Stage RDS `5432`
@@ -280,11 +280,11 @@ INFISICAL_TOKEN=$(curl -s -X POST "${INFISICAL_URL}/api/v1/auth/universal-auth/l
   | python3 -c "import sys, json; print(json.load(sys.stdin)['accessToken'])")
 
 # 3. 从 Infisical 获取数据库配置（以 commerce-backend 为例）
-curl -s "${INFISICAL_URL}/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=prod&secretPath=/infrastructure" \
+# 项目: optima-secrets-v2, 路径: /shared-secrets/database-users
+curl -s "${INFISICAL_URL}/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=prod&secretPath=/shared-secrets/database-users" \
   -H "Authorization: Bearer ${INFISICAL_TOKEN}" | python3 -c "
 import sys, json
 secrets = {s['secretKey']: s['secretValue'] for s in json.load(sys.stdin)['secrets']}
-print(f\"DATABASE_HOST={secrets['DATABASE_HOST']}\")
 print(f\"COMMERCE_DB_USER={secrets['COMMERCE_DB_USER']}\")
 print(f\"COMMERCE_DB_PASSWORD={secrets['COMMERCE_DB_PASSWORD']}\")
 " > /tmp/prod_db_config.sh && source /tmp/prod_db_config.sh
@@ -345,7 +345,7 @@ pkill -f "ssh.*15433:${DATABASE_HOST}:5432"
 
 **说明**:
 - Infisical 配置从 GitHub Variables 获取
-- 数据库密钥从 Infisical 动态获取（项目: optima-secrets, 环境: prod, 路径: /infrastructure）
+- 数据库密钥从 Infisical 动态获取（项目: optima-secrets-v2, 环境: prod, 路径: /shared-secrets/database-users）
 - Prod RDS: `optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com`
 - Shared EC2 IP: `13.251.46.219`
 - SSH 隧道: 本地端口 `15433` → Shared EC2 → Prod RDS `5432`
