@@ -215,19 +215,19 @@ async function main() {
     );
 
     console.log('\n' + result);
-  } else {
-    // Stage/Prod 环境：通过 SSH 隧道访问 RDS
+  } else if (environment === 'stage') {
+    // Stage 环境：直连 RDS（Stage RDS 在公有子网，可以本地直连）
     const infisicalConfig = getInfisicalConfig();
     console.log('✓ Loaded Infisical config from GitHub Variables');
 
     const token = getInfisicalToken(infisicalConfig);
     console.log('✓ Obtained Infisical access token');
 
-    const secrets = getInfisicalSecrets(infisicalConfig, token, environment === 'stage' ? 'staging' : 'prod');
+    const secrets = getInfisicalSecrets(infisicalConfig, token, 'staging');
     console.log('✓ Retrieved database credentials from Infisical');
 
     const { userKey, passwordKey, database } = serviceConfig as any;
-    const dbHost = RDS_HOSTS[environment as 'stage' | 'prod'];
+    const dbHost = RDS_HOSTS.stage;
     const dbUser = secrets[userKey];
     const dbPassword = secrets[passwordKey];
 
@@ -235,7 +235,29 @@ async function main() {
       throw new Error(`Database credentials not found in Infisical for ${service}. Keys: ${userKey}, ${passwordKey}`);
     }
 
-    const localPort = environment === 'stage' ? 15432 : 15433;
+    const result = queryDatabase(dbHost, 5432, dbUser, dbPassword, database, sql);
+    console.log('\n' + result);
+  } else {
+    // Prod 环境：通过 SSH 隧道访问 RDS（Prod RDS 在私有子网）
+    const infisicalConfig = getInfisicalConfig();
+    console.log('✓ Loaded Infisical config from GitHub Variables');
+
+    const token = getInfisicalToken(infisicalConfig);
+    console.log('✓ Obtained Infisical access token');
+
+    const secrets = getInfisicalSecrets(infisicalConfig, token, 'prod');
+    console.log('✓ Retrieved database credentials from Infisical');
+
+    const { userKey, passwordKey, database } = serviceConfig as any;
+    const dbHost = RDS_HOSTS.prod;
+    const dbUser = secrets[userKey];
+    const dbPassword = secrets[passwordKey];
+
+    if (!dbUser || !dbPassword) {
+      throw new Error(`Database credentials not found in Infisical for ${service}. Keys: ${userKey}, ${passwordKey}`);
+    }
+
+    const localPort = 15433;
 
     setupSSHTunnel(EC2_HOST, dbHost, localPort);
 
