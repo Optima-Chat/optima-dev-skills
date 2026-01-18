@@ -215,41 +215,20 @@ async function main() {
     );
 
     console.log('\n' + result);
-  } else if (environment === 'stage') {
-    // Stage 环境：直连 RDS（Stage RDS 在公有子网，可以本地直连）
-    const infisicalConfig = getInfisicalConfig();
-    console.log('✓ Loaded Infisical config from GitHub Variables');
-
-    const token = getInfisicalToken(infisicalConfig);
-    console.log('✓ Obtained Infisical access token');
-
-    const secrets = getInfisicalSecrets(infisicalConfig, token, 'staging');
-    console.log('✓ Retrieved database credentials from Infisical');
-
-    const { userKey, passwordKey, database } = serviceConfig as any;
-    const dbHost = RDS_HOSTS.stage;
-    const dbUser = secrets[userKey];
-    const dbPassword = secrets[passwordKey];
-
-    if (!dbUser || !dbPassword) {
-      throw new Error(`Database credentials not found in Infisical for ${service}. Keys: ${userKey}, ${passwordKey}`);
-    }
-
-    const result = queryDatabase(dbHost, 5432, dbUser, dbPassword, database, sql);
-    console.log('\n' + result);
   } else {
-    // Prod 环境：通过 SSH 隧道访问 RDS（Prod RDS 在私有子网）
+    // Stage/Prod 环境：通过 SSH 隧道访问 RDS
     const infisicalConfig = getInfisicalConfig();
     console.log('✓ Loaded Infisical config from GitHub Variables');
 
     const token = getInfisicalToken(infisicalConfig);
     console.log('✓ Obtained Infisical access token');
 
+    // 数据库凭证统一存储在 Infisical 的 prod 环境（Stage/Prod 共享相同凭证）
     const secrets = getInfisicalSecrets(infisicalConfig, token, 'prod');
     console.log('✓ Retrieved database credentials from Infisical');
 
     const { userKey, passwordKey, database } = serviceConfig as any;
-    const dbHost = RDS_HOSTS.prod;
+    const dbHost = RDS_HOSTS[environment as 'stage' | 'prod'];
     const dbUser = secrets[userKey];
     const dbPassword = secrets[passwordKey];
 
@@ -257,7 +236,7 @@ async function main() {
       throw new Error(`Database credentials not found in Infisical for ${service}. Keys: ${userKey}, ${passwordKey}`);
     }
 
-    const localPort = 15433;
+    const localPort = environment === 'stage' ? 15432 : 15433;
 
     setupSSHTunnel(EC2_HOST, dbHost, localPort);
 
