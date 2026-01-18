@@ -36,22 +36,33 @@ optima-generate-test-token [options]
 ### 基本使用
 
 ```bash
-# Development 环境（默认）
+# CI 环境（默认）
 optima-generate-test-token
 
-# Production 环境
-optima-generate-test-token --env production
+# Stage 环境
+optima-generate-test-token --env stage
+
+# Prod 环境
+optima-generate-test-token --env prod
 
 # 自定义商户名称
-optima-generate-test-token --business-name "我的测试店铺" --env production
+optima-generate-test-token --business-name "我的测试店铺" --env stage
 
 # 完全自定义
 optima-generate-test-token \
   --email "test@example.com" \
   --password "MyPassword123" \
   --business-name "测试商店" \
-  --env production
+  --env prod
 ```
+
+### 环境说明
+
+| 环境 | Auth URL | API URL |
+|------|----------|---------|
+| ci | `auth.optima.chat` | `api.optima.chat` |
+| stage | `auth.stage.optima.onl` | `api.stage.optima.onl` |
+| prod | `auth.optima.onl` | `api.optima.onl` |
 
 ### 使用生成的 Token
 
@@ -62,12 +73,12 @@ optima-generate-test-token \
 ```bash
 # 查询商品列表
 OPTIMA_TOKEN=$(cat /tmp/optima-test-token-xxx.txt) \
-OPTIMA_ENV=development \
+OPTIMA_ENV=ci \
 commerce product list
 
 # 创建商品
 OPTIMA_TOKEN=$(cat /tmp/optima-test-token-xxx.txt) \
-OPTIMA_ENV=development \
+OPTIMA_ENV=ci \
 commerce product create \
   --title "测试商品" \
   --description "这是一个测试商品" \
@@ -101,7 +112,7 @@ curl -H "Authorization: Bearer $(cat /tmp/optima-test-token-xxx.txt)" \
 3. 使用 token 创建商品：
    ```bash
    OPTIMA_TOKEN=$(cat /tmp/optima-test-token-xxx.txt) \
-   OPTIMA_ENV=development \
+   OPTIMA_ENV=ci \
    commerce product create --title "测试商品" --price 99.99 --stock 100
    ```
 
@@ -115,7 +126,7 @@ curl -H "Authorization: Bearer $(cat /tmp/optima-test-token-xxx.txt)" \
 3. 使用 token 查询订单：
    ```bash
    OPTIMA_TOKEN=$(cat /tmp/optima-test-token-xxx.txt) \
-   OPTIMA_ENV=development \
+   OPTIMA_ENV=ci \
    commerce order list
    ```
 
@@ -130,10 +141,10 @@ curl -H "Authorization: Bearer $(cat /tmp/optima-test-token-xxx.txt)" \
    TOKEN_FILE=/tmp/optima-test-token-xxx.txt
 
    # 创建多个商品
-   OPTIMA_TOKEN=$(cat $TOKEN_FILE) OPTIMA_ENV=development \
+   OPTIMA_TOKEN=$(cat $TOKEN_FILE) OPTIMA_ENV=ci \
    commerce product create --title "商品A" --price 49.99 --stock 50
 
-   OPTIMA_TOKEN=$(cat $TOKEN_FILE) OPTIMA_ENV=development \
+   OPTIMA_TOKEN=$(cat $TOKEN_FILE) OPTIMA_ENV=ci \
    commerce product create --title "商品B" --price 89.99 --stock 30
    ```
 
@@ -150,7 +161,7 @@ curl -H "Authorization: Bearer $(cat /tmp/optima-test-token-xxx.txt)" \
 
    # 在环境变量中设置
    export OPTIMA_TOKEN=$(cat $TOKEN_FILE)
-   export OPTIMA_ENV=development
+   export OPTIMA_ENV=ci
 
    # 运行测试
    npm run test:api
@@ -179,7 +190,7 @@ curl -H "Authorization: Bearer $(cat /tmp/optima-test-token-xxx.txt)" \
   TOKEN=$(cat /tmp/optima-test-token-1763997011780.txt)
 
   # Use with commerce CLI:
-  OPTIMA_TOKEN=$(cat /tmp/optima-test-token-1763997011780.txt) OPTIMA_ENV=development commerce product list
+  OPTIMA_TOKEN=$(cat /tmp/optima-test-token-1763997011780.txt) OPTIMA_ENV=ci commerce product list
 
   # Use in curl:
   curl -H "Authorization: Bearer $(cat /tmp/optima-test-token-1763997011780.txt)" https://api.optima.chat/api/products
@@ -196,7 +207,7 @@ curl -H "Authorization: Bearer $(cat /tmp/optima-test-token-xxx.txt)" \
 
 使用 commerce CLI 时**必须**设置环境变量：
 ```bash
-OPTIMA_ENV=development  # 必需，指定 development 环境
+OPTIMA_ENV=ci  # 必需，指定环境 (ci/stage/prod)
 OPTIMA_TOKEN=$(cat /tmp/optima-test-token-xxx.txt)  # 必需，读取 token
 ```
 
@@ -212,13 +223,17 @@ OPTIMA_TOKEN=$(cat /tmp/optima-test-token-xxx.txt)  # 必需，读取 token
 - 系统重启后可能被清理
 - 建议在使用完成后手动删除敏感文件
 
-### 只能用于开发环境
+### 支持的环境
 
-- 生成的账户注册到 **development 环境**
-- API 地址：
-  - Auth: `https://auth.optima.chat`
-  - Commerce: `https://api.optima.chat`
-- **不能用于** production 或 stage 环境
+工具支持三个环境，使用 `--env` 参数指定：
+
+| 环境 | Auth API | Commerce API |
+|------|----------|--------------|
+| ci (默认) | `https://auth.optima.chat` | `https://api.optima.chat` |
+| stage | `https://auth.stage.optima.onl` | `https://api.stage.optima.onl` |
+| prod | `https://auth.optima.onl` | `https://api.optima.onl` |
+
+⚠️ **注意**：Prod 环境创建的账户会出现在生产系统中，请谨慎使用。
 
 ## 💡 最佳实践
 
@@ -241,8 +256,8 @@ OPTIMA_TOKEN=$(cat "$TOKEN_FILE")
 export TOKEN_FILE=/tmp/optima-test-token-1763997011780.txt
 
 # 后续使用
-OPTIMA_TOKEN=$(cat $TOKEN_FILE) OPTIMA_ENV=development commerce product list
-OPTIMA_TOKEN=$(cat $TOKEN_FILE) OPTIMA_ENV=development commerce order list
+OPTIMA_TOKEN=$(cat $TOKEN_FILE) OPTIMA_ENV=ci commerce product list
+OPTIMA_TOKEN=$(cat $TOKEN_FILE) OPTIMA_ENV=ci commerce order list
 ```
 
 ### 3. 自定义账户信息（可选）
@@ -275,7 +290,7 @@ rm /tmp/optima-test-token-*.txt
 
 **解决方案**:
 - Token 已过期（15分钟），重新生成
-- 环境变量设置错误，检查 `OPTIMA_ENV=development`
+- 环境变量设置错误，检查 `OPTIMA_ENV=ci`
 - Token 文件路径错误，检查文件是否存在
 
 ### 问题 2：Merchant profile 未设置

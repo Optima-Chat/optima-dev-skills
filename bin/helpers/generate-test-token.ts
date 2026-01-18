@@ -24,7 +24,7 @@ interface MerchantSetupResponse {
   user_id: string;
 }
 
-type Environment = 'development' | 'production';
+type Environment = 'ci' | 'stage' | 'prod';
 
 interface EnvironmentConfig {
   authUrl: string;
@@ -34,17 +34,23 @@ interface EnvironmentConfig {
 }
 
 const ENV_CONFIG: Record<Environment, EnvironmentConfig> = {
-  development: {
+  ci: {
     authUrl: 'https://auth.optima.chat',
     apiUrl: 'https://api.optima.chat',
     clientId: 'dev-skill-cli-he7fjmsp',
-    envName: 'development'
+    envName: 'ci'
   },
-  production: {
-    authUrl: 'https://auth.optima.shop',
-    apiUrl: 'https://api.optima.shop',
-    clientId: 'dev-skill-cli-0cyyqxox',
-    envName: 'production'
+  stage: {
+    authUrl: 'https://auth.stage.optima.onl',
+    apiUrl: 'https://api.stage.optima.onl',
+    clientId: 'commerce-cli-stage-ihbbwplz',
+    envName: 'stage'
+  },
+  prod: {
+    authUrl: 'https://auth.optima.onl',
+    apiUrl: 'https://api.optima.onl',
+    clientId: 'commerce-cli-ecs-pro-i2r5of1h',
+    envName: 'prod'
   }
 };
 
@@ -166,7 +172,7 @@ async function main() {
   let businessName = defaultBusinessName;
   let phone: string | undefined;
   let address: string | undefined;
-  let environment: Environment = 'development';
+  let environment: Environment = 'ci';
 
   // 解析命令行参数
   for (let i = 0; i < args.length; i++) {
@@ -184,15 +190,15 @@ async function main() {
       address = args[++i];
     } else if (arg === '--env' && args[i + 1]) {
       const envArg = args[++i];
-      if (envArg === 'development' || envArg === 'production') {
+      if (envArg === 'ci' || envArg === 'stage' || envArg === 'prod') {
         environment = envArg;
       } else {
-        console.error(`❌ Invalid environment: ${envArg}. Must be 'development' or 'production'.`);
+        console.error(`❌ Invalid environment: ${envArg}. Must be 'ci', 'stage', or 'prod'.`);
         process.exit(1);
       }
     } else if (arg === '--help' || arg === '-h') {
       console.log(`
-Usage: generate-test-token [options]
+Usage: optima-generate-test-token [options]
 
 Options:
   --email <email>              User email (default: auto-generated)
@@ -200,14 +206,19 @@ Options:
   --business-name <name>       Merchant business name (default: auto-generated)
   --phone <phone>              Merchant phone number (optional)
   --address <address>          Merchant address (optional)
-  --env <environment>          Environment: development (default) or production
+  --env <environment>          Environment: ci (default), stage, or prod
   --help, -h                   Show this help message
 
+Environments:
+  ci      CI 环境 (auth.optima.chat, api.optima.chat)
+  stage   Stage 环境 (auth.stage.optima.onl, api.stage.optima.onl)
+  prod    Prod 环境 (auth.optima.onl, api.optima.onl)
+
 Example:
-  generate-test-token
-  generate-test-token --env production
-  generate-test-token --business-name "My Test Shop" --phone "+1234567890"
-  generate-test-token --email "custom@example.com" --password "MyPass123" --env production
+  optima-generate-test-token
+  optima-generate-test-token --env stage
+  optima-generate-test-token --env prod
+  optima-generate-test-token --business-name "My Test Shop" --env stage
       `);
       process.exit(0);
     }
