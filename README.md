@@ -23,12 +23,13 @@ Optima Dev Skills 让 Claude Code 能够直接在 **CI、Stage、Prod** 三个�
 - **任务驱动** - 基于具体任务场景（查看日志、调用 API），不是抽象分类
 - **跨环境协作** - 统一的命令在 CI、Stage、Prod 三个环境中使用
 
-## 📋 任务场景（5 个）
+## 📋 任务场景（6 个）
 
 当 Claude Code 识别到以下任务时，会自动加载对应的 Skill：
 
 - **logs** - 查看 CI/Stage/Prod 的服务器日志
 - **query-db** - 查询 CI/Stage/Prod 的数据库
+- **show-env** - 查看 Stage/Prod 的服务环境变量（从 Infisical）
 - **generate-test-token** - 生成测试 Access Token 用于 API 测试
 - **use-commerce-cli** - 使用 Commerce CLI 管理电商店铺
 - **read-code** - 阅读 Optima-Chat 组织下任意仓库的代码
@@ -91,10 +92,12 @@ Claude:
 | 工具 | 说明 | 示例 |
 |------|------|------|
 | `optima-query-db` | 数据库查询工具 | `optima-query-db user-auth "SELECT COUNT(*) FROM users" prod` |
+| `optima-show-env` | 查看服务环境变量 | `optima-show-env commerce-backend stage --filter DATABASE` |
 | `optima-generate-test-token` | 生成测试 token | `optima-generate-test-token --business-name "测试店铺"` |
 
 **特点**：
 - ✅ 支持 CI、Stage、Prod 三个环境（query-db）
+- ✅ 支持 Stage、Prod 环境（show-env）
 - ✅ 自动管理 SSH 隧道和密钥
 - ✅ 可在任何终端直接使用
 - ✅ 自动注册账户、获取 token、设置 merchant profile（generate-test-token）
@@ -114,6 +117,7 @@ optima-dev-skills/
 │   └── skills/
 │       ├── logs/                      # 日志查看 skill
 │       ├── query-db/                  # 数据库查询 skill
+│       ├── show-env/                  # 环境变量查看 skill
 │       ├── generate-test-token/       # 测试 token 生成 skill
 │       ├── use-commerce-cli/          # Commerce CLI 使用 skill
 │       └── read-code/                 # 代码阅读 skill
@@ -121,6 +125,7 @@ optima-dev-skills/
 ├── bin/
 │   └── helpers/
 │       ├── query-db.ts                # CLI: 数据库查询
+│       ├── show-env.ts                # CLI: 查看环境变量
 │       └── generate-test-token.ts     # CLI: 生成测试 token
 │
 └── docs/
@@ -228,16 +233,16 @@ $ optima-query-db commerce-backend "SELECT id, title FROM products LIMIT 5" stag
 
 ## 🛠️ 开发状态
 
-**当前版本**: 0.7.4
+**当前版本**: 0.7.16
 
 **已完成**:
 - ✅ 4 个命令：`/logs`、`/query-db`、`/generate-test-token`、`/read-code`
-- ✅ 5 个任务场景：`logs`、`query-db`、`generate-test-token`、`use-commerce-cli`、`read-code`
+- ✅ 6 个任务场景：`logs`、`query-db`、`show-env`、`generate-test-token`、`use-commerce-cli`、`read-code`
 - ✅ 支持 CI、Stage、Prod 三个环境
 - ✅ CI 环境通过 SSH + Docker 访问
 - ✅ Stage/Prod 通过 SSH 隧道访问 RDS
-- ✅ TypeScript CLI 工具：`optima-query-db`、`optima-generate-test-token`
-- ✅ 通过 Infisical 动态获取密钥
+- ✅ TypeScript CLI 工具：`optima-query-db`、`optima-show-env`、`optima-generate-test-token`
+- ✅ 通过 Infisical 动态获取密钥和环境变量
 - ✅ 自动生成测试 token 并设置 merchant profile
 - ✅ `generate-test-token` 支持 development 和 production 环境
 
