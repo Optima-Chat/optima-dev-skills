@@ -6,7 +6,8 @@
   "bin": {
     "optima-dev-skills": "./bin/cli.js",
     "optima-query-db": "./dist/bin/helpers/query-db.js",
-    "optima-generate-test-token": "./dist/bin/helpers/generate-test-token.js"
+    "optima-generate-test-token": "./dist/bin/helpers/generate-test-token.js",
+    "optima-show-env": "./dist/bin/helpers/show-env.js"
   },
   "scripts": {
     "postinstall": "node scripts/install.js",
