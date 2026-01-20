@@ -203,7 +203,7 @@ optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY s
 | Stage | `optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com` | 15432 |
 | Prod | `optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com` | 15433 |
 
-**跳板机**: `13.251.46.219` (Shared EC2)
+**跳板机**: `3.0.210.113` (Shared EC2)
 
 ## 🔗 相关命令
 

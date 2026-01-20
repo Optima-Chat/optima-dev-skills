@@ -51,8 +51,8 @@ const RDS_HOSTS = {
   prod: 'optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com'
 };
 
-// 统一使用 Shared EC2 作为跳板机
-const EC2_HOST = '13.251.46.219';
+// 统一使用 BI Data ARM Host 作为跳板机
+const EC2_HOST = '3.0.210.113';
 
 function getGitHubVariable(name: string): string {
   return execSync(`gh variable get ${name} -R Optima-Chat/optima-dev-skills`, { encoding: 'utf-8' }).trim();

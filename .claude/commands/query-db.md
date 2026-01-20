@@ -192,7 +192,7 @@ print(f\"COMMERCE_DB_PASSWORD={secrets['COMMERCE_DB_PASSWORD']}\")
 " > /tmp/stage_db_config.sh && source /tmp/stage_db_config.sh
 
 # 4. 建立 SSH 隧道到 Shared EC2，通过隧道访问 Stage RDS
-ssh -i ~/.ssh/optima-ec2-key -f -N -L 15432:optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com:5432 ec2-user@13.251.46.219
+ssh -i ~/.ssh/optima-ec2-key -f -N -L 15432:optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com:5432 ec2-user@3.0.210.113
 
 # 5. 通过本地端口 15432 连接到 RDS
 PGPASSWORD="${COMMERCE_DB_PASSWORD}" psql -h localhost -p 15432 -U "${COMMERCE_DB_USER}" -d optima_commerce -c "SELECT COUNT(*) FROM products"
@@ -249,7 +249,7 @@ pkill -f "ssh.*15432:${DATABASE_HOST}:5432"
 - Infisical 配置从 GitHub Variables 获取
 - 数据库密钥从 Infisical 动态获取（项目: optima-secrets-v2, 环境: staging, 路径: /shared-secrets/database-users）
 - Stage RDS: `optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com`
-- Shared EC2 IP: `13.251.46.219`
+- Shared EC2 IP: `3.0.210.113`
 - SSH 隧道: 本地端口 `15432` → Shared EC2 → Stage RDS `5432`
 - Stage 和 Prod 有独立的 RDS 实例
 - ⚠️ session-gateway 数据库名: Stage 用 `optima_shell`, Prod 用 `optima_ai_shell`
@@ -290,7 +290,7 @@ print(f\"COMMERCE_DB_PASSWORD={secrets['COMMERCE_DB_PASSWORD']}\")
 " > /tmp/prod_db_config.sh && source /tmp/prod_db_config.sh
 
 # 4. 建立 SSH 隧道到 Shared EC2，通过隧道访问 Prod RDS
-ssh -i ~/.ssh/optima-ec2-key -f -N -L 15433:optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com:5432 ec2-user@13.251.46.219
+ssh -i ~/.ssh/optima-ec2-key -f -N -L 15433:optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com:5432 ec2-user@3.0.210.113
 
 # 5. 通过本地端口 15433 连接到 RDS
 PGPASSWORD="${COMMERCE_DB_PASSWORD}" psql -h localhost -p 15433 -U "${COMMERCE_DB_USER}" -d optima_commerce -c "SELECT COUNT(*) FROM products"
@@ -347,7 +347,7 @@ pkill -f "ssh.*15433:${DATABASE_HOST}:5432"
 - Infisical 配置从 GitHub Variables 获取
 - 数据库密钥从 Infisical 动态获取（项目: optima-secrets-v2, 环境: prod, 路径: /shared-secrets/database-users）
 - Prod RDS: `optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com`
-- Shared EC2 IP: `13.251.46.219`
+- Shared EC2 IP: `3.0.210.113`
 - SSH 隧道: 本地端口 `15433` → Shared EC2 → Prod RDS `5432`
 - Stage 用端口 `15432`，Prod 用端口 `15433`
 - Stage 和 Prod 有独立的 RDS 实例
