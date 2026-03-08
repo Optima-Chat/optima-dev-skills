@@ -18,7 +18,8 @@ const SUPPORTED_SERVICES = [
   'session-gateway',
   'optima-store',
   'optima-scout',
-  'mcp-host'
+  'mcp-host',
+  'shopify-backend'
 ];
 
 // 环境到 Infisical environment 的映射
