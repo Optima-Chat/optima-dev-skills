@@ -45,7 +45,7 @@ const SERVICE_DB_MAP = {
   },
   'optima-logistics': {
     ci: null,
-    stage: { userKey: 'LOGISTICS_DB_USER', passwordKey: 'LOGISTICS_DB_PASSWORD', database: 'optima_logistics' },
+    stage: { userKey: 'LOGISTICS_DB_USER', passwordKey: 'LOGISTICS_DB_PASSWORD', database: 'optima_stage_logistics' },
     prod: { userKey: 'LOGISTICS_DB_USER', passwordKey: 'LOGISTICS_DB_PASSWORD', database: 'optima_logistics' }
   }
 };
