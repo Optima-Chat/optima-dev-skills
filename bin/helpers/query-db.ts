@@ -42,6 +42,11 @@ const SERVICE_DB_MAP = {
     ci: null, // CI 环境暂无 session-gateway 数据库
     stage: { userKey: 'AI_SHELL_DB_USER', passwordKey: 'AI_SHELL_DB_PASSWORD', database: 'optima_shell' },
     prod: { userKey: 'AI_SHELL_DB_USER', passwordKey: 'AI_SHELL_DB_PASSWORD', database: 'optima_ai_shell' }
+  },
+  'optima-logistics': {
+    ci: null,
+    stage: { userKey: 'LOGISTICS_DB_USER', passwordKey: 'LOGISTICS_DB_PASSWORD', database: 'optima_logistics' },
+    prod: { userKey: 'LOGISTICS_DB_USER', passwordKey: 'LOGISTICS_DB_PASSWORD', database: 'optima_logistics' }
   }
 };
 

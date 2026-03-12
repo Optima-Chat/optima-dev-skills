@@ -37,7 +37,7 @@ switch (command) {
     log('  /logs mcp-host 200 prod                  Prod, 200 lines', 'cyan');
 
     log('\nSupported Services:', 'yellow');
-    log('  commerce-backend  user-auth  mcp-host  agentic-chat', 'cyan');
+    log('  commerce-backend  user-auth  mcp-host  agentic-chat  optima-logistics', 'cyan');
 
     log('\nEnvironments:', 'yellow');
     log('  stage (default)   prod', 'cyan');

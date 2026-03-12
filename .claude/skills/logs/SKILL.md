@@ -191,6 +191,7 @@ INFO - Database query took 3200ms: SELECT * FROM products WHERE...
 | `optima-store` | 商城前端 | - | ✓ | - |
 | `commerce-rq-worker` | RQ 后台任务 | - | ✓ | ✓ |
 | `commerce-rq-scheduler` | RQ 定时调度 | - | ✓ | ✓ |
+| `optima-logistics` | 物流服务 | - | ✓ | ✓ |
 
 ## 最佳实践
 

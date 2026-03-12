@@ -76,6 +76,7 @@ optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY s
 - `agentic-chat` - AI 聊天数据库
 - `bi-backend` - BI 后端数据库
 - `session-gateway` - AI Shell 网关数据库
+- `optima-logistics` - 物流服务数据库
 
 ### 常用查询示例
 
@@ -195,6 +196,7 @@ optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY s
 | agentic-chat | `CHAT_DB_USER` | `CHAT_DB_PASSWORD` |
 | bi-backend | `BI_DB_USER` | `BI_DB_PASSWORD` |
 | session-gateway | `AI_SHELL_DB_USER` | `AI_SHELL_DB_PASSWORD` |
+| optima-logistics | `LOGISTICS_DB_USER` | `LOGISTICS_DB_PASSWORD` |
 
 ### RDS 连接
 

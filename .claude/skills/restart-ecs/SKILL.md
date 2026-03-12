@@ -71,6 +71,7 @@ allowed-tools: ["Bash"]
 | ai-shell-web-ui | ai-shell-web-ui-stage | Shell Web UI |
 | optima-store | optima-store-stage | 商城前端 |
 | pgbouncer | pgbouncer-stage | 数据库连接池 |
+| optima-logistics | optima-logistics-stage | 物流服务 |
 
 ### Prod 环境
 
@@ -90,6 +91,7 @@ allowed-tools: ["Bash"]
 | bi-dashboard | bi-dashboard-prod | BI 仪表板 |
 | optima-scout | optima-scout-prod | 产品研究工具 |
 | ai-shell-web-ui | ai-shell-web-ui-prod | Shell Web UI |
+| optima-logistics | optima-logistics-prod | 物流服务 |
 
 **注意**: `optima-store` 和 `pgbouncer` 仅在 Stage 环境部署
 

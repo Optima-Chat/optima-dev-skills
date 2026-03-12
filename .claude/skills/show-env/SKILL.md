@@ -58,6 +58,7 @@ optima-show-env agentic-chat stage
 - `optima-store` - 商城前端
 - `optima-scout` - 产品研究工具
 - `mcp-host` - MCP 主机
+- `optima-logistics` - 物流服务
 
 **支持的环境**：
 - `stage` - Stage 预发布环境
