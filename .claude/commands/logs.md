@@ -32,6 +32,10 @@
   - `commerce-rq-worker` - RQ 后台任务
   - `commerce-rq-scheduler` - RQ 定时调度
   - `optima-logistics` - 物流服务（仅 Stage/Prod）
+  - `billing` - 计费服务（仅 Stage/Prod）
+  - `browser-backend` - 浏览器自动化服务（仅 Stage/Prod）
+  - `optima-generation` - 内容生成服务（仅 Stage/Prod）
+  - `optima-generation-worker` - 内容生成 Worker（仅 Stage/Prod）
 - `lines` (可选): 显示行数，默认 50
 - `environment` (可选): 环境，默认 ci
   - `ci` - CI 持续集成环境（开发环境，默认）
@@ -128,6 +132,10 @@ aws logs get-log-events --log-group-name /ecs/commerce-backend-stage --log-strea
 - `commerce-rq-worker` → `/ecs/commerce-rq-worker-stage`
 - `commerce-rq-scheduler` → `/ecs/commerce-rq-scheduler-stage`
 - `optima-logistics` → `/ecs/optima-logistics-stage`
+- `billing` → `/ecs/billing-stage`
+- `browser-backend` → `/ecs/browser-backend-stage`
+- `optima-generation` → `/ecs/optima-generation-stage`
+- `optima-generation-worker` → `/ecs/optima-generation-worker-stage`
 
 ### 2. Prod 环境（environment = "prod"）
 
@@ -167,6 +175,10 @@ aws logs get-log-events --log-group-name /ecs/commerce-backend-prod --log-stream
 - `commerce-rq-worker` → `/ecs/commerce-rq-worker-prod`
 - `commerce-rq-scheduler` → `/ecs/commerce-rq-scheduler-prod`
 - `optima-logistics` → `/ecs/optima-logistics-prod`
+- `billing` → `/ecs/billing-prod`
+- `browser-backend` → `/ecs/browser-backend-prod`
+- `optima-generation` → `/ecs/optima-generation-prod`
+- `optima-generation-worker` → `/ecs/optima-generation-worker-prod`
 
 **注意**: `optima-store` 仅在 Stage 环境部署
 

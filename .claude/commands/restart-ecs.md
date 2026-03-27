@@ -31,6 +31,10 @@
   - `optima-scout` - 产品研究工具
   - `ai-shell-web-ui` - Shell Web UI
   - `optima-store` - 商城前端（仅 Stage）
+  - `billing` - 计费服务
+  - `browser-backend` - 浏览器自动化服务
+  - `optima-generation` - 内容生成服务
+  - `optima-generation-worker` - 内容生成 Worker
   - `pgbouncer` - 连接池（仅 Stage）
 - `environment` (可选): 环境，默认 stage
   - `stage` - Stage 预发布环境（默认，更安全）
@@ -93,6 +97,10 @@ aws ecs update-service \
 - `optima-scout-stage`
 - `ai-shell-web-ui-stage`
 - `optima-store-stage`
+- `billing-stage`
+- `browser-backend-stage`
+- `optima-generation-stage`
+- `optima-generation-worker-stage`
 - `pgbouncer-stage`
 
 ### 2. Prod 环境重启（environment = "prod"）
@@ -126,6 +134,10 @@ aws ecs update-service \
 - `bi-dashboard-prod`
 - `optima-scout-prod`
 - `ai-shell-web-ui-prod`
+- `billing-prod`
+- `browser-backend-prod`
+- `optima-generation-prod`
+- `optima-generation-worker-prod`
 
 **注意**: `optima-store` 和 `pgbouncer` 仅在 Stage 环境部署
 

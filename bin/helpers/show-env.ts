@@ -20,7 +20,10 @@ const SUPPORTED_SERVICES = [
   'optima-scout',
   'mcp-host',
   'shopify-backend',
-  'optima-logistics'
+  'optima-logistics',
+  'billing',
+  'browser-backend',
+  'optima-generation'
 ];
 
 // 环境到 Infisical environment 的映射

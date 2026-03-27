@@ -38,6 +38,7 @@ switch (command) {
 
     log('\nSupported Services:', 'yellow');
     log('  commerce-backend  user-auth  mcp-host  agentic-chat  optima-logistics', 'cyan');
+    log('  optima-scout  billing  browser-backend  optima-generation', 'cyan');
 
     log('\nEnvironments:', 'yellow');
     log('  stage (default)   prod', 'cyan');

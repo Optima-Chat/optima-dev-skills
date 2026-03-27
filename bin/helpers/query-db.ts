@@ -47,6 +47,21 @@ const SERVICE_DB_MAP = {
     ci: null,
     stage: { userKey: 'LOGISTICS_DB_USER', passwordKey: 'LOGISTICS_DB_PASSWORD', database: 'optima_stage_logistics' },
     prod: { userKey: 'LOGISTICS_DB_USER', passwordKey: 'LOGISTICS_DB_PASSWORD', database: 'optima_logistics' }
+  },
+  'billing': {
+    ci: null,
+    stage: { databaseUrlPath: '/services/billing', databaseUrlKey: 'DATABASE_URL' },
+    prod: { databaseUrlPath: '/services/billing', databaseUrlKey: 'DATABASE_URL' }
+  },
+  'browser-backend': {
+    ci: null,
+    stage: { databaseUrlPath: '/services/browser-backend', databaseUrlKey: 'DATABASE_URL' },
+    prod: { databaseUrlPath: '/services/browser-backend', databaseUrlKey: 'DATABASE_URL' }
+  },
+  'optima-generation': {
+    ci: null,
+    stage: { databaseUrlPath: '/services/optima-generation', databaseUrlKey: 'DATABASE_URL' },
+    prod: { databaseUrlPath: '/services/optima-generation', databaseUrlKey: 'DATABASE_URL' }
   }
 };
 
@@ -58,6 +73,21 @@ const RDS_HOSTS = {
 
 // 统一使用 BI Data ARM Host 作为跳板机
 const EC2_HOST = '3.0.210.113';
+
+function parseDatabaseUrl(url: string): { user: string; password: string; host: string; port: number; database: string } {
+  // postgresql://user:password@host:port/database?params
+  const match = url.match(/^postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/([^?]+)/);
+  if (!match) {
+    throw new Error(`Failed to parse DATABASE_URL: ${url}`);
+  }
+  return {
+    user: decodeURIComponent(match[1]),
+    password: decodeURIComponent(match[2]),
+    host: match[3],
+    port: parseInt(match[4]),
+    database: match[5]
+  };
+}
 
 function getGitHubVariable(name: string): string {
   return execSync(`gh variable get ${name} -R Optima-Chat/optima-dev-skills`, { encoding: 'utf-8' }).trim();
@@ -179,7 +209,7 @@ async function main() {
   if (args.length < 2) {
     console.error('Usage: query-db.ts <service> <sql> [environment]');
     console.error('');
-    console.error('Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway');
+    console.error('Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway, optima-logistics, billing, browser-backend, optima-generation');
     console.error('Environments: ci (default), stage, prod');
     console.error('');
     console.error('Example: query-db.ts user-auth "SELECT COUNT(*) FROM users" prod');
@@ -228,19 +258,42 @@ async function main() {
     const token = getInfisicalToken(infisicalConfig);
     console.log('✓ Obtained Infisical access token');
 
-    // 数据库凭证存储在 Infisical 的 /shared-secrets/database-users 路径
-    // Stage 从 staging 环境读取，Prod 从 prod 环境读取
     const infisicalEnv = environment === 'stage' ? 'staging' : 'prod';
-    const secrets = getInfisicalSecrets(infisicalConfig, token, infisicalEnv, '/shared-secrets/database-users');
-    console.log('✓ Retrieved database credentials from Infisical');
+    let dbUser: string;
+    let dbPassword: string;
+    let dbHost: string;
+    let database: string;
 
-    const { userKey, passwordKey, database } = serviceConfig as any;
-    const dbHost = RDS_HOSTS[environment as 'stage' | 'prod'];
-    const dbUser = secrets[userKey];
-    const dbPassword = secrets[passwordKey];
+    if ('databaseUrlPath' in (serviceConfig as any)) {
+      // 从服务路径获取 DATABASE_URL 并解析
+      const { databaseUrlPath, databaseUrlKey } = serviceConfig as any;
+      const secrets = getInfisicalSecrets(infisicalConfig, token, infisicalEnv, databaseUrlPath);
+      console.log(`✓ Retrieved DATABASE_URL from Infisical (path: ${databaseUrlPath})`);
 
-    if (!dbUser || !dbPassword) {
-      throw new Error(`Database credentials not found in Infisical for ${service}. Keys: ${userKey}, ${passwordKey}`);
+      const databaseUrl = secrets[databaseUrlKey];
+      if (!databaseUrl) {
+        throw new Error(`DATABASE_URL not found in Infisical at ${databaseUrlPath}`);
+      }
+
+      const parsed = parseDatabaseUrl(databaseUrl);
+      dbUser = parsed.user;
+      dbPassword = parsed.password;
+      dbHost = parsed.host;
+      database = parsed.database;
+    } else {
+      // 从 shared-secrets/database-users 获取凭证
+      const secrets = getInfisicalSecrets(infisicalConfig, token, infisicalEnv, '/shared-secrets/database-users');
+      console.log('✓ Retrieved database credentials from Infisical');
+
+      const { userKey, passwordKey } = serviceConfig as any;
+      database = (serviceConfig as any).database;
+      dbHost = RDS_HOSTS[environment as 'stage' | 'prod'];
+      dbUser = secrets[userKey];
+      dbPassword = secrets[passwordKey];
+
+      if (!dbUser || !dbPassword) {
+        throw new Error(`Database credentials not found in Infisical for ${service}. Keys: ${userKey}, ${passwordKey}`);
+      }
     }
 
     const localPort = environment === 'stage' ? 15432 : 15433;
