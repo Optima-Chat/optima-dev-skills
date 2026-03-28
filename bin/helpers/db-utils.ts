@@ -91,7 +91,7 @@ function findPsqlPath(): string {
 
 export function queryDB(conn: DBConnection, sql: string): string {
   const psql = findPsqlPath();
-  return execSync(`"${psql}" -h ${conn.host} -p ${conn.port} -U ${conn.user} -d ${conn.database} -t -A -c "${sql.replace(/"/g, '\\"')}"`, {
+  return execSync(`"${psql}" -h ${conn.host} -p ${conn.port} -U ${conn.user} -d ${conn.database} -t -A --quiet -c "${sql.replace(/"/g, '\\"')}"`, {
     encoding: 'utf-8',
     env: { ...process.env, PGPASSWORD: conn.password },
   }).trim();
