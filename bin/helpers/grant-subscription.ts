@@ -21,7 +21,7 @@ Options:
 
   for (let i = 1; i < args.length; i++) {
     if (args[i] === '--plan' && args[i + 1]) { plan = args[++i]; }
-    else if (args[i] === '--months' && args[i + 1]) { months = parseInt(args[++i]); }
+    else if (args[i] === '--months' && args[i + 1]) { months = parseInt(args[++i], 10); }
     else if (args[i] === '--env' && args[i + 1]) { env = args[++i]; }
   }
 
@@ -52,9 +52,9 @@ async function main() {
   if (!planRow) { console.error(`❌ Plan not found in DB: ${plan}`); process.exit(1); }
 
   const [planName, monthlyCreditsStr, sessionTokenLimitStr, weeklyTokenLimitStr] = planRow.split('|');
-  const monthlyCredits = parseInt(monthlyCreditsStr);
-  const sessionTokenLimit = parseInt(sessionTokenLimitStr);
-  const weeklyTokenLimit = parseInt(weeklyTokenLimitStr);
+  const monthlyCredits = parseInt(monthlyCreditsStr, 10);
+  const sessionTokenLimit = parseInt(sessionTokenLimitStr, 10);
+  const weeklyTokenLimit = parseInt(weeklyTokenLimitStr, 10);
   console.log(`✓ Plan: ${planName} (credits: ${monthlyCredits}, session: ${sessionTokenLimit.toLocaleString()}, weekly: ${weeklyTokenLimit.toLocaleString()})`);
 
   // Execute all mutations in a single transaction

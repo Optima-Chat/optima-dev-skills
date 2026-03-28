@@ -22,7 +22,7 @@ Options:
   let env = 'stage';
 
   for (let i = 1; i < args.length; i++) {
-    if (args[i] === '--amount' && args[i + 1]) { amount = parseInt(args[++i]); }
+    if (args[i] === '--amount' && args[i + 1]) { amount = parseInt(args[++i], 10); }
     else if (args[i] === '--type' && args[i + 1]) { type = args[++i]; }
     else if (args[i] === '--description' && args[i + 1]) { description = args[++i]; }
     else if (args[i] === '--env' && args[i + 1]) { env = args[++i]; }

@@ -65,8 +65,8 @@ export function getInfisicalSecrets(config: InfisicalConfig, token: string, envi
 // ─── Database URL parsing ───────────────────────────────────────────────────
 export function parseDatabaseUrl(url: string): { user: string; password: string; host: string; port: number; database: string } {
   const match = url.match(/^postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/([^?]+)/);
-  if (!match) throw new Error(`Failed to parse DATABASE_URL: ${url}`);
-  return { user: decodeURIComponent(match[1]), password: decodeURIComponent(match[2]), host: match[3], port: parseInt(match[4]), database: match[5] };
+  if (!match) throw new Error('Failed to parse DATABASE_URL (format: postgresql://user:pass@host:port/db)');
+  return { user: decodeURIComponent(match[1]), password: decodeURIComponent(match[2]), host: match[3], port: parseInt(match[4], 10), database: match[5] };
 }
 
 // ─── SSH tunnel ─────────────────────────────────────────────────────────────
