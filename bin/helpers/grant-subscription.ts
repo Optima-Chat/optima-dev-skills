@@ -90,15 +90,21 @@ INSERT INTO credit_ledger (id, user_id, type, description, initial_amount, remai
 SELECT concat('crd_gift_', substr(md5(random()::text), 1, 16)), '${safeUserId}', 'subscription', '${safePlanName} plan gift (${months} month)', ${monthlyCredits}, ${monthlyCredits}, '${periodEndISO}', '${now}'
 WHERE ${monthlyCredits} > 0;
 
--- Upsert session token quota
-INSERT INTO token_quotas (id, user_id, plan_id, period_type, monthly_limit, monthly_used, period_start, period_end, created_at, updated_at)
-VALUES (concat('tq_sess_', substr(md5(random()::text), 1, 16)), '${safeUserId}', '${safePlan}', 'session', ${sessionTokenLimit}, 0, '${now}', '${sessionEnd}', '${now}', '${now}')
-ON CONFLICT (user_id, period_type, period_start) DO UPDATE SET plan_id='${safePlan}', monthly_limit=${sessionTokenLimit}, updated_at='${now}';
+-- Update existing active session quota, or insert new one if none exists
+UPDATE token_quotas SET plan_id='${safePlan}', monthly_limit=${sessionTokenLimit}, updated_at='${now}'
+WHERE user_id='${safeUserId}' AND period_type='session' AND period_end > '${now}';
 
--- Upsert weekly token quota
 INSERT INTO token_quotas (id, user_id, plan_id, period_type, monthly_limit, monthly_used, period_start, period_end, created_at, updated_at)
-VALUES (concat('tq_week_', substr(md5(random()::text), 1, 16)), '${safeUserId}', '${safePlan}', 'weekly', ${weeklyTokenLimit}, 0, '${now}', '${weekEnd}', '${now}', '${now}')
-ON CONFLICT (user_id, period_type, period_start) DO UPDATE SET plan_id='${safePlan}', monthly_limit=${weeklyTokenLimit}, updated_at='${now}';
+SELECT concat('tq_sess_', substr(md5(random()::text), 1, 16)), '${safeUserId}', '${safePlan}', 'session', ${sessionTokenLimit}, 0, '${now}', '${sessionEnd}', '${now}', '${now}'
+WHERE NOT EXISTS (SELECT 1 FROM token_quotas WHERE user_id='${safeUserId}' AND period_type='session' AND period_end > '${now}');
+
+-- Update existing active weekly quota, or insert new one if none exists
+UPDATE token_quotas SET plan_id='${safePlan}', monthly_limit=${weeklyTokenLimit}, updated_at='${now}'
+WHERE user_id='${safeUserId}' AND period_type='weekly' AND period_end > '${now}';
+
+INSERT INTO token_quotas (id, user_id, plan_id, period_type, monthly_limit, monthly_used, period_start, period_end, created_at, updated_at)
+SELECT concat('tq_week_', substr(md5(random()::text), 1, 16)), '${safeUserId}', '${safePlan}', 'weekly', ${weeklyTokenLimit}, 0, '${now}', '${weekEnd}', '${now}', '${now}'
+WHERE NOT EXISTS (SELECT 1 FROM token_quotas WHERE user_id='${safeUserId}' AND period_type='weekly' AND period_end > '${now}');
 
 COMMIT;
   `.trim();
