@@ -7,7 +7,7 @@ function parseArgs(args: string[]): { email: string; plan: string; months: numbe
     console.log(`Usage: optima-grant-subscription <email> [options]
 
 Options:
-  --plan <id>       Plan: free, pro, enterprise (default: enterprise)
+  --plan <id>       Plan: trial, starter, pro, enterprise (default: pro)
   --months <n>      Duration in months (default: 1)
   --env <env>       Environment: stage, prod (default: stage)
   -h, --help        Show this help`);
@@ -15,7 +15,7 @@ Options:
   }
 
   const email = args[0];
-  let plan = 'enterprise';
+  let plan = 'pro';
   let months = 1;
   let env = 'stage';
 
@@ -25,8 +25,8 @@ Options:
     else if (args[i] === '--env' && args[i + 1]) { env = args[++i]; }
   }
 
-  if (!['free', 'pro', 'enterprise'].includes(plan)) {
-    console.error(`Unknown plan: ${plan}. Available: free, pro, enterprise`);
+  if (!['trial', 'starter', 'pro', 'enterprise'].includes(plan)) {
+    console.error(`Unknown plan: ${plan}. Available: trial, starter, pro, enterprise`);
     process.exit(1);
   }
   if (months < 1) { console.error('Months must be >= 1'); process.exit(1); }
