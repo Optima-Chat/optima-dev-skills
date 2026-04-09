@@ -29,25 +29,30 @@ switch (command) {
     log('\n📦 Optima Dev Skills', 'blue');
     log('\nClaude Code skills for Optima development team\n', 'cyan');
 
-    log('Installed Commands:', 'yellow');
-    log('  /logs <service> [lines] [environment]    View service logs', 'cyan');
-    log('\nExamples:', 'yellow');
-    log('  /logs commerce-backend                   Stage, 50 lines', 'cyan');
-    log('  /logs user-auth 100                      Stage, 100 lines', 'cyan');
-    log('  /logs mcp-host 200 prod                  Prod, 200 lines', 'cyan');
+    log('Available Commands:', 'yellow');
+    log('  optima-query-db <service> "<sql>" [env]              Query database', 'cyan');
+    log('  optima-show-env <service> [env]                      Show service env vars', 'cyan');
+    log('  optima-generate-test-token [--env production]        Generate test token', 'cyan');
+    log('  optima-grant-credits <email> --amount <n> [--env]    Grant credits to user', 'cyan');
+    log('  optima-grant-subscription <email> --plan <p> [--env] Grant subscription', 'cyan');
+    log('  /logs <service> [lines] [env]                        View service logs (skill)', 'cyan');
+    log('  /restart-ecs <service> [env]                         Restart ECS service (skill)', 'cyan');
 
     log('\nSupported Services:', 'yellow');
     log('  commerce-backend  user-auth  mcp-host  agentic-chat  optima-logistics', 'cyan');
-    log('  optima-scout  billing  browser-backend  optima-generation', 'cyan');
+    log('  session-gateway  optima-scout  billing  browser-backend  optima-generation', 'cyan');
 
     log('\nEnvironments:', 'yellow');
     log('  stage (default)   prod', 'cyan');
 
-    log('\nCLI Commands:', 'yellow');
-    log('  optima-dev-skills --version              Show version', 'cyan');
-    log('  optima-dev-skills --help                 Show this help', 'cyan');
+    log('\nExamples:', 'yellow');
+    log('  /logs commerce-backend 100 prod', 'cyan');
+    log('  optima-query-db user-auth "SELECT COUNT(*) FROM users" prod', 'cyan');
+    log('  optima-grant-credits user@example.com --amount 5000 --env prod', 'cyan');
 
-    log('\nDocumentation:', 'yellow');
+    log('\nMore Info:', 'yellow');
+    log('  optima-dev-skills --version              Show version', 'cyan');
+    log('  <command> --help                         Show command help', 'cyan');
     log('  https://github.com/Optima-Chat/optima-dev-skills\n', 'cyan');
     break;
 }
