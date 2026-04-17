@@ -40,7 +40,10 @@
   },
   "files": [
     ".claude",
+    ".codex",
+    "AGENTS.md",
     "bin",
+    "docs",
     "dist",
     "scripts",
     "README.md",

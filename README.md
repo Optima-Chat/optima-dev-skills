@@ -10,9 +10,18 @@
 npm install -g @optima-chat/dev-skills@latest
 ```
 
-安装后会自动将 skills 复制到 `~/.claude/` 目录。
+安装后会自动将 Claude 资源复制到 `~/.claude/`，并将 Codex skills 复制到 `~/.codex/skills/optima-dev/`。
 
-安装后，`/logs` 命令和 `logs` skill 会自动可用。
+安装后，`/logs` 命令和 `logs` skill 会在 Claude Code 中可用；Codex 会同时获得对应的本地 skills。
+
+## 🤖 Codex 支持
+
+本仓库现在同时支持 **Claude Code** 和 **Codex**：
+
+- **Claude Code** 使用 `.claude/commands` 和 `.claude/skills`
+- **Codex** 使用安装到 `~/.codex/skills/optima-dev/` 的 skills，以及仓库内的 `AGENTS.md`
+
+如果你设置了 `CODEX_HOME`，安装器会改为写入 `$CODEX_HOME/skills/optima-dev/`。
 
 ## 🎯 核心理念
 
@@ -102,6 +111,7 @@ Claude:
 - ✅ 可在任何终端直接使用
 - ✅ 自动注册账户、获取 token、设置 merchant profile（generate-test-token）
 - ✅ Claude Code 的命令内部也使用这些工具
+- ✅ Codex skills 也优先调用这些工具
 
 ## 🏗️ 项目结构
 
