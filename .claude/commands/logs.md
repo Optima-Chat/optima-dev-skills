@@ -29,13 +29,22 @@
   - `ai-shell-web-ui` - Shell Web UI
   - `optima-scout` - 产品研究工具
   - `optima-store` - 商城前端（仅 Stage）
+  - `ads-backend` - Google Ads API 代理服务
+  - `ads-worker` - Ads 对账后台任务
+  - `amazon-backend` - Amazon SP-API 集成服务
+  - `shopify-backend` - Shopify 店铺管理服务
   - `commerce-rq-worker` - RQ 后台任务
   - `commerce-rq-scheduler` - RQ 定时调度
+  - `gateway-core` - Gateway 核心服务
+  - `gw-admin` - Gateway 管理后台
+  - `optima-channels` - Channels 服务
   - `optima-logistics` - 物流服务（仅 Stage/Prod）
   - `billing` - 计费服务（仅 Stage/Prod）
   - `browser-backend` - 浏览器自动化服务（仅 Stage/Prod）
   - `optima-generation` - 内容生成服务（仅 Stage/Prod）
   - `optima-generation-worker` - 内容生成 Worker（仅 Stage/Prod）
+  - `optima-sentinel` - Sentinel API（仅 Stage/Prod）
+  - `optima-sentinel-worker` - Sentinel 后台任务（仅 Stage/Prod）
 - `lines` (可选): 显示行数，默认 50
 - `environment` (可选): 环境，默认 ci
   - `ci` - CI 持续集成环境（开发环境，默认）
@@ -129,13 +138,22 @@ aws logs get-log-events --log-group-name /ecs/commerce-backend-stage --log-strea
 - `ai-shell-web-ui` → `/ecs/ai-shell-web-ui-stage`
 - `optima-scout` → `/ecs/optima-scout-stage`
 - `optima-store` → `/ecs/optima-store-stage`
+- `ads-backend` → `/ecs/ads-backend-stage`
+- `ads-worker` → `/ecs/ads-worker-stage`
+- `amazon-backend` → `/ecs/amazon-backend-stage`
+- `shopify-backend` → `/ecs/shopify-backend-stage`
 - `commerce-rq-worker` → `/ecs/commerce-rq-worker-stage`
 - `commerce-rq-scheduler` → `/ecs/commerce-rq-scheduler-stage`
+- `gateway-core` → `/ecs/gateway-core-stage`
+- `gw-admin` → `/ecs/gw-admin-stage`
+- `optima-channels` → `/ecs/optima-channels-stage`
 - `optima-logistics` → `/ecs/optima-logistics-stage`
 - `billing` → `/ecs/billing-stage`
 - `browser-backend` → `/ecs/browser-backend-stage`
 - `optima-generation` → `/ecs/optima-generation-stage`
 - `optima-generation-worker` → `/ecs/optima-generation-worker-stage`
+- `optima-sentinel` → `/ecs/optima-sentinel-stage`
+- `optima-sentinel-worker` → `/ecs/optima-sentinel-worker-stage`
 
 ### 2. Prod 环境（environment = "prod"）
 
@@ -172,13 +190,22 @@ aws logs get-log-events --log-group-name /ecs/commerce-backend-prod --log-stream
 - `session-gateway` → `/ecs/session-gateway-prod`
 - `ai-shell-web-ui` → `/ecs/ai-shell-web-ui-prod`
 - `optima-scout` → `/ecs/optima-scout-prod`
+- `ads-backend` → `/ecs/ads-backend-prod`
+- `ads-worker` → `/ecs/ads-worker-prod`
+- `amazon-backend` → `/ecs/amazon-backend-prod`
+- `shopify-backend` → `/ecs/shopify-backend-prod`
 - `commerce-rq-worker` → `/ecs/commerce-rq-worker-prod`
 - `commerce-rq-scheduler` → `/ecs/commerce-rq-scheduler-prod`
+- `gateway-core` → `/ecs/gateway-core-prod`
+- `gw-admin` → `/ecs/gw-admin-prod`
+- `optima-channels` → `/ecs/optima-channels-prod`
 - `optima-logistics` → `/ecs/optima-logistics-prod`
 - `billing` → `/ecs/billing-prod`
 - `browser-backend` → `/ecs/browser-backend-prod`
 - `optima-generation` → `/ecs/optima-generation-prod`
 - `optima-generation-worker` → `/ecs/optima-generation-worker-prod`
+- `optima-sentinel` → `/ecs/optima-sentinel-prod`
+- `optima-sentinel-worker` → `/ecs/optima-sentinel-worker-prod`
 
 **注意**: `optima-store` 仅在 Stage 环境部署
 

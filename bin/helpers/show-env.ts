@@ -11,19 +11,31 @@ interface InfisicalConfig {
 
 // 支持的服务列表（Infisical 路径为 /services/<service-name>）
 const SUPPORTED_SERVICES = [
-  'commerce-backend',
-  'user-auth',
-  'agentic-chat',
-  'bi',
-  'session-gateway',
-  'optima-store',
-  'optima-scout',
-  'mcp-host',
-  'shopify-backend',
-  'optima-logistics',
+  'ads-backend',
+  'ads-worker',
+  'ai-shell-web-ui',
+  'amazon-backend',
+  'bi-backend',
+  'bi-dashboard',
   'billing',
   'browser-backend',
-  'optima-generation'
+  'commerce-backend',
+  'commerce-rq-scheduler',
+  'commerce-rq-worker',
+  'gateway-core',
+  'gw-admin',
+  'user-auth',
+  'user-auth-admin',
+  'agentic-chat',
+  'session-gateway',
+  'optima-channels',
+  'optima-generation',
+  'optima-logistics',
+  'optima-store',
+  'optima-scout',
+  'optima-sentinel',
+  'optima-sentinel-worker',
+  'shopify-backend',
 ];
 
 // 环境到 Infisical environment 的映射

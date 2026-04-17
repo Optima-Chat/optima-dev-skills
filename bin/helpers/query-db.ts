@@ -53,15 +53,35 @@ const SERVICE_DB_MAP = {
     stage: { databaseUrlPath: '/services/billing', databaseUrlKey: 'DATABASE_URL' },
     prod: { databaseUrlPath: '/services/billing', databaseUrlKey: 'DATABASE_URL' }
   },
+  'ads-backend': {
+    ci: null,
+    stage: { databaseUrlPath: '/services/optima-ads', databaseUrlKey: 'DATABASE_URL' },
+    prod: { databaseUrlPath: '/services/optima-ads', databaseUrlKey: 'DATABASE_URL' }
+  },
+  'amazon-backend': {
+    ci: null,
+    stage: { databaseUrlPath: '/services/optima-amazon', databaseUrlKey: 'DATABASE_URL' },
+    prod: { databaseUrlPath: '/services/optima-amazon', databaseUrlKey: 'DATABASE_URL' }
+  },
   'browser-backend': {
     ci: null,
     stage: { databaseUrlPath: '/services/browser-backend', databaseUrlKey: 'DATABASE_URL' },
     prod: { databaseUrlPath: '/services/browser-backend', databaseUrlKey: 'DATABASE_URL' }
   },
+  'shopify-backend': {
+    ci: null,
+    stage: { databaseUrlPath: '/services/shopify-backend', databaseUrlKey: 'DATABASE_URL' },
+    prod: { databaseUrlPath: '/services/shopify-backend', databaseUrlKey: 'DATABASE_URL' }
+  },
   'optima-generation': {
     ci: null,
     stage: { databaseUrlPath: '/services/optima-generation', databaseUrlKey: 'DATABASE_URL' },
     prod: { databaseUrlPath: '/services/optima-generation', databaseUrlKey: 'DATABASE_URL' }
+  },
+  'optima-sentinel': {
+    ci: null,
+    stage: { databaseUrlPath: '/services/optima-sentinel', databaseUrlKey: 'DATABASE_URL' },
+    prod: { databaseUrlPath: '/services/optima-sentinel', databaseUrlKey: 'DATABASE_URL' }
   }
 };
 
@@ -209,7 +229,7 @@ async function main() {
   if (args.length < 2) {
     console.error('Usage: query-db.ts <service> <sql> [environment]');
     console.error('');
-    console.error('Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway, optima-logistics, billing, browser-backend, optima-generation');
+    console.error('Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway, optima-logistics, billing, ads-backend, amazon-backend, browser-backend, shopify-backend, optima-generation, optima-sentinel');
     console.error('Environments: ci (default), stage, prod');
     console.error('');
     console.error('Example: query-db.ts user-auth "SELECT COUNT(*) FROM users" prod');

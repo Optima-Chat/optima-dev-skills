@@ -1,6 +1,6 @@
 ---
 name: "query-db"
-description: "当用户请求查询数据库、执行SQL、查看数据、统计数据、检查数据库、查询表、数据库查询时，使用此技能。支持 CI、Stage、Prod 三个环境的 commerce-backend、user-auth、agentic-chat、bi-backend、session-gateway 服务的数据库查询。优先使用 optima-query-db CLI 工具。"
+description: "当用户请求查询数据库、执行SQL、查看数据、统计数据、检查数据库、查询表、数据库查询时，使用此技能。支持 CI、Stage、Prod 三个环境的 commerce-backend、user-auth、agentic-chat、bi-backend、session-gateway、ads-backend、amazon-backend、shopify-backend、optima-sentinel 等服务的数据库查询。优先使用 optima-query-db CLI 工具。"
 allowed-tools: ["Bash", "SlashCommand"]
 ---
 
@@ -77,6 +77,10 @@ optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY s
 - `bi-backend` - BI 后端数据库
 - `session-gateway` - AI Shell 网关数据库
 - `optima-logistics` - 物流服务数据库
+- `ads-backend` - Ads 数据库
+- `amazon-backend` - Amazon 数据库
+- `shopify-backend` - Shopify 数据库
+- `optima-sentinel` - Sentinel 数据库
 
 ### 常用查询示例
 
@@ -197,6 +201,17 @@ optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY s
 | bi-backend | `BI_DB_USER` | `BI_DB_PASSWORD` |
 | session-gateway | `AI_SHELL_DB_USER` | `AI_SHELL_DB_PASSWORD` |
 | optima-logistics | `LOGISTICS_DB_USER` | `LOGISTICS_DB_PASSWORD` |
+
+**服务路径 `DATABASE_URL` 映射**：
+| 服务 | Infisical 路径 |
+|------|----------------|
+| billing | `/services/billing` |
+| ads-backend | `/services/optima-ads` |
+| amazon-backend | `/services/optima-amazon` |
+| browser-backend | `/services/browser-backend` |
+| shopify-backend | `/services/shopify-backend` |
+| optima-generation | `/services/optima-generation` |
+| optima-sentinel | `/services/optima-sentinel` |
 
 ### RDS 连接
 

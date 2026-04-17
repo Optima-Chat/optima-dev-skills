@@ -49,8 +49,12 @@ optima-query-db commerce-backend "SELECT * FROM products LIMIT 5" prod
   - `session-gateway` - AI Shell 网关数据库
   - `optima-logistics` - 物流服务数据库
   - `billing` - 计费服务数据库
+  - `ads-backend` - Google Ads API 代理服务数据库
+  - `amazon-backend` - Amazon SP-API 集成服务数据库
   - `browser-backend` - 浏览器自动化服务数据库
+  - `shopify-backend` - Shopify 店铺管理服务数据库
   - `optima-generation` - 内容生成服务数据库
+  - `optima-sentinel` - Sentinel 自动化监控数据库
 - `sql` (必需): SQL 查询语句（用引号包裹）
 - `environment` (可选): 环境，默认 ci
   - `ci` - CI 持续集成环境（开发环境，默认）
@@ -253,18 +257,30 @@ pkill -f "ssh.*15432:${DATABASE_HOST}:5432"
   - 数据库: `optima_billing_stage`
   - 凭证: Infisical `/services/billing` → `DATABASE_URL`
 
+- `ads-backend`:
+  - 凭证: Infisical `/services/optima-ads` → `DATABASE_URL`
+
+- `amazon-backend`:
+  - 凭证: Infisical `/services/optima-amazon` → `DATABASE_URL`
+
 - `browser-backend`:
   - 数据库: `optima_stage_browser`
   - 凭证: Infisical `/services/browser-backend` → `DATABASE_URL`
+
+- `shopify-backend`:
+  - 凭证: Infisical `/services/shopify-backend` → `DATABASE_URL`
 
 - `optima-generation`:
   - 数据库: `optima_generation_stage`
   - 凭证: Infisical `/services/optima-generation` → `DATABASE_URL`
 
+- `optima-sentinel`:
+  - 凭证: Infisical `/services/optima-sentinel` → `DATABASE_URL`
+
 **说明**:
 - Infisical 配置从 GitHub Variables 获取
 - 数据库密钥从 Infisical 动态获取（项目: optima-secrets-v2, 环境: staging, 路径: /shared-secrets/database-users）
-- billing、browser-backend、optima-generation 的凭证存在各自服务路径的 DATABASE_URL 中
+- billing、ads-backend、amazon-backend、browser-backend、shopify-backend、optima-generation、optima-sentinel 的凭证存在各自服务路径的 `DATABASE_URL` 中
 - Stage RDS: `optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com`
 - Shared EC2 IP: `3.0.210.113`
 - SSH 隧道: 本地端口 `15432` → Shared EC2 → Stage RDS `5432`

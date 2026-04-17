@@ -50,15 +50,31 @@ optima-show-env agentic-chat stage
 ```
 
 **支持的服务**：
+- `ads-backend` - Google Ads API 代理服务
+- `ads-worker` - Ads 对账后台任务
+- `ai-shell-web-ui` - Shell Web UI
+- `amazon-backend` - Amazon SP-API 集成服务
+- `bi-backend` - BI 后端
+- `bi-dashboard` - BI 仪表板
+- `billing` - 计费服务
+- `browser-backend` - 浏览器自动化服务
 - `commerce-backend` - 电商后端 API
+- `commerce-rq-scheduler` - Commerce 定时任务
+- `commerce-rq-worker` - Commerce 后台任务
+- `gateway-core` - Gateway 核心服务
+- `gw-admin` - Gateway 管理后台
 - `user-auth` - 用户认证服务
+- `user-auth-admin` - 用户认证管理后台
 - `agentic-chat` - AI 聊天服务
-- `bi` - BI 后端
 - `session-gateway` - AI Shell 网关
+- `optima-channels` - Channels 服务
+- `optima-generation` - 内容生成服务
+- `optima-logistics` - 物流服务
 - `optima-store` - 商城前端
 - `optima-scout` - 产品研究工具
-- `mcp-host` - MCP 主机
-- `optima-logistics` - 物流服务
+- `optima-sentinel` - Sentinel API
+- `optima-sentinel-worker` - Sentinel 后台任务
+- `shopify-backend` - Shopify 店铺管理服务
 
 **支持的环境**：
 - `stage` - Stage 预发布环境
@@ -128,6 +144,17 @@ diff /tmp/env-stage.txt /tmp/env-prod.txt
 ```bash
 optima-show-env commerce-backend stage --filter STRIPE
 optima-show-env commerce-backend prod --filter STRIPE
+```
+
+### 场景 5：查看新 ECS 服务配置
+
+**用户请求**："帮我看一下 ads-backend / gateway-core / optima-sentinel 的配置"
+
+**步骤**：
+```bash
+optima-show-env ads-backend stage --keys-only
+optima-show-env gateway-core prod --filter REDIS
+optima-show-env optima-sentinel prod --filter DATABASE
 ```
 
 ## 环境变量分类
