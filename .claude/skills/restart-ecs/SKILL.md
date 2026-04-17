@@ -51,6 +51,38 @@ allowed-tools: ["Bash"]
 
 ## 环境信息
 
+## 支持的服务简称
+
+- `ads-backend`
+- `amazon-backend`
+- `agentic-chat`
+- `ai-shell-web-ui`
+- `bi-backend`
+- `bi-dashboard`
+- `billing`
+- `browser-backend`
+- `commerce-backend`
+- `commerce-rq-scheduler`
+- `commerce-rq-worker`
+- `gateway-core`
+- `gw-admin`
+- `optima-channels`
+- `optima-generation`
+- `optima-generation-worker`
+- `optima-logistics`
+- `optima-scout`
+- `optima-sentinel`
+- `optima-sentinel-worker`
+- `pgbouncer`
+- `session-gateway`
+- `shopify-backend`
+- `user-auth`
+- `user-auth-admin`
+
+仅 Stage 可用：
+
+- `optima-store`
+
 ### Stage 环境
 
 **集群名**: `optima-stage-cluster`
@@ -70,8 +102,20 @@ allowed-tools: ["Bash"]
 | optima-scout | optima-scout-stage | 产品研究工具 |
 | ai-shell-web-ui | ai-shell-web-ui-stage | Shell Web UI |
 | optima-store | optima-store-stage | 商城前端 |
-| pgbouncer | pgbouncer-stage | 数据库连接池 |
+| ads-backend | ads-backend-stage | Google Ads API 代理服务 |
+| amazon-backend | amazon-backend-stage | Amazon SP-API 集成服务 |
+| billing | billing-stage | 计费服务 |
+| browser-backend | browser-backend-stage | 浏览器自动化服务 |
+| gateway-core | gateway-core-stage | Gateway 核心服务 |
+| gw-admin | gw-admin-stage | Gateway 管理后台 |
+| optima-channels | optima-channels-stage | Channels 服务 |
+| optima-generation | optima-generation-stage | 内容生成服务 |
+| optima-generation-worker | optima-generation-worker-stage | 内容生成 Worker |
 | optima-logistics | optima-logistics-stage | 物流服务 |
+| optima-sentinel | optima-sentinel-stage | Sentinel API |
+| optima-sentinel-worker | optima-sentinel-worker-stage | Sentinel 后台任务 |
+| pgbouncer | pgbouncer-stage | 数据库连接池 |
+| shopify-backend | shopify-backend-stage | Shopify 店铺管理服务 |
 
 ### Prod 环境
 
@@ -91,7 +135,19 @@ allowed-tools: ["Bash"]
 | bi-dashboard | bi-dashboard-prod | BI 仪表板 |
 | optima-scout | optima-scout-prod | 产品研究工具 |
 | ai-shell-web-ui | ai-shell-web-ui-prod | Shell Web UI |
+| ads-backend | ads-backend-prod | Google Ads API 代理服务 |
+| amazon-backend | amazon-backend-prod | Amazon SP-API 集成服务 |
+| billing | billing-prod | 计费服务 |
+| browser-backend | browser-backend-prod | 浏览器自动化服务 |
+| gateway-core | gateway-core-prod | Gateway 核心服务 |
+| gw-admin | gw-admin-prod | Gateway 管理后台 |
+| optima-channels | optima-channels-prod | Channels 服务 |
+| optima-generation | optima-generation-prod | 内容生成服务 |
+| optima-generation-worker | optima-generation-worker-prod | 内容生成 Worker |
 | optima-logistics | optima-logistics-prod | 物流服务 |
+| optima-sentinel | optima-sentinel-prod | Sentinel API |
+| optima-sentinel-worker | optima-sentinel-worker-prod | Sentinel 后台任务 |
+| shopify-backend | shopify-backend-prod | Shopify 店铺管理服务 |
 
 **注意**: `optima-store` 和 `pgbouncer` 仅在 Stage 环境部署
 
@@ -133,6 +189,16 @@ ECS `--force-new-deployment` 的工作流程：
 /restart-ecs user-auth stage
 /restart-ecs commerce-backend stage
 /restart-ecs agentic-chat stage
+```
+
+### 场景 4：重启内容生成与新平台服务
+
+```
+/restart-ecs optima-generation stage
+/restart-ecs optima-generation-worker prod
+/restart-ecs ads-backend prod
+/restart-ecs gateway-core stage
+/restart-ecs optima-sentinel prod
 ```
 
 ## 查看重启进度

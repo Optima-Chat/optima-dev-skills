@@ -84,6 +84,28 @@ test('query-db command documents current database-backed services', () => {
   }
 });
 
+test('restart-ecs skill documents current restartable ECS services', () => {
+  const source = fs.readFileSync(path.join(repoRoot, '.claude/skills/restart-ecs/SKILL.md'), 'utf8');
+  const services = new Set(parseBacktickBullets(source));
+
+  for (const required of [
+    'ads-backend',
+    'amazon-backend',
+    'browser-backend',
+    'billing',
+    'gateway-core',
+    'gw-admin',
+    'optima-channels',
+    'optima-generation',
+    'optima-generation-worker',
+    'optima-sentinel',
+    'optima-sentinel-worker',
+    'shopify-backend',
+  ]) {
+    assert.ok(services.has(required), `Expected restart-ecs skill to mention ${required}`);
+  }
+});
+
 function parseObjectKeys(source, variableName) {
   const escapedName = variableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = source.match(new RegExp(`const ${escapedName} = \\{(.*?)\\n\\};`, 's'));
