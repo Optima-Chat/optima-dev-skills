@@ -1,6 +1,6 @@
 ---
 name: "query-db"
-description: "当用户请求查询数据库、执行SQL、查看数据、统计数据、检查数据库、查询表、数据库查询时，使用此技能。支持 CI、Stage、Prod 三个环境的 commerce-backend、user-auth、agentic-chat、bi-backend、session-gateway、ads-backend、amazon-backend、shopify-backend、optima-sentinel 等服务的数据库查询。优先使用 optima-query-db CLI 工具。"
+description: "当用户请求查询数据库、执行SQL、查看数据、统计数据、检查数据库、查询表、数据库查询时，使用此技能。支持 CI、Stage、Prod 三个环境的 commerce-backend、user-auth、agentic-chat、bi-backend、session-gateway、gateway-core、ads-backend、amazon-backend、shopify-backend、optima-sentinel 等服务的数据库查询。优先使用 optima-query-db CLI 工具。"
 allowed-tools: ["Bash", "SlashCommand"]
 ---
 
@@ -75,7 +75,8 @@ optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY s
 - `user-auth` - 用户认证数据库
 - `agentic-chat` - AI 聊天数据库
 - `bi-backend` - BI 后端数据库
-- `session-gateway` - AI Shell 网关数据库
+- `session-gateway` - AI Shell 网关数据库（老）
+- `gateway-core` - Optima Gateway (`optima_gateway`) 数据库 — sessions / conversations / messages / transcripts / credits
 - `optima-logistics` - 物流服务数据库
 - `ads-backend` - Ads 数据库
 - `amazon-backend` - Amazon 数据库
@@ -212,6 +213,7 @@ optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY s
 | shopify-backend | `/services/shopify-backend` |
 | optima-generation | `/services/optima-generation` |
 | optima-sentinel | `/services/optima-sentinel` |
+| gateway-core | `/services/gateway-core` |
 
 ### RDS 连接
 

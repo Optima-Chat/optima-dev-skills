@@ -43,6 +43,11 @@ const SERVICE_DB_MAP = {
     stage: { userKey: 'AI_SHELL_DB_USER', passwordKey: 'AI_SHELL_DB_PASSWORD', database: 'optima_shell' },
     prod: { userKey: 'AI_SHELL_DB_USER', passwordKey: 'AI_SHELL_DB_PASSWORD', database: 'optima_ai_shell' }
   },
+  'gateway-core': {
+    ci: null, // CI 环境 gateway-core 不带 DB（本地 JSONL-only 模式）
+    stage: { databaseUrlPath: '/services/gateway-core', databaseUrlKey: 'DATABASE_URL' },
+    prod: { databaseUrlPath: '/services/gateway-core', databaseUrlKey: 'DATABASE_URL' }
+  },
   'optima-logistics': {
     ci: null,
     stage: { userKey: 'LOGISTICS_DB_USER', passwordKey: 'LOGISTICS_DB_PASSWORD', database: 'optima_stage_logistics' },
@@ -229,7 +234,7 @@ async function main() {
   if (args.length < 2) {
     console.error('Usage: query-db.ts <service> <sql> [environment]');
     console.error('');
-    console.error('Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway, optima-logistics, billing, ads-backend, amazon-backend, browser-backend, shopify-backend, optima-generation, optima-sentinel');
+    console.error('Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway, gateway-core, optima-logistics, billing, ads-backend, amazon-backend, browser-backend, shopify-backend, optima-generation, optima-sentinel');
     console.error('Environments: ci (default), stage, prod');
     console.error('');
     console.error('Example: query-db.ts user-auth "SELECT COUNT(*) FROM users" prod');
