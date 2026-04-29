@@ -1,6 +1,6 @@
 ---
 name: "grant-credits"
-description: "Use when the user wants to add bonus or referral credits to an Optima user without changing their subscription."
+description: "Use when the user wants to add bonus or referral balance to an Optima user's wallet without changing their subscription."
 ---
 
 # Grant Credits
@@ -25,4 +25,4 @@ optima-grant-credits user@example.com --amount 300 --type referral --env prod
 
 - Default to `stage`.
 - Confirm the email and amount before using `prod`.
-- This operation appends credits and does not replace the user's subscription.
+- This operation appends to the user's wallet granted balance and does not replace their subscription. Amount is in credits (1 credit = $0.01).

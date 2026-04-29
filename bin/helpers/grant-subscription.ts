@@ -53,9 +53,10 @@ async function main() {
 
   const [planName, monthlyCreditsStr, sessionTokenLimitStr, weeklyTokenLimitStr] = planRow.split('|');
   const monthlyCredits = parseInt(monthlyCreditsStr, 10);
+  const grantMicros = monthlyCredits * 10000; // 1 credit = $0.01 = 10,000 micros
   const sessionTokenLimit = parseInt(sessionTokenLimitStr, 10);
   const weeklyTokenLimit = parseInt(weeklyTokenLimitStr, 10);
-  console.log(`✓ Plan: ${planName} (credits: ${monthlyCredits}, session: ${sessionTokenLimit.toLocaleString()}, weekly: ${weeklyTokenLimit.toLocaleString()})`);
+  console.log(`✓ Plan: ${planName} (grant: $${(grantMicros / 1000000).toFixed(2)}, session: ${sessionTokenLimit.toLocaleString()}, weekly: ${weeklyTokenLimit.toLocaleString()})`);
 
   // Execute all mutations in a single transaction
   const now = new Date().toISOString();
@@ -77,18 +78,23 @@ BEGIN;
 UPDATE subscriptions SET status='canceled', canceled_at='${now}'
 WHERE user_id='${safeUserId}' AND status IN ('active','trialing');
 
--- Zero out old subscription credits
-UPDATE credit_ledger SET remaining=0
-WHERE user_id='${safeUserId}' AND type IN ('monthly_grant','subscription') AND remaining > 0;
-
 -- Create new subscription
 INSERT INTO subscriptions (id, user_id, plan_id, status, billing_interval, current_period_start, current_period_end, created_at, updated_at)
 VALUES (concat('sub_gift_', substr(md5(random()::text), 1, 16)), '${safeUserId}', '${safePlan}', 'active', 'monthly', '${now}', '${periodEndISO}', '${now}', '${now}');
 
--- Grant monthly credits
-INSERT INTO credit_ledger (id, user_id, type, description, initial_amount, remaining, expires_at, created_at)
-SELECT concat('crd_gift_', substr(md5(random()::text), 1, 16)), '${safeUserId}', 'subscription', '${safePlanName} plan gift (${months} month)', ${monthlyCredits}, ${monthlyCredits}, '${periodEndISO}', '${now}'
-WHERE ${monthlyCredits} > 0;
+-- Ensure wallet exists (upsert)
+INSERT INTO usd_wallets (id, user_id, balance_micros, reserved_micros, granted_balance_micros, created_at, updated_at)
+VALUES (gen_random_uuid(), '${safeUserId}', 0, 0, 0, '${now}', '${now}')
+ON CONFLICT (user_id) DO NOTHING;
+
+-- Reset granted balance and set new grant
+UPDATE usd_wallets SET granted_balance_micros = ${grantMicros}, updated_at = '${now}'
+WHERE user_id = '${safeUserId}';
+
+-- Record topup for audit trail
+INSERT INTO usd_wallet_topups (id, wallet_id, amount_micros, service_fee_micros, net_credit_micros, status, source, service_namespace, created_at, completed_at)
+SELECT gen_random_uuid(), w.id, ${grantMicros}, 0, ${grantMicros}, 'completed', 'subscription_grant', 'platform', '${now}', '${now}'
+FROM usd_wallets w WHERE w.user_id = '${safeUserId}';
 
 -- Update existing active session quota, or insert new one if none exists
 UPDATE token_quotas SET plan_id='${safePlan}', monthly_limit=${sessionTokenLimit}, updated_at='${now}'
@@ -112,10 +118,9 @@ COMMIT;
   bq(txSQL);
 
   console.log('✓ Old subscriptions canceled');
-  console.log('✓ Old credits cleared');
   console.log(`✓ ${planName} subscription created (expires: ${periodEnd.toLocaleDateString()})`);
-  if (monthlyCredits > 0) {
-    console.log(`✓ ${monthlyCredits} credits granted`);
+  if (grantMicros > 0) {
+    console.log(`✓ Wallet granted $${(grantMicros / 1000000).toFixed(2)} (${monthlyCredits} credits equivalent)`);
   }
   console.log(`✓ Token quotas updated (session: ${sessionTokenLimit.toLocaleString()}, weekly: ${weeklyTokenLimit.toLocaleString()})`);
 

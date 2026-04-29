@@ -40,7 +40,8 @@ async function main() {
   const infisicalConfig = getInfisicalConfig();
   const token = getInfisicalToken(infisicalConfig);
 
-  console.log(`\n🎁 Granting ${amount} ${type} credits to ${email} [${env.toUpperCase()}]\n`);
+  const amountMicros = amount * 10000; // 1 credit = $0.01 = 10,000 micros
+  console.log(`\n🎁 Granting $${(amountMicros / 1000000).toFixed(2)} (${amount} credits) as ${type} to ${email} [${env.toUpperCase()}]\n`);
 
   const userId = await resolveUserId(email, env, infisicalConfig, token);
   const billing = await connectBillingDB(env, infisicalConfig, token);
@@ -48,15 +49,34 @@ async function main() {
 
   const now = new Date().toISOString();
   const safeUserId = escapeSQL(userId);
-  const safeType = escapeSQL(type);
-  const safeDesc = escapeSQL(description || `Admin ${type} credit grant`);
+  const safeDesc = escapeSQL(description || `Admin ${type} grant`);
 
-  console.log(`Inserting ${amount} ${type} credits...`);
-  const ledgerId = bq(`INSERT INTO credit_ledger (id, user_id, type, description, initial_amount, remaining, created_at) VALUES (concat('crd_${safeType}_', substr(md5(random()::text), 1, 16)), '${safeUserId}', '${safeType}', '${safeDesc}', ${amount}, ${amount}, '${now}') RETURNING id`);
-  console.log(`✓ Credits granted (ledger ID: ${ledgerId})`);
+  console.log(`Granting to wallet...`);
+  const txSQL = `
+BEGIN;
 
-  const balance = bq(`SELECT COALESCE(SUM(remaining), 0) FROM credit_ledger WHERE user_id='${safeUserId}' AND remaining > 0 AND (expires_at IS NULL OR expires_at > NOW())`);
-  console.log(`\n✅ Done! ${email} now has ${balance} total credits\n`);
+-- Ensure wallet exists
+INSERT INTO usd_wallets (id, user_id, balance_micros, reserved_micros, granted_balance_micros, created_at, updated_at)
+VALUES (gen_random_uuid(), '${safeUserId}', 0, 0, 0, '${now}', '${now}')
+ON CONFLICT (user_id) DO NOTHING;
+
+-- Add to granted balance
+UPDATE usd_wallets SET granted_balance_micros = granted_balance_micros + ${amountMicros}, updated_at = '${now}'
+WHERE user_id = '${safeUserId}';
+
+-- Record topup for audit trail
+INSERT INTO usd_wallet_topups (id, wallet_id, amount_micros, service_fee_micros, net_credit_micros, status, source, service_namespace, created_at, completed_at)
+SELECT gen_random_uuid(), w.id, ${amountMicros}, 0, ${amountMicros}, 'completed', 'admin_grant', 'platform', '${now}', '${now}'
+FROM usd_wallets w WHERE w.user_id = '${safeUserId}';
+
+COMMIT;
+  `.trim();
+  bq(txSQL);
+  console.log(`✓ Wallet granted $${(amountMicros / 1000000).toFixed(2)}`);
+
+  const balanceMicros = bq(`SELECT granted_balance_micros FROM usd_wallets WHERE user_id='${safeUserId}'`);
+  const balanceUsd = (parseInt(balanceMicros, 10) / 1000000).toFixed(2);
+  console.log(`\n✅ Done! ${email} now has $${balanceUsd} granted balance\n`);
 }
 
 main().catch(error => {

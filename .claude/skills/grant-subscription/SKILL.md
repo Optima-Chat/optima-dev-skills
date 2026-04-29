@@ -19,8 +19,8 @@ optima-grant-subscription <email> [options]
 **为什么使用 CLI 工具**：
 - 自动通过 email 查找 userId（跨 user-auth 数据库）
 - 自动处理 SSH 隧道和数据库连接
-- 自动取消旧订阅、清零旧 credits
-- 自动按 plan 配置授予 credits 和 token quota
+- 自动取消旧订阅、重置 wallet granted balance
+- 自动按 plan 配置授予 USD wallet 余额和 token quota
 - 一条命令完成所有操作
 
 ## 适用情况
@@ -59,12 +59,14 @@ optima-grant-subscription user@example.com --plan enterprise --env prod
 
 ### 计划配置
 
-| Plan | Credits/月 | Session Token | Weekly Token |
-|------|-----------|---------------|--------------|
-| trial | 20 | 400K | 1M |
-| starter | 500 | 2M | 10M |
-| pro | 2,000 | 8M | 40M |
-| enterprise | 10,000 | 16M | 80M |
+| Plan | 月授予额 (USD) | Credits 等价 | Session Token | Weekly Token |
+|------|---------------|-------------|---------------|--------------|
+| trial | $0.20 | 20 | 400K | 1M |
+| starter | $5.00 | 500 | 2M | 10M |
+| pro | $20.00 | 2,000 | 8M | 40M |
+| enterprise | $100.00 | 10,000 | 16M | 80M |
+
+> 1 credit = $0.01 = 10,000 micros。授予额存入 `usd_wallets.granted_balance_micros`。
 
 ## 常见使用场景
 
@@ -97,22 +99,22 @@ optima-grant-subscription user@example.com --plan starter --env prod
 工具会自动完成以下步骤：
 
 1. 通过 email 在 user-auth 数据库查找 userId
-2. 加载对应 plan 的配置（credits、token 限额等）
+2. 加载对应 plan 的配置（月授予额、token 限额等）
 3. 取消该用户的所有活跃订阅
-4. 清零旧的 credits
-5. 创建新订阅（设置到期时间）
-6. 授予对应 credits
+4. 创建新订阅（设置到期时间）
+5. 重置 wallet granted balance 并授予新额度
+6. 记录 topup 审计记录（source: subscription_grant）
 7. 更新 token quota 限额
 
 ## 安全提醒
 
 1. **Stage 优先**：默认操作 Stage 环境
 2. **Prod 谨慎**：操作 Prod 前确认用户邮箱正确
-3. **不可逆**：旧订阅和 credits 会被清除
+3. **不可逆**：旧订阅会被取消，granted balance 会被重置
 4. **确认 email**：执行前务必确认邮箱地址无误
 
 ## 相关命令
 
 - `optima-grant-subscription` - 开通订阅（主要方式）
-- `optima-grant-credits` - 单独赠送 credits
+- `optima-grant-credits` - 单独赠送 wallet 余额
 - `optima-query-db` - 查询数据库验证结果

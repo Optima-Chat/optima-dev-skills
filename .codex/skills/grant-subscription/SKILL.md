@@ -25,5 +25,5 @@ optima-grant-subscription user@example.com --plan enterprise --env prod
 
 - Default to `stage`.
 - Confirm the user email before running on `prod`.
-- This operation replaces existing subscription state and resets credits according to the selected plan.
+- This operation replaces existing subscription state and resets the wallet granted balance according to the selected plan.
 - Use `optima-query-db` afterward if the user asks for verification.
