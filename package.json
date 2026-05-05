@@ -9,7 +9,7 @@
     "optima-generate-test-token": "dist/bin/helpers/generate-test-token.js",
     "optima-show-env": "dist/bin/helpers/show-env.js",
     "optima-grant-subscription": "dist/bin/helpers/grant-subscription.js",
-    "optima-grant-credits": "dist/bin/helpers/grant-credits.js"
+    "optima-grant-balance": "dist/bin/helpers/grant-balance.js"
   },
   "scripts": {
     "postinstall": "node scripts/install.js",
