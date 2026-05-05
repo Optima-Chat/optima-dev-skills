@@ -33,7 +33,7 @@ switch (command) {
     log('  optima-query-db <service> "<sql>" [env]              Query database', 'cyan');
     log('  optima-show-env <service> [env]                      Show service env vars', 'cyan');
     log('  optima-generate-test-token [--env production]        Generate test token', 'cyan');
-    log('  optima-grant-credits <email> --amount <n> [--env]    Grant credits to user', 'cyan');
+    log('  optima-grant-balance <email> --amount <usd> [--env]  Grant USD wallet balance', 'cyan');
     log('  optima-grant-subscription <email> --plan <p> [--env] Grant subscription', 'cyan');
     log('  /logs <service> [lines] [env]                        View service logs (skill)', 'cyan');
     log('  /restart-ecs <service> [env]                         Restart ECS service (skill)', 'cyan');
@@ -48,7 +48,7 @@ switch (command) {
     log('\nExamples:', 'yellow');
     log('  /logs commerce-backend 100 prod', 'cyan');
     log('  optima-query-db user-auth "SELECT COUNT(*) FROM users" prod', 'cyan');
-    log('  optima-grant-credits user@example.com --amount 5000 --env prod', 'cyan');
+    log('  optima-grant-balance user@example.com --amount 5 --env prod', 'cyan');
 
     log('\nMore Info:', 'yellow');
     log('  optima-dev-skills --version              Show version', 'cyan');

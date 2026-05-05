@@ -116,5 +116,5 @@ optima-grant-subscription user@example.com --plan starter --env prod
 ## 相关命令
 
 - `optima-grant-subscription` - 开通订阅（主要方式）
-- `optima-grant-credits` - 单独赠送 wallet 余额
+- `optima-grant-balance` - 单独赠送 wallet 余额
 - `optima-query-db` - 查询数据库验证结果

@@ -10,7 +10,7 @@ Prefer the installed CLI tools over reimplementing long shell workflows:
 - `optima-show-env <service> <stage|prod> [options]`
 - `optima-generate-test-token [options]`
 - `optima-grant-subscription <email> [options]`
-- `optima-grant-credits <email> --amount <n> [options]`
+- `optima-grant-balance <email> --amount <usd> [options]`
 
 For code-reading tasks across Optima repositories, use `gh` commands against `Optima-Chat/<repo>`.
 
@@ -24,7 +24,7 @@ After `npm install -g @optima-chat/dev-skills`, this package installs skills und
 - `generate-test-token`
 - `read-code`
 - `grant-subscription`
-- `grant-credits`
+- `grant-balance`
 - `restart-ecs`
 - `use-commerce-cli`
 
