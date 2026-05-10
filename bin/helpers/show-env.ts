@@ -58,8 +58,8 @@ function getInfisicalConfig(): InfisicalConfig {
 }
 
 // Use execFileSync (no shell) so single-quoted JSON bodies survive on Windows
-// cmd.exe — see https://github.com/Optima-Chat/optima-dev-skills/issues/<n>.
-// Passing curl args as an array bypasses shell parsing on every platform.
+// cmd.exe, where ' is literal rather than a string delimiter. Passing curl
+// args as an array bypasses shell parsing on every platform.
 function getInfisicalToken(config: InfisicalConfig): string {
   const body = JSON.stringify({ clientId: config.clientId, clientSecret: config.clientSecret });
   const response = execFileSync('curl', [
