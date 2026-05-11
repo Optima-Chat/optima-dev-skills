@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import * as fs from 'fs';
 
 interface InfisicalConfig {
@@ -127,19 +127,27 @@ function getInfisicalConfig(): InfisicalConfig {
   };
 }
 
+// See db-utils.ts: execSync goes through cmd.exe on Windows where single
+// quotes are literal. Use execFileSync with argv array to bypass shell.
 function getInfisicalToken(config: InfisicalConfig): string {
-  const response = execSync(
-    `curl -s -X POST "${config.url}/api/v1/auth/universal-auth/login" -H "Content-Type: application/json" -d '{"clientId": "${config.clientId}", "clientSecret": "${config.clientSecret}"}'`,
-    { encoding: 'utf-8' }
-  );
+  const body = JSON.stringify({ clientId: config.clientId, clientSecret: config.clientSecret });
+  const response = execFileSync('curl', [
+    '-s',
+    '-X', 'POST',
+    `${config.url}/api/v1/auth/universal-auth/login`,
+    '-H', 'Content-Type: application/json',
+    '-d', body,
+  ], { encoding: 'utf-8' });
   return JSON.parse(response).accessToken;
 }
 
 function getInfisicalSecrets(config: InfisicalConfig, token: string, environment: string, secretPath: string): Record<string, string> {
-  const response = execSync(
-    `curl -s "${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${secretPath}" -H "Authorization: Bearer ${token}"`,
-    { encoding: 'utf-8' }
-  );
+  const url = `${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${encodeURIComponent(secretPath)}`;
+  const response = execFileSync('curl', [
+    '-s',
+    url,
+    '-H', `Authorization: Bearer ${token}`,
+  ], { encoding: 'utf-8' });
   const data = JSON.parse(response);
   const secrets: Record<string, string> = {};
   for (const secret of data.secrets || []) {
