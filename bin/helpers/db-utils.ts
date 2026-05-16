@@ -70,12 +70,48 @@ export function parseDatabaseUrl(url: string): { user: string; password: string;
 }
 
 // ─── SSH tunnel ─────────────────────────────────────────────────────────────
+// 端口被占不等于 tunnel 还能转发：AWS bastion idle 断连后，本地 ssh 进程还活着、
+// 端口还 LISTEN，但流量过不去，所有后续查询会 hang 到客户端 timeout。
+// 用 pg_isready 真去 ping postgres，超时就当 zombie，杀掉重建。
+function isTunnelHealthy(localPort: number): boolean {
+  try {
+    execSync(`pg_isready -h localhost -p ${localPort} -t 3 -q`, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function killOrphanTunnel(localPort: number): void {
+  try {
+    const pids = execSync(`lsof -ti:${localPort}`, { encoding: 'utf-8' }).trim();
+    if (pids) execSync(`kill -9 ${pids.split(/\s+/).join(' ')}`, { stdio: 'ignore' });
+  } catch { /* nothing to kill */ }
+}
+
 export function setupSSHTunnel(dbHost: string, localPort: number): void {
-  try { execSync(`lsof -ti:${localPort}`, { stdio: 'ignore' }); return; } catch { /* need tunnel */ }
+  let portInUse = false;
+  try { execSync(`lsof -ti:${localPort}`, { stdio: 'ignore' }); portInUse = true; } catch { /* free */ }
+
+  if (portInUse) {
+    if (isTunnelHealthy(localPort)) return;
+    console.log(`! SSH tunnel on port ${localPort} not responding (zombie), replacing...`);
+    killOrphanTunnel(localPort);
+  }
+
   const sshKeyPath = `${process.env.HOME}/.ssh/optima-ec2-key`;
   if (!fs.existsSync(sshKeyPath)) throw new Error(`SSH key not found: ${sshKeyPath}. Please obtain optima-ec2-key from xbfool.`);
   console.log(`Creating SSH tunnel: localhost:${localPort} -> ${EC2_HOST} -> ${dbHost}:5432`);
-  execSync(`ssh -i ${sshKeyPath} -f -N -o StrictHostKeyChecking=no -L ${localPort}:${dbHost}:5432 ec2-user@${EC2_HOST}`, { stdio: 'inherit' });
+  // ServerAliveInterval/CountMax: 服务端 30s 没回应就让 ssh 自己退出（不留 zombie）
+  // ExitOnForwardFailure: 端口绑定失败立刻退出（不会黑悄悄继续跑）
+  // ConnectTimeout: 10s 不通就放弃（业界 ssh 默认 120s 太宽）
+  execSync(
+    `ssh -i ${sshKeyPath} -f -N -o StrictHostKeyChecking=no ` +
+    `-o ServerAliveInterval=30 -o ServerAliveCountMax=3 ` +
+    `-o ExitOnForwardFailure=yes -o ConnectTimeout=10 ` +
+    `-L ${localPort}:${dbHost}:5432 ec2-user@${EC2_HOST}`,
+    { stdio: 'inherit' }
+  );
 }
 
 // ─── psql ───────────────────────────────────────────────────────────────────
