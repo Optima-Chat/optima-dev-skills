@@ -1,5 +1,8 @@
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import * as crypto from 'crypto';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 export interface InfisicalConfig { url: string; clientId: string; clientSecret: string; projectId: string }
@@ -41,19 +44,28 @@ export function getInfisicalConfig(): InfisicalConfig {
   };
 }
 
+// Use execFileSync (no shell) so single-quoted JSON bodies survive on Windows
+// cmd.exe, where ' is literal rather than a string delimiter. Passing curl
+// args as an array bypasses shell parsing on every platform.
 export function getInfisicalToken(config: InfisicalConfig): string {
-  const response = execSync(
-    `curl -s -X POST "${config.url}/api/v1/auth/universal-auth/login" -H "Content-Type: application/json" -d '{"clientId": "${config.clientId}", "clientSecret": "${config.clientSecret}"}'`,
-    { encoding: 'utf-8' }
-  );
+  const body = JSON.stringify({ clientId: config.clientId, clientSecret: config.clientSecret });
+  const response = execFileSync('curl', [
+    '-s',
+    '-X', 'POST',
+    `${config.url}/api/v1/auth/universal-auth/login`,
+    '-H', 'Content-Type: application/json',
+    '-d', body,
+  ], { encoding: 'utf-8' });
   return JSON.parse(response).accessToken;
 }
 
 export function getInfisicalSecrets(config: InfisicalConfig, token: string, environment: string, secretPath: string): Record<string, string> {
-  const response = execSync(
-    `curl -s "${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${secretPath}" -H "Authorization: Bearer ${token}"`,
-    { encoding: 'utf-8' }
-  );
+  const url = `${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${encodeURIComponent(secretPath)}`;
+  const response = execFileSync('curl', [
+    '-s',
+    url,
+    '-H', `Authorization: Bearer ${token}`,
+  ], { encoding: 'utf-8' });
   const data = JSON.parse(response);
   const secrets: Record<string, string> = {};
   for (const secret of data.secrets || []) {
@@ -116,6 +128,25 @@ export function setupSSHTunnel(dbHost: string, localPort: number): void {
 
 // ─── psql ───────────────────────────────────────────────────────────────────
 function findPsqlPath(): string {
+  if (process.platform === 'win32') {
+    // `which psql` under Git Bash returns an MSYS path (e.g. `/c/Program Files/...`)
+    // that Node's execSync (running cmd.exe) cannot resolve. Probe known install
+    // locations and fall back to `where psql` which returns native Windows paths.
+    const winPaths = [
+      'C:\\Program Files\\PostgreSQL\\18\\bin\\psql.exe',
+      'C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe',
+      'C:\\Program Files\\PostgreSQL\\16\\bin\\psql.exe',
+      'C:\\Program Files\\PostgreSQL\\15\\bin\\psql.exe',
+      'C:\\Program Files\\PostgreSQL\\14\\bin\\psql.exe',
+    ];
+    for (const p of winPaths) { if (fs.existsSync(p)) return p; }
+    try {
+      const result = execSync('where psql', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
+      const first = result.split(/\r?\n/).map(s => s.trim()).find(s => s.length > 0);
+      if (first) return first;
+    } catch { /* fallthrough */ }
+    throw new Error('PostgreSQL client (psql) not found. Install from https://www.postgresql.org/download/windows/');
+  }
   try {
     const result = execSync('which psql', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
     if (result.trim()) return result.trim();
@@ -127,10 +158,29 @@ function findPsqlPath(): string {
 
 export function queryDB(conn: DBConnection, sql: string): string {
   const psql = findPsqlPath();
-  return execSync(`"${psql}" -h ${conn.host} -p ${conn.port} -U ${conn.user} -d ${conn.database} -t -A --quiet -c "${sql.replace(/"/g, '\\"')}"`, {
-    encoding: 'utf-8',
-    env: { ...process.env, PGPASSWORD: conn.password },
-  }).trim();
+  // Write SQL to a temp file and use `psql -f` rather than `psql -c "<sql>"`.
+  // On Windows, cmd.exe truncates embedded newlines inside a quoted -c argument,
+  // so multi-statement transactions silently execute only their first line and
+  // psql still exits 0 — caller thinks the grant/update committed when nothing changed.
+  // ON_ERROR_STOP=1 makes any failing statement abort the script with non-zero exit.
+  const tmpFile = path.join(os.tmpdir(), `optima-psql-${crypto.randomBytes(8).toString('hex')}.sql`);
+  fs.writeFileSync(tmpFile, sql, { encoding: 'utf-8' });
+  try {
+    return execFileSync(psql, [
+      '-h', conn.host,
+      '-p', String(conn.port),
+      '-U', conn.user,
+      '-d', conn.database,
+      '-t', '-A', '--quiet',
+      '-v', 'ON_ERROR_STOP=1',
+      '-f', tmpFile,
+    ], {
+      encoding: 'utf-8',
+      env: { ...process.env, PGPASSWORD: conn.password },
+    }).trim();
+  } finally {
+    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+  }
 }
 
 // ─── High-level connection helpers ──────────────────────────────────────────

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 
 interface InfisicalConfig {
   url: string;
@@ -57,19 +57,28 @@ function getInfisicalConfig(): InfisicalConfig {
   };
 }
 
+// Use execFileSync (no shell) so single-quoted JSON bodies survive on Windows
+// cmd.exe, where ' is literal rather than a string delimiter. Passing curl
+// args as an array bypasses shell parsing on every platform.
 function getInfisicalToken(config: InfisicalConfig): string {
-  const response = execSync(
-    `curl -s -X POST "${config.url}/api/v1/auth/universal-auth/login" -H "Content-Type: application/json" -d '{"clientId": "${config.clientId}", "clientSecret": "${config.clientSecret}"}'`,
-    { encoding: 'utf-8' }
-  );
+  const body = JSON.stringify({ clientId: config.clientId, clientSecret: config.clientSecret });
+  const response = execFileSync('curl', [
+    '-s',
+    '-X', 'POST',
+    `${config.url}/api/v1/auth/universal-auth/login`,
+    '-H', 'Content-Type: application/json',
+    '-d', body,
+  ], { encoding: 'utf-8' });
   return JSON.parse(response).accessToken;
 }
 
 function getInfisicalSecrets(config: InfisicalConfig, token: string, environment: string, secretPath: string): Record<string, string> {
-  const response = execSync(
-    `curl -s "${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${encodeURIComponent(secretPath)}" -H "Authorization: Bearer ${token}"`,
-    { encoding: 'utf-8' }
-  );
+  const url = `${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${encodeURIComponent(secretPath)}`;
+  const response = execFileSync('curl', [
+    '-s',
+    url,
+    '-H', `Authorization: Bearer ${token}`,
+  ], { encoding: 'utf-8' });
   const data = JSON.parse(response);
   const secrets: Record<string, string> = {};
   for (const secret of data.secrets || []) {
