@@ -96,10 +96,19 @@ export async function runRevoke(argv: string[]): Promise<void> {
   );
 
   // Step 5: Refund
+  // refundAmountCents=0 is always correct for ADMIN_GRANT (priceCents=0,
+  // no upstream charge). Pass explicitly so billing's auto-compute
+  // (which requires refundWindowDays on the Product) doesn't 400 with
+  // MANUAL_REFUND_AMOUNT_REQUIRED for products that lack a refund policy.
+  // PAYMENT/PARTNER sources are already refused in step 4 above, so
+  // this branch only ever runs for ADMIN_GRANT (priceCents=0) — Stripe
+  // refund path in billing (admin-products.ts:296-307) is gated on
+  // source=PAYMENT and won't trigger here.
   console.log(`\n♻️  Revoking entitlement ${target.id} for ${args.email}...`);
   const res = await callBilling(args.env, 'POST', '/api/billing/admin/refund-entitlement', {
     entitlementId: target.id,
     refundReason: args.reason,
+    refundAmountCents: 0,
   });
   console.log(`✓ Revoked entitlement (HTTP ${res.status}):`);
   console.log(JSON.stringify(res.body, null, 2));
