@@ -21,9 +21,10 @@ export function fetchInfisicalSecret(
   const tok = token ?? getInfisicalToken(cfg);
   const envSlug = env === 'stage' ? 'staging' : env;
   const encodedPath = encodeURIComponent(secretPath);
+  const encodedName = encodeURIComponent(secretName);
 
   const response = execSync(
-    `curl -s "${cfg.url}/api/v3/secrets/raw/${secretName}?workspaceId=${cfg.projectId}&environment=${envSlug}&secretPath=${encodedPath}" -H "Authorization: Bearer ${tok}"`,
+    `curl -s "${cfg.url}/api/v3/secrets/raw/${encodedName}?workspaceId=${cfg.projectId}&environment=${envSlug}&secretPath=${encodedPath}" -H "Authorization: Bearer ${tok}"`,
     { encoding: 'utf-8' },
   );
 
