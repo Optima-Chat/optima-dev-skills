@@ -3,6 +3,7 @@
 import { runCreate } from './product/create';
 import { runUpdate } from './product/update';
 import { runAddChannel } from './product/add-channel';
+import { runToggleChannel } from './product/toggle-channel';
 
 const SUBCOMMANDS = ['create', 'update', 'add-channel', 'toggle-channel', 'show'] as const;
 
@@ -36,6 +37,8 @@ async function main() {
       await runAddChannel(rest);
       break;
     case 'toggle-channel':
+      await runToggleChannel(rest);
+      break;
     case 'show':
       console.error(`Subcommand '${subcommand}' not yet implemented (added in a later task).`);
       process.exit(1);
