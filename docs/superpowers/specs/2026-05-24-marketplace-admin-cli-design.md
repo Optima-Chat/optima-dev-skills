@@ -77,7 +77,7 @@ Components:
 Dependencies on existing infra:
 
 - `db-utils.getInfisicalConfig` / `getInfisicalToken` — reused as-is to authenticate to Infisical.
-- No new npm dependencies. `fetch` is Node 18+ native; `package.json` `engines.node` is currently `">=14.0.0"`. Implementation plan T1 bumps it to `">=18.0.0"` (Node 18 is already the de-facto runtime — current production install runs Node 22 per `/home/jerry/.nvm/versions/node/v22.13.0/lib/node_modules/@optima-chat/dev-skills`).
+- No new npm dependencies. `fetch` is Node 18+ native; `package.json` `engines.node` is currently `">=14.0.0"`. Implementation plan T1 bumps it to `">=18.0.0"` (current install confirmed on Node 22 per `/home/jerry/.nvm/versions/node/v22.13.0/lib/node_modules/@optima-chat/dev-skills`; `>=18` is a safety floor, not a tightening of the runtime).
 
 ## 5. Command surface
 
@@ -131,7 +131,7 @@ optima-product add-channel
   --stripe-price-id <price_xxx>      required; pre-created in Stripe Dashboard. Wire-mapped to body field `externalProductId` (provider-neutral name in billing schema)
   --price-cents N                    required; MUST be > 0 (server rejects 0/negative with INVALID_PRICE). Should match the Stripe Price's unit_amount — operator's responsibility; billing does NOT call Stripe to verify
   --currency USD                     required; should match the Stripe Price's currency (also not server-verified against Stripe)
-  [--enabled true|false]             optional; defaults to true. Use `--enabled false` to create a channel that's immediately disabled (saves an extra `toggle-channel` round-trip when staging a future launch)
+  [--enabled true|false]             optional; defaults to true (channel goes immediately live). Use `--enabled false` to create a disabled channel (saves a `toggle-channel` round-trip when staging a future launch)
   [--metadata <json-string>]         optional
   [--env stage|prod]
 
@@ -186,16 +186,16 @@ optima-entitlement revoke
   [--env stage|prod]
 
 Internal flow:
-  1. GET /api/billing/admin/entitlements?userId=<resolved> → response shape { entitlements: [...] }
-  2. Filter for status=ACTIVE AND productKey=<arg>
-  3. Expect exactly 0 or 1 match (DB partial unique `entitlements_one_active` enforces ≤1 ACTIVE per (user, productKey)).
+  1. **Fetch** GET /api/billing/admin/entitlements?userId=<resolved> → response shape `{ entitlements: [...] }`. Endpoint returns all statuses (ACTIVE, REFUNDED) — CLI filters client-side.
+  2. **Filter** for status=ACTIVE AND productKey=<arg>.
+  3. **Validate count** — expect exactly 0 or 1 match (DB partial unique `entitlements_one_active` enforces ≤1 ACTIVE per (user, productKey)).
        0 → exit 1 with "no active entitlement for (user, product)"
        1 → take entitlementId
-  4. Safety check: refuse if source ≠ ADMIN_GRANT.
+  4. **Validate source** — refuse if source ≠ ADMIN_GRANT.
        Exit 1 with source-specific message:
          source=PAYMENT  → "refusing to revoke a PAYMENT-source entitlement via CLI; this would leave the customer charged but unentitled. Use the Stripe refund flow which calls Stripe refund API + records refundedAmountCents + emits webhook. Manual psql is the escape hatch if absolutely necessary."
          source=PARTNER  → "refusing to revoke a PARTNER-source entitlement via CLI; PARTNER grants are issued out-of-band and must be reversed via the partner contract / process that issued them. Manual psql is the escape hatch if absolutely necessary."
-  5. POST /api/billing/admin/refund-entitlement with { entitlementId, refundReason }
+  5. **Refund** POST /api/billing/admin/refund-entitlement with `{ entitlementId, refundReason }`.
 
 Race window note: between step 1 and step 5 two scenarios are possible:
 - **PAYMENT lands concurrently**: blocked by partial unique index `entitlements_one_active` while the ADMIN_GRANT row is still ACTIVE; can only land after our refund flips status to REFUNDED. No corruption.
@@ -218,7 +218,7 @@ Response shape: `{ entitlements: Entitlement[] }`. Output: table of entitlements
 
 ### 6.1 Environment resolution
 
-- **`BILLING_URL`**: read from Infisical at `secretPath=/shared-secrets/domain-urls`. Indirect evidence the path exists on **stage**: billing's `BILLING_PUBLIC_URL` env var is configured as `${staging.shared-secrets.domain-urls.BILLING_URL}` (visible in `optima-show-env billing stage` output), which means Infisical resolves the substitution at injection time — so the underlying secret must exist on stage. **Direct verification still pending** (no `optima-show-env` for the shared-secrets path itself; needs a manual Infisical Universal-Auth fetch). Prod existence: unverified. Both checks live in T1 (see §10 Open Question 2). No existing dev-skills helper reads from `/shared-secrets/domain-urls` — implementation must extend `db-utils` (or add a sibling helper). Note the env-name mismatch: billing's runtime env var is `BILLING_PUBLIC_URL`, but the Infisical secret name is just `BILLING_URL` — CLI uses the Infisical secret name.
+- **`BILLING_URL`**: read from Infisical at `secretPath=/shared-secrets/domain-urls`. Indirect evidence the secret exists on **stage**: billing's `BILLING_PUBLIC_URL` env is configured as `${staging.shared-secrets.domain-urls.BILLING_URL}` (visible in `optima-show-env billing stage` output) — Infisical resolves the substitution at injection time, so the underlying secret must exist. Direct verification (Universal-Auth fetch of the path itself) and prod-side existence are deferred to T1 — see §10. No existing dev-skills helper reads from `/shared-secrets/domain-urls`, so implementation extends `db-utils` (or adds a sibling helper). Note the env-name mismatch: billing's runtime env var is `BILLING_PUBLIC_URL`, but the Infisical secret name is just `BILLING_URL` — CLI uses the Infisical secret name.
 - **OAuth credentials**: dev-skills client is `clientId=dev-skills-ubd3qz6n` (existing OAuth client, already on billing's `ADMIN_SERVICE_ALLOWLIST` via the `dev-skills-<suffix>` prefix rule). The `client_secret` location in Infisical is **the one blocking open question** (see §10) — T1 of the implementation plan must locate or add it.
 
 ### 6.2 Email → userId resolution
@@ -296,7 +296,7 @@ Future: `--json` flag for machine-readable output. **Not in initial scope** — 
   3. `optima-entitlement grant --email pro.xu.optima@gmail.com --product-key smoke-cli-1 --env stage` → 201
   4. `optima-entitlement list --email pro.xu.optima@gmail.com --env stage` → includes the new entitlement, status=ACTIVE, source=ADMIN_GRANT
   5. Verify outbox + skills sync:
-     a. `optima-query-db billing "SELECT id, event_type, status, payload FROM outbox_events WHERE event_type='entitlement.granted' ORDER BY created_at DESC LIMIT 1" stage` → DELIVERED row. Outbox `payload` column may carry a billing-internal envelope rather than the verbatim wire shape; implementer confirms field path during T-final smoke before pinning the assertion.
+     a. `optima-query-db billing "SELECT id, event_type, status, payload FROM outbox_events WHERE event_type='entitlement.granted' ORDER BY created_at DESC LIMIT 1" stage` → DELIVERED row. (Verify column case at smoke time — billing tables in this area are snake_case `outbox_events.event_type` per Wave 1.5 migrations; column quoting may need adjustment if Prisma generated camelCase columns. Outbox `payload` column may carry a billing-internal envelope rather than the verbatim wire shape; implementer pins the exact field path during T-final smoke.)
      b. `optima-query-db skills "SELECT up.\"userId\", p.slug FROM \"UserPlugin\" up JOIN \"Plugin\" p ON p.id = up.\"pluginId\" WHERE up.\"userId\"='<resolved>' AND p.slug='skillify'" stage` → exactly 1 row. Skills schema: `UserPlugin` is `(userId, pluginId, installedAt)` with **no status column** (`optima-skills/prisma/schema.prisma:153`); grants `upsert` a row, revokes `deleteMany` it. Post-revoke step 7 asserts the row is absent, not that any status flipped.
   6. `optima-entitlement revoke --email pro.xu.optima@gmail.com --product-key smoke-cli-1 --env stage` → 200
   7. `optima-entitlement list --email pro.xu.optima@gmail.com --env stage` → status=REFUNDED, refundedAt set. Also re-run step 5b query → 0 rows (UserPlugin row deleted by skills revoke handler).
