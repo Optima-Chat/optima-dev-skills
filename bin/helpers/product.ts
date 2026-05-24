@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { runCreate } from './product/create';
+import { runUpdate } from './product/update';
 
 const SUBCOMMANDS = ['create', 'update', 'add-channel', 'toggle-channel', 'show'] as const;
 
@@ -28,6 +29,8 @@ async function main() {
       await runCreate(rest);
       break;
     case 'update':
+      await runUpdate(rest);
+      break;
     case 'add-channel':
     case 'toggle-channel':
     case 'show':
