@@ -241,7 +241,7 @@ Response: `{ access_token, token_type, expires_in }`. The JWT must contain `type
 
 ### 6.4 Error handling
 
-Billing's standard envelope: `{ error: { code: "XXX", message: "..." } }`. CLI prints:
+Billing's dominant envelope is the flat shape `{ error: "CODE_STRING", message: "..." }` (emitted by the global error handler at `src/app.ts:99-118` for all BillingError throws + validation + internal errors — verified during plan R1). A nested shape `{ error: { code, message } }` appears on a few inline returns (e.g. admin-products.ts toggle-channel 400/404). CLI handles both; printed format collapses to:
 
 ```
 ❌ Error [<HTTP status>] <code>: <message>

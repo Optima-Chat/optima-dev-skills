@@ -133,12 +133,24 @@ git commit -m "plan T1: resolve infisical secret paths + verify M2M token shape"
 
 ---
 
-### Task 2: Bump engines.node to >=18
+### Task 2: Branch + bump engines.node to >=18
+
+Branch hygiene per spec-plan-impl workflow: spec rounds and plan commits sit on `spec/marketplace-admin-cli`. Impl gets its own branch so the spec-review history stays bisectable.
 
 **Files:**
 - Modify: `package.json`
 
-- [ ] **Step 1: Edit package.json**
+- [ ] **Step 1: Check out impl branch off the plan commit**
+
+```bash
+cd /mnt/d/work/projects/optima/optima-dev-skills
+git status                                 # must be clean
+git checkout -b impl/marketplace-admin-cli # off the current HEAD (last plan commit on spec branch)
+```
+
+If T1 was committed (it edits this plan file), that commit is included automatically — the new branch carries everything.
+
+- [ ] **Step 2: Edit package.json**
 
 Change:
 ```json
@@ -153,7 +165,7 @@ to:
   },
 ```
 
-- [ ] **Step 2: Verify build still passes**
+- [ ] **Step 3: Verify build still passes**
 
 ```bash
 npm run build
@@ -161,7 +173,7 @@ npm run build
 
 Expected: no errors.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add package.json
@@ -330,17 +342,24 @@ function formatBillingError(status: number, statusText: string, body: string): s
   let parsed: BillingErrorEnvelope | null = null;
   try { parsed = JSON.parse(body); } catch { /* non-JSON */ }
 
-  // Standard envelope: { error: { code, message } }
+  // Dominant Wave 1.5 envelope: flat { error: "CODE_STRING", message: "..." }
+  // emitted by billing's global error handler (app.ts:99-118) for ALL
+  // BillingError throws + validation errors + internal errors. Most inline
+  // route returns also use this shape (admin-products.ts:110,144,184-185,etc).
+  if (parsed && typeof parsed.error === 'string') {
+    return `❌ Error [${status}] ${parsed.error}: ${parsed.message ?? '(no message)'}`;
+  }
+  // Less-common nested envelope: { error: { code, message } } — used by a
+  // few inline 400/404 returns in admin-products.ts toggle-channel handler
+  // (lines 92-93, 100-101, 114-117). Possibly extends to other routes
+  // post-Wave-1.5 as standardization lands.
   if (parsed && typeof parsed.error === 'object' && parsed.error !== null) {
     const code = (parsed.error as { code?: string }).code ?? 'UNKNOWN';
     const msg = (parsed.error as { message?: string }).message ?? '(no message)';
     return `❌ Error [${status}] ${code}: ${msg}`;
   }
-  // Legacy flat envelope: { error: "CODE", message: "..." }
-  if (parsed && typeof parsed.error === 'string') {
-    return `❌ Error [${status}] ${parsed.error}: ${parsed.message ?? '(no message)'}`;
-  }
-  // Non-envelope fallback
+  // Non-envelope fallback (raw 502 from upstream LB, crashed handler before
+  // error middleware, plain-text body, etc.)
   return `❌ Error [${status}] ${statusText}\n   Response body (first 500 bytes): ${body.slice(0, 500)}`;
 }
 
@@ -1761,9 +1780,16 @@ optima-product toggle-channel --key "$SMOKE_KEY" --provider STRIPE --enabled fal
 
 Expected: add returns HTTP 201, query shows the row with `enabled=true`, toggle returns HTTP 200, follow-up query shows `enabled=false`.
 
-- [ ] **Step 11: Record smoke results in a new memory entry**
+- [ ] **Step 11: Record smoke divergences (only if any)**
 
-Use the Write tool to add to `~/.claude/projects/-mnt-d-work-projects-optima/memory/` if anything was surprising or worth recalling later. Otherwise note results in the eventual PR description.
+If any of these specifically differed from the plan/spec, append `~/.claude/projects/-mnt-d-work-projects-optima/memory/marketplace_admin_cli_smoke_notes.md`:
+- outbox `payload` column shape (e.g. wrapper around `pluginSlugs` not at top level)
+- error envelope shape (flat vs nested) on any failure surfaced during smoke
+- skills `UserPlugin` schema mismatch (column case, missing JOIN to `Plugin`)
+- M2M token rejection / 403 from billing despite allowlist
+- any other unexpected response shape worth recalling in a future cross-service smoke
+
+If the smoke ran clean against the documented contracts, skip this step entirely — silent green is the expected default.
 
 - [ ] **Step 12: Commit any plan-file edits made during smoke (e.g. pinned outbox payload field path)**
 
@@ -1783,10 +1809,10 @@ git commit -m "plan T15: pin outbox payload field path from final smoke observat
 - [ ] **Step 1: Push branch**
 
 ```bash
-git push -u origin spec/marketplace-admin-cli
+git push -u origin impl/marketplace-admin-cli
 ```
 
-(Branch name is `spec/...` because we never branched off after the spec round — that's OK; the PR title will clarify scope.)
+Branch was created in T2 step 1 (clean spec-plan-impl separation per CLAUDE.md). The `spec/marketplace-admin-cli` branch stays as the spec review record; PR base is `main`.
 
 - [ ] **Step 2: Create PR**
 
@@ -1862,7 +1888,7 @@ Read the spec section-by-section. Check coverage:
 | §6.2 resolveUserId reuse | T11/T12/T13 use existing helper as 4-arg call |
 | §6.3 M2M token w/ type=service | T1.3 verify + T4 module memoizes |
 | §6.4 error envelope + non-envelope fallback + 5xx retry | T4 module |
-| §6.5 default output (human + JSON pretty-print) | All subcommands |
+| §6.5 default output (human-readable, JSON pretty-print for object responses, table for list) | All subcommands (create/update/grant/revoke: pretty JSON; show: pretty JSON; list: table) |
 | §6.6 safety rails (env=stage default, no --force, prod confirm prompt) | T5 helper + T12/T13 usage |
 | §7 follow-ups | Listed in PR body T16 |
 | §8 end-to-end smoke | T15 (mirrors all 8 steps) |
