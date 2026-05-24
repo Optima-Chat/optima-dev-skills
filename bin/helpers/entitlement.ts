@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { runGrant } from './entitlement/grant';
 import { runList } from './entitlement/list';
 
 function printHelp() {
@@ -18,7 +19,7 @@ async function main() {
   if (!subcommand || subcommand === '-h' || subcommand === '--help') { printHelp(); process.exit(0); }
   switch (subcommand) {
     case 'list': await runList(rest); break;
-    case 'grant':
+    case 'grant': await runGrant(rest); break;
     case 'revoke':
       console.error(`Subcommand '${subcommand}' not yet implemented (added in a later task).`);
       process.exit(1);
