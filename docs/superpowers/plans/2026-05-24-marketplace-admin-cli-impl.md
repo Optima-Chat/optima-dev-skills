@@ -49,6 +49,12 @@
 
 **Goal:** Resolve the 3 blocking open questions from spec §10 before writing any code. Document findings inline in this plan (edit the task body) so the rest of the plan can pin concrete values.
 
+**Preconditions** (operator's environment must have these before starting T1):
+- `gh` CLI authenticated to `Optima-Chat` org
+- `jq`, `curl`, `base64` on PATH
+- Infisical Universal-Auth credentials configured as GitHub Variables on `Optima-Chat/optima-dev-skills` (already true if `optima-show-env` works locally)
+- **Stripe test mode access** — required later by T8 step 5 and T15 step 10 (operator must be able to create test Products+Prices on Stripe Dashboard sandbox). If you don't have access, request it before starting impl.
+
 **Files:**
 - Modify: this plan (`docs/superpowers/plans/2026-05-24-marketplace-admin-cli-impl.md`) — fill in resolved values
 
@@ -82,6 +88,21 @@ If neither path exists: create at /services/dev-skills/CLIENT_ID + CLIENT_SECRET
 ```
 
 - [ ] **Step 2: Verify BILLING_URL exists on stage AND prod**
+
+First, set up Infisical shell vars (always run — step 1's optima-show-env path doesn't export these):
+
+```bash
+INFISICAL_URL=$(gh variable get INFISICAL_URL -R Optima-Chat/optima-dev-skills)
+PROJECT_ID=$(gh variable get INFISICAL_PROJECT_ID -R Optima-Chat/optima-dev-skills)
+CLIENT_ID=$(gh variable get INFISICAL_CLIENT_ID -R Optima-Chat/optima-dev-skills)
+CLIENT_SECRET=$(gh variable get INFISICAL_CLIENT_SECRET -R Optima-Chat/optima-dev-skills)
+INFISICAL_TOKEN=$(curl -s -X POST "$INFISICAL_URL/api/v1/auth/universal-auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"clientId\": \"$CLIENT_ID\", \"clientSecret\": \"$CLIENT_SECRET\"}" | jq -r .accessToken)
+[ -z "$INFISICAL_TOKEN" ] || [ "$INFISICAL_TOKEN" = "null" ] && { echo "Failed to mint Infisical token"; return 1; }
+```
+
+Then fetch:
 
 ```bash
 # Stage
@@ -287,6 +308,12 @@ const DEV_SKILLS_CLIENT_ID = 'dev-skills-ubd3qz6n';
 // One CLI invocation does at most a handful of HTTP calls. We mint the M2M
 // token once and reuse it. Cross-invocation re-mint is fine — JWT TTL is
 // typically ≥1h, far longer than any single CLI run.
+//
+// NOT handled (acceptable for admin CLI):
+//   * Token expiry mid-invocation — a long-stalled revoke (list call + 5min
+//     pause + refund call) could in theory expire. Operator can retry.
+//   * Infisical 5xx retry — getInfisicalToken is sync execSync curl with no
+//     retry; any transient failure surfaces immediately. Re-run the CLI.
 const tokenCache: Record<string, string> = {};
 const billingUrlCache: Record<string, string> = {};
 
