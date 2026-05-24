@@ -2,6 +2,7 @@
 
 import { runGrant } from './entitlement/grant';
 import { runList } from './entitlement/list';
+import { runRevoke } from './entitlement/revoke';
 
 function printHelp() {
   console.log(`Usage: optima-entitlement <subcommand> [options]
@@ -20,9 +21,7 @@ async function main() {
   switch (subcommand) {
     case 'list': await runList(rest); break;
     case 'grant': await runGrant(rest); break;
-    case 'revoke':
-      console.error(`Subcommand '${subcommand}' not yet implemented (added in a later task).`);
-      process.exit(1);
+    case 'revoke': await runRevoke(rest); break;
     default:
       console.error(`Unknown subcommand: ${subcommand}`);
       printHelp();
