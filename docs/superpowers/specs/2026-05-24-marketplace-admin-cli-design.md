@@ -42,15 +42,19 @@ Wave 1.5 (deployed to stage 2026-05-21, prod pending — see [optima-billing#43]
 ## 4. Architecture
 
 ```
-+----------------------+         +---------------------------+         +-------------+
-|  operator's shell    |  HTTPS  |  optima-billing (stage)   |  SQL    |  RDS        |
-|  $ optima-product    | ──────► |  POST /api/billing/admin/ | ──────► |  billing DB |
-|  $ optima-entitlement|         |  POST /api/billing/admin/ |         |             |
-+----------------------+         +---------------------------+         +-------------+
++----------------------+         +-----------------------------------+         +-------------+
+|  operator's shell    |  HTTPS  |  optima-billing (stage)           |  SQL    |  RDS        |
+|  $ optima-product    | ──────► |  POST /api/billing/admin/products | ──────► |  billing DB |
+|  $ optima-entitlement|         |  POST /api/billing/admin/         |         |             |
+|                      |         |       grant-entitlement           |         |             |
++----------------------+         |  PATCH ... refund-entitlement     |         |             |
+                                 +-----------------------------------+         +-------------+
                                               │
-                                              │ writes
+                                              │ writes outbox row in same tx
                                               ▼
                                        outbox_events ──► optima-skills (existing)
+                                                          (entitlement.granted /
+                                                           entitlement.revoked)
 ```
 
 Components:
@@ -74,33 +78,54 @@ All commands accept `--env stage|prod` (default `stage`) and `-h`/`--help`.
 ```
 optima-product create
   --key <productKey>                 required, unique slug; matches Wave 1.5 productKey rules
-  --plugins <slug1,slug2,...>        required, comma-separated, ≥1 plugin slug
-  --type <ProductType>               required; enum from billing Prisma schema (e.g. ONE_SHOT_SKILL)
+  --plugins <slug1,slug2,...>        required, comma-separated, ≥1 plugin slug; CLI passes through verbatim (duplicates rejected server-side as INVALID_PLUGIN_SLUGS)
+  --type <ProductType>               required; only ONE_SHOT_SKILL accepted today (entitlement.service.ts:57 enforces "Only ONE_SHOT_SKILL grants supported")
+  [--name "..."]                     optional; convenience flag — folded into product.metadata.name by billing service (Product schema has no name column)
+  [--description "..."]              optional; convenience flag — folded into product.metadata.description
   [--refund-window-days N]           optional
   [--refund-prorate-max-days N]      optional
   [--bundled-plan-id <planId>]       optional; for products that also grant a subscription
   [--bundled-duration-days N]        optional; required iff --bundled-plan-id given
   [--revoke-bundled-on-refund true|false]   optional, defaults to billing's default (true)
-  [--metadata <json-string>]         optional, JSON object stored in product.metadata
+  [--metadata <json-string>]         optional, JSON object stored in product.metadata; merged with --name/--description if both supplied (--name/--description take precedence per service:79-82)
   [--env stage|prod]
 
 POST /api/billing/admin/products
+Body: { productKey, type, pluginSlugs: [...], name?, description?, refundWindowDays?, refundProrateMaxDays?,
+        bundledPlanId?, bundledDurationDays?, revokeBundledOnRefund?, metadata? }
 ```
 
 Output (success): the created `Product` row pretty-printed as JSON, plus a one-line summary.
 
 ```
+optima-product update
+  --key <productKey>                 required
+  [--refund-window-days N]           optional
+  [--refund-prorate-max-days N]      optional
+  [--bundled-plan-id <planId>]       optional (joint constraint with --bundled-duration-days)
+  [--bundled-duration-days N]        optional
+  [--revoke-bundled-on-refund true|false]   optional
+  [--metadata <json-string>]         optional (full-replace; PATCH endpoint does not merge nested keys)
+  [--env stage|prod]
+
+PATCH /api/billing/admin/products/:key
+```
+
+Note: `productKey`, `type`, and `pluginSlugs` are immutable post-create (not in `UpdateProductInput`). To change plugin membership, create a new Product with a new key.
+
+```
 optima-product add-channel
   --key <productKey>                 required
   --provider STRIPE                  required; today only STRIPE supported by this CLI
-                                     (ALIPAY/WECHAT_PAY/AIRWALLEX exist in schema but operator flow differs)
-  --stripe-price-id <price_xxx>      required; pre-created in Stripe Dashboard
-  --price-cents N                    required; must match the Stripe Price's unit_amount
-  --currency USD                     required; must match the Stripe Price's currency
+                                     (ALIPAY/WECHAT_PAY/AIRWALLEX exist in schema but operator flow differs — no auto-create endpoint per provider)
+  --stripe-price-id <price_xxx>      required; pre-created in Stripe Dashboard. Wire-mapped to body field `externalProductId` (provider-neutral name in billing schema)
+  --price-cents N                    required; MUST be > 0 (server rejects 0/negative with INVALID_PRICE). Should match the Stripe Price's unit_amount — operator's responsibility; billing does NOT call Stripe to verify
+  --currency USD                     required; should match the Stripe Price's currency (also not server-verified against Stripe)
   [--metadata <json-string>]         optional
   [--env stage|prod]
 
 POST /api/billing/admin/products/:key/channels
+Body: { provider, externalProductId, priceCents, currency, enabled?, metadata? }
 ```
 
 ```
@@ -111,6 +136,7 @@ optima-product toggle-channel
   [--env stage|prod]
 
 PATCH /api/billing/admin/products/:key/channels/:provider
+Body: { enabled }
 ```
 
 ```
@@ -121,7 +147,7 @@ optima-product show
 GET /api/internal/products/:key
 ```
 
-Output: full `Product` with `productPlugins` and `channels` arrays (whatever the internal endpoint returns).
+Output: bare `Product` row (productKey, type, refund fields, metadata, timestamps). **Does NOT include `productPlugins` or `channels` arrays** — `getProductByKey` in `product.service.ts:234` is a plain `findUnique` with no `include`. For the full picture, operator must also call `optima-entitlement list` (for grants) or query the DB directly for channels/plugins. A follow-up will request billing to add `?include=plugins,channels` or expose a richer admin endpoint — see §7.
 
 ### 5.2 `optima-entitlement`
 
@@ -145,15 +171,27 @@ optima-entitlement revoke
   [--env stage|prod]
 
 Internal flow:
-  1. GET /api/billing/admin/entitlements?userId=<resolved>
+  1. GET /api/billing/admin/entitlements?userId=<resolved> → response shape { entitlements: [...] }
   2. Filter for status=ACTIVE AND productKey=<arg>
-  3. Expect exactly 0 or 1 match (DB partial unique enforces ≤1 ACTIVE).
+  3. Expect exactly 0 or 1 match (DB partial unique `entitlements_one_active` enforces ≤1 ACTIVE per (user, productKey)).
        0 → exit 1 with "no active entitlement for (user, product)"
        1 → take entitlementId
-  4. Safety check: refuse if source ≠ ADMIN_GRANT (don't touch PURCHASE without manual override).
-       Exit 1 with "refusing to revoke source=PURCHASE entitlement; use Stripe refund flow"
+  4. Safety check: refuse if source ≠ ADMIN_GRANT.
+       Exit 1 with "refusing to revoke source=PURCHASE entitlement; PURCHASE refunds must go through the customer-facing Stripe refund flow (which calls Stripe refund API + records refundedAmountCents + emits webhook). Manual psql is the escape hatch if absolutely necessary."
   5. POST /api/billing/admin/refund-entitlement with { entitlementId, refundReason }
+
+Race window note: between step 1 and step 5 a PURCHASE could theoretically land on the same (user, product) — but the partial unique index would block the purchase while step 4's ADMIN_GRANT row is still ACTIVE, so the worst case is step 5 fails with a stale entitlementId (404 from billing). Acceptable for admin tooling. A future server-side `POST /admin/refund-by-product` could close this if it becomes a real problem.
 ```
+
+```
+optima-entitlement show
+  --id <entitlementId>               required
+  [--env stage|prod]
+
+Internal flow: GET /api/billing/admin/entitlements?userId=<unknown>
+```
+
+**Implementation note**: billing has no "fetch entitlement by id" endpoint. CLI must either (a) require `--user-email` so it can list+filter, or (b) ask billing for `GET /api/billing/admin/entitlements/:id`. Decision: **defer this subcommand** until either (b) ships or the use case proves real. Drop from v1 to avoid scope creep on the billing side; will live in §7 follow-ups instead.
 
 ```
 optima-entitlement list
@@ -163,18 +201,18 @@ optima-entitlement list
 GET /api/billing/admin/entitlements?userId=<resolved>
 ```
 
-Output: table of entitlements, newest first, columns: `id | productKey | status | source | purchasedAt | refundedAt`.
+Response shape: `{ entitlements: Entitlement[] }`. Output: table of entitlements, newest first, columns: `id | productKey | status | source | purchasedAt | refundedAt`.
 
 ## 6. Implementation notes
 
 ### 6.1 Environment resolution
 
-- **`BILLING_URL`**: resolved via `getInfisicalToken` → `GET /api/v3/secrets/raw/BILLING_URL?secretPath=/shared-secrets/domain-urls&environment=staging|prod` (matches the pattern billing itself uses for `BILLING_PUBLIC_URL`). Cached for process lifetime.
-- **OAuth credentials**: dev-skills client lives at `clientId=dev-skills-ubd3qz6n` (per existing stage allowlist behavior). The `client_secret` location in Infisical is **TBD — implementation phase must locate or add it** under `/services/dev-skills` or `/shared-secrets/oauth/dev-skills`. If neither exists, the implementation plan adds an Infisical setup step.
+- **`BILLING_URL`**: read from Infisical at `secretPath=/shared-secrets/domain-urls` (verified via `optima-show-env billing stage`: billing itself reads `BILLING_PUBLIC_URL=${staging.shared-secrets.domain-urls.BILLING_URL}`, confirming the path exists on stage). **No existing dev-skills helper reads from `/shared-secrets/domain-urls`** — implementation must extend `db-utils` (or add a sibling helper) to fetch from this path. T1 of the implementation plan verifies the path on both stage AND prod Infisical environments. Note the env-name mismatch: billing's runtime env var is `BILLING_PUBLIC_URL`, but the Infisical secret name is just `BILLING_URL` — CLI uses the Infisical secret name.
+- **OAuth credentials**: dev-skills client is `clientId=dev-skills-ubd3qz6n` (existing OAuth client, already on billing's `ADMIN_SERVICE_ALLOWLIST` via the `dev-skills-<suffix>` prefix rule). The `client_secret` location in Infisical is **the one blocking open question** (see §10) — T1 of the implementation plan must locate or add it.
 
 ### 6.2 Email → userId resolution
 
-Reuse `db-utils.resolveUserId(email, env)` — already does this via direct query against the user-auth DB. No new code needed.
+Reuse `db-utils.resolveUserId(email, env, infisicalConfig, token)` (4-arg signature, see `bin/helpers/db-utils.ts:169`). Caller must already have `infisicalConfig` + Infisical access token in hand from §6.1's lookup — these are passed through to `resolveUserId`. No new helper code needed.
 
 ### 6.3 M2M token acquisition
 
@@ -186,9 +224,9 @@ POST {USER_AUTH_URL}/api/v1/oauth/token
         &client_secret=<secret>
 ```
 
-Response: `{ access_token, token_type, expires_in }`. The JWT must contain `type: "service"` claim (billing's `extractAnyServiceAuth` requires this; user-auth issues it automatically for `client_credentials` grants).
+Response: `{ access_token, token_type, expires_in }`. The JWT must contain `type: "service"` claim — billing's `extractAnyServiceAuth` (auth.ts ~340) hard-rejects tokens without it with 403 FORBIDDEN. T1 verifies via a smoke `curl` that user-auth's `client_credentials` grant actually sets this claim (the billing comment at auth.ts ~322 implies it does, but the verify-response shape doesn't carry it back, so the JWT itself must be decoded to confirm).
 
-Cache the token in process memory; re-fetch if it expires before the CLI invocation completes (unlikely — single-action CLI).
+No in-memory caching — single-action CLI fetches the token once per invocation. (Removed earlier "cache for process lifetime" — dead code given the usage model.)
 
 ### 6.4 Error handling
 
@@ -198,7 +236,7 @@ Billing's standard envelope: `{ error: { code: "XXX", message: "..." } }`. CLI p
 ❌ Error [<HTTP status>] <code>: <message>
 ```
 
-and exits non-zero. No retries on 4xx; one retry on 5xx (billing already has its own idempotency story for grant via `idempotencyKey`).
+and **always exits 1** on any error (auth failure, validation failure, server error, network failure — all collapse to exit 1; matches existing `grant-subscription` etc. precedent). No retries on 4xx; one retry on 5xx (billing already has its own idempotency story for grant via `idempotencyKey`).
 
 ### 6.5 Output format
 
@@ -208,7 +246,7 @@ Future: `--json` flag for machine-readable output. **Not in initial scope** — 
 ### 6.6 Safety rails
 
 - Default `--env stage`. To run against prod, operator must type `--env prod` explicitly.
-- `optima-entitlement revoke` MUST refuse `source=PURCHASE` entitlements with a clear message pointing to the Stripe refund flow.
+- `optima-entitlement revoke` MUST refuse `source=PURCHASE` entitlements with a clear message pointing to the Stripe refund flow. **No `--force` escape** — operator must drop to psql if they truly need to bypass (logged + auditable that way). Rationale: PURCHASE revoke via CLI without Stripe-side refund would leave the customer charged but unentitled — strictly worse than the manual escape hatch.
 - `optima-product create` does NOT auto-add a channel. A product without a channel is admin-grant-only; making it self-purchaseable is a deliberate second step.
 
 ## 7. Out-of-scope follow-ups
@@ -216,12 +254,14 @@ Future: `--json` flag for machine-readable output. **Not in initial scope** — 
 | Item | Why deferred |
 |---|---|
 | `optima-product list` subcommand | Endpoint missing — see [optima-billing#58](https://github.com/Optima-Chat/optima-billing/issues/58). Add CLI side once endpoint ships. |
+| `optima-product show` returning plugins + channels | Endpoint `getProductByKey` is bare `findUnique` with no `include`. File billing issue to add `?include=plugins,channels` or expose `/api/billing/admin/products/:key` (admin-richer view). Until then, `show` returns the bare Product row only. |
+| `optima-entitlement show <id>` | Billing has no fetch-by-id endpoint; list-by-userId is the only path. File billing issue to add `GET /api/billing/admin/entitlements/:id`. Until then, use `optima-entitlement list` and grep by id. |
 | Auto-create Stripe Product+Price | Requires Stripe SDK + per-env Stripe key wiring. Manual Dashboard creation is fine for the small initial paid-plugin catalog. |
 | Non-STRIPE channel providers (ALIPAY, WECHAT_PAY, AIRWALLEX) | Each has its own out-of-band registration flow (or none at all). Add per-provider subcommand only when a real product needs it. |
 | `--json` flag for machine-readable output | Add when first scripted consumer requires it. |
 | Rotation of `dev-skills-ubd3qz6n` OAuth secret | Tracked by Wave 1.5 plan T10 step 8 ([optima-billing#43](https://github.com/Optima-Chat/optima-billing/issues/43)). Independent. |
 | Bulk grant / revoke (e.g. CSV of emails) | YAGNI until a real campaign needs it. |
-| prod billing deploy of Wave 1.5 | Out of this repo's control. CLI is forward-compatible. |
+| prod billing deploy of Wave 1.5 | Out of this repo's control. CLI is forward-compatible. Prod main reverted via [optima-billing#48](https://github.com/Optima-Chat/optima-billing/pull/48); integration→main PR gated on Wave 1.5 tracker [optima-billing#43](https://github.com/Optima-Chat/optima-billing/issues/43). |
 
 ## 8. Testing approach
 
@@ -231,7 +271,9 @@ Future: `--json` flag for machine-readable output. **Not in initial scope** — 
   2. `optima-product show --key smoke-cli-1 --env stage` → returns Product with 1 plugin, 0 channels
   3. `optima-entitlement grant --email pro.xu.optima@gmail.com --product-key smoke-cli-1 --env stage` → 201
   4. `optima-entitlement list --email pro.xu.optima@gmail.com --env stage` → includes the new entitlement, status=ACTIVE, source=ADMIN_GRANT
-  5. Verify in stage skills DB that the user got entitlement → plugin sync (via existing outbox)
+  5. Verify outbox + skills sync:
+     a. `optima-query-db billing "SELECT id, event_type, status, payload FROM outbox_events WHERE event_type='entitlement.granted' ORDER BY created_at DESC LIMIT 1" stage` → DELIVERED row with `payload.userId` + `payload.pluginSlugs: ["skillify"]`
+     b. `optima-query-db skills "SELECT user_id, plugin_slug, status FROM user_entitlements WHERE user_id='<resolved>' AND plugin_slug='skillify'" stage` → row exists with status reflecting the grant (exact table/column names per skills schema — implementer verifies during T-final smoke)
   6. `optima-entitlement revoke --email pro.xu.optima@gmail.com --product-key smoke-cli-1 --env stage` → 200
   7. `optima-entitlement list --email pro.xu.optima@gmail.com --env stage` → status=REFUNDED, refundedAt set
   8. (Optional) `optima-product add-channel --key smoke-cli-1 --provider STRIPE --stripe-price-id <fresh test Price> --price-cents 100 --currency USD --env stage` → 201, then `optima-product show` reflects the channel
@@ -249,4 +291,8 @@ Future: `--json` flag for machine-readable output. **Not in initial scope** — 
 
 ## 10. Open questions
 
-None blocking. The `client_secret` Infisical path is the only TBD and will be resolved in the implementation plan's first task.
+1. **[BLOCKING for implementation T1]** Where in Infisical does `dev-skills-ubd3qz6n`'s `client_secret` live? Candidates: `/services/dev-skills/CLIENT_SECRET`, `/shared-secrets/oauth/dev-skills/CLIENT_SECRET`, or it may need to be added fresh. T1 of the implementation plan must locate or create this path on both stage AND prod Infisical envs before any HTTP code is written.
+
+2. **[BLOCKING for implementation T1]** Does Infisical's `/shared-secrets/domain-urls/BILLING_URL` exist on **prod**? Verified to exist on stage (billing's own `BILLING_PUBLIC_URL` references it). If prod is missing, T1 also adds it (CLI uses `--env prod` would otherwise fail at URL lookup before reaching billing).
+
+3. **[VERIFY in T1, not blocking design]** Does user-auth's `client_credentials` grant actually mint a JWT with `type: "service"` claim? Inferred from billing's `extractAnyServiceAuth` comments but never observed directly. A 30-second `curl` smoke will confirm.
