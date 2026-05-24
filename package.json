@@ -36,7 +36,7 @@
   },
   "homepage": "https://github.com/Optima-Chat/optima-dev-skills#readme",
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=18.0.0"
   },
   "files": [
     ".claude",
