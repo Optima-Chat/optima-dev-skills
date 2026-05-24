@@ -77,14 +77,20 @@ INFISICAL_URL=$(gh variable get INFISICAL_URL -R Optima-Chat/optima-dev-skills)
 curl -s "$INFISICAL_URL/api/v3/secrets/raw?workspaceId=$PROJECT_ID&environment=staging&secretPath=/shared-secrets/oauth/dev-skills" -H "Authorization: Bearer $INFISICAL_TOKEN" | jq .
 ```
 
-Record findings in this plan (replace placeholder below):
+**RESOLVED 2026-05-25** — Infisical layout discovered:
 
 ```
-RESOLVED — client_secret Infisical location:
-  stage: <secretPath>/<secretName>
-  prod:  <secretPath>/<secretName>
+Path: /shared-secrets/oauth-clients/
+Secrets (per env):
+  DEV_SKILLS_OAUTH_CLIENT_ID
+  DEV_SKILLS_OAUTH_CLIENT_SECRET
 
-If neither path exists: create at /services/dev-skills/CLIENT_ID + CLIENT_SECRET on both envs via the Infisical UI, using the credentials documented in memory (`dev-skills-ubd3qz6n` / `RKkORGCM8GmQEVR4dYqmjQd663pM4AuMarGGu5sZj5BDAcbHschdQHmpsqLeNgL1` for stage — get prod from the Infisical/user-auth admin).
+Stage CLIENT_ID:  dev-skills-ubd3qz6n
+Prod  CLIENT_ID:  dev-skills-hinxa0rs
+
+⚠️ IMPORTANT DISCOVERY: client_id differs per environment (not just secret).
+Plan T4 must fetch BOTH client_id and client_secret from Infisical per env —
+do NOT hardcode DEV_SKILLS_CLIENT_ID. See updated T4 code.
 ```
 
 - [ ] **Step 2: Verify BILLING_URL exists on stage AND prod**
@@ -114,12 +120,14 @@ curl -s "$INFISICAL_URL/api/v3/secrets/raw/BILLING_URL?workspaceId=$PROJECT_ID&e
 
 Expected: stage returns `"https://billing.stage.optima.onl"` (or similar); prod returns `"https://billing.optima.onl"` (or similar).
 
-Record:
+**RESOLVED 2026-05-25**:
 
 ```
-RESOLVED — BILLING_URL:
-  stage: <url>
-  prod:  <url or NOT FOUND — add at /shared-secrets/domain-urls/BILLING_URL via Infisical UI>
+Stage BILLING_URL:  https://billing-api.stage.optima.onl
+Prod  BILLING_URL:  https://billing-api.optima.onl
+
+Note hostname is `billing-api.*`, not `billing.*` (matches the ECS service
+DNS pattern). Path: /shared-secrets/domain-urls/BILLING_URL on both envs.
 ```
 
 - [ ] **Step 3: Verify user-auth `client_credentials` grant returns `type=service` JWT**
@@ -135,12 +143,25 @@ echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq .
 
 Expected output includes `"type": "service"` and `"client_id": "dev-skills-ubd3qz6n"`.
 
-Record:
+**RESOLVED 2026-05-25** — stage smoke confirmed JWT has `type: "service"`:
 
 ```
-RESOLVED — JWT shape sample (redact signature):
-  header.type: "JWT", alg: "..."
-  payload: { sub, type: "service", client_id, scopes, exp, ... }
+Sample payload (stage, dev-skills-ubd3qz6n):
+{
+  "sub": "client:dev-skills-ubd3qz6n",
+  "aud": ["api"],
+  "scope": "api:internal",
+  "client_id": "dev-skills-ubd3qz6n",
+  "type": "service",            ← required by billing extractAnyServiceAuth
+  "exp": <30min from iat>,
+  "iat": <now>,
+  "iss": "https://auth.stage.optima.onl",
+  "jti": "<random>"
+}
+
+Token TTL: 1800s (30 min) — comfortably exceeds any single CLI invocation.
+Scope "api:internal" present but billing's requireAdminService does NOT
+check scopes (verified during spec round 3), only clientId allowlist.
 ```
 
 - [ ] **Step 4: Commit the resolved values**
@@ -299,10 +320,12 @@ const USER_AUTH_URLS: Record<string, string> = {
   prod: 'https://auth.optima.onl',
 };
 
-// CLI policy: dev-skills-ubd3qz6n is the shared OAuth client used for admin
-// CLI work (also used by other test infra — see spec §9). Same client id on
-// stage and prod by convention; only the secret differs per env.
-const DEV_SKILLS_CLIENT_ID = 'dev-skills-ubd3qz6n';
+// T1 discovered: client_id differs per env (stage=dev-skills-ubd3qz6n,
+// prod=dev-skills-hinxa0rs). Both stored in Infisical alongside the
+// secret at /shared-secrets/oauth-clients/.
+const DEV_SKILLS_OAUTH_PATH = '/shared-secrets/oauth-clients';
+const DEV_SKILLS_CLIENT_ID_KEY = 'DEV_SKILLS_OAUTH_CLIENT_ID';
+const DEV_SKILLS_CLIENT_SECRET_KEY = 'DEV_SKILLS_OAUTH_CLIENT_SECRET';
 
 // ───── Cache (process-lifetime) ─────────────────────────────────────────────
 // One CLI invocation does at most a handful of HTTP calls. We mint the M2M
@@ -327,19 +350,16 @@ function getBillingUrl(env: string): string {
 export function getServiceToken(env: string): string {
   if (tokenCache[env]) return tokenCache[env];
 
-  // T1 RESOLVED — fill in the actual path from Task 1 Step 1.
-  // Replace these two lines with the verified Infisical location.
-  const CLIENT_SECRET_PATH = '<T1.1-resolved-path>'; // e.g. '/services/dev-skills'
-  const CLIENT_SECRET_NAME = '<T1.1-resolved-name>'; // e.g. 'CLIENT_SECRET'
-
   const cfg = getInfisicalConfig();
   const tok = getInfisicalToken(cfg);
-  const clientSecret = fetchInfisicalSecret(env, CLIENT_SECRET_PATH, CLIENT_SECRET_NAME, cfg, tok);
+  // Fetch BOTH client_id and client_secret from Infisical — they differ per env.
+  const clientId = fetchInfisicalSecret(env, DEV_SKILLS_OAUTH_PATH, DEV_SKILLS_CLIENT_ID_KEY, cfg, tok);
+  const clientSecret = fetchInfisicalSecret(env, DEV_SKILLS_OAUTH_PATH, DEV_SKILLS_CLIENT_SECRET_KEY, cfg, tok);
 
   const authUrl = USER_AUTH_URLS[env];
   if (!authUrl) throw new Error(`Unknown env: ${env}`);
 
-  const body = `grant_type=client_credentials&client_id=${DEV_SKILLS_CLIENT_ID}&client_secret=${encodeURIComponent(clientSecret)}`;
+  const body = `grant_type=client_credentials&client_id=${encodeURIComponent(clientId)}&client_secret=${encodeURIComponent(clientSecret)}`;
   const response = execSync(
     `curl -s -X POST '${authUrl}/api/v1/oauth/token' -H 'Content-Type: application/x-www-form-urlencoded' -d '${body}'`,
     { encoding: 'utf-8' },
@@ -438,9 +458,14 @@ export async function callBilling<T = unknown>(
 }
 ```
 
-- [ ] **Step 2: Wire in resolved T1 values**
+- [ ] **Step 2: (resolved at plan-edit time — T1 values now baked into the code above)**
 
-Replace `<T1.1-resolved-path>` and `<T1.1-resolved-name>` in `getServiceToken` with the actual values recorded in T1 step 1.
+T1 resolved that:
+- Path: `/shared-secrets/oauth-clients`
+- Keys: `DEV_SKILLS_OAUTH_CLIENT_ID`, `DEV_SKILLS_OAUTH_CLIENT_SECRET`
+- client_id varies per env (stage=dev-skills-ubd3qz6n, prod=dev-skills-hinxa0rs)
+
+The T4 code above fetches both via Infisical per env. No placeholders to replace.
 
 - [ ] **Step 3: Build**
 
