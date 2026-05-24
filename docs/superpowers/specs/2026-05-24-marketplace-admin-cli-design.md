@@ -77,7 +77,7 @@ Components:
 Dependencies on existing infra:
 
 - `db-utils.getInfisicalConfig` / `getInfisicalToken` — reused as-is to authenticate to Infisical.
-- No new npm dependencies. `fetch` is Node 18+ native; `package.json` `engines.node` is currently `">=14.0.0"` — implementation plan T1 bumps it to `">=18.0.0"` (or the existing minimum the rest of the codebase already requires; verify against existing helpers' usage of optional-chaining / fetch / etc).
+- No new npm dependencies. `fetch` is Node 18+ native; `package.json` `engines.node` is currently `">=14.0.0"`. Implementation plan T1 bumps it to `">=18.0.0"` (Node 18 is already the de-facto runtime — current production install runs Node 22 per `/home/jerry/.nvm/versions/node/v22.13.0/lib/node_modules/@optima-chat/dev-skills`).
 
 ## 5. Command surface
 
@@ -158,6 +158,8 @@ optima-product show
 GET /api/internal/products/:key
 ```
 
+Note on auth: despite the `/api/internal/` path prefix (vs `/api/billing/admin/`), this endpoint still requires a valid service-client M2M token (`extractAnyServiceAuth`, admin-products.ts:138). Same auth flow as the admin routes — no special handling.
+
 Output: bare `Product` row (productKey, type, refund fields, metadata, timestamps). **Does NOT include `productPlugins` or `channels` arrays** — `getProductByKey` in `product.service.ts:234` is a plain `findUnique` with no `include`. For the full picture, operator must also call `optima-entitlement list` (for grants) or query the DB directly for channels/plugins. A follow-up will request billing to add `?include=plugins,channels` or expose a richer admin endpoint — see §7.
 
 ### 5.2 `optima-entitlement`
@@ -167,6 +169,7 @@ optima-entitlement grant
   --email <user-email>               required; CLI resolves to userId via user-auth (see §6.2)
   --product-key <productKey>         required
   --justification "..."              required; billing returns 400 without it; stored on entitlement.justification (free-text audit)
+  [--yes]                            skip the prod confirmation prompt (see §6.6); no-op on --env stage
   [--env stage|prod]
 
 POST /api/billing/admin/grant-entitlement
@@ -179,6 +182,7 @@ optima-entitlement revoke
   --email <user-email>               required
   --product-key <productKey>         required
   --reason "..."                     required; billing returns 400 without it; stored on entitlement.refundReason
+  [--yes]                            skip the prod confirmation prompt (see §6.6); no-op on --env stage
   [--env stage|prod]
 
 Internal flow:
@@ -245,6 +249,15 @@ Billing's standard envelope: `{ error: { code: "XXX", message: "..." } }`. CLI p
 
 and **always exits 1** on any error (auth failure, validation failure, server error, network failure — all collapse to exit 1; matches existing `grant-subscription` etc. precedent). No retries on 4xx; one retry on 5xx (billing already has its own idempotency story for grant via `idempotencyKey`).
 
+**Non-envelope fallback**: if a response is non-2xx but the body isn't valid JSON or lacks the `{error: {code, message}}` shape (e.g. raw 502 from an upstream load balancer, plain-text 500 from a crashed handler before the error middleware runs), CLI prints:
+
+```
+❌ Error [<HTTP status>] <status text>
+   Response body (first 500 bytes): <truncated body>
+```
+
+So operators always see SOMETHING actionable on failure.
+
 ### 6.5 Output format
 
 Default: human-readable summary lines + the response object pretty-printed.
@@ -298,6 +311,7 @@ Future: `--json` flag for machine-readable output. **Not in initial scope** — 
 | `dev-skills-ubd3qz6n` client secret location in Infisical not yet known | Implementation plan first task is to locate or set up the secret path; spec proceeds. |
 | Operator confuses ADMIN_GRANT for free trial / runs revoke on a PAYMENT or PARTNER entitlement | Revoke refuses non-ADMIN_GRANT source with a source-specific message (§5.2 step 4); grant is explicit (no implicit "free trial" mode). |
 | Typo'd `--email` on prod silently affects wrong real user | §6.6 prod-only confirmation prompt prints resolved userId before action; `--yes` bypass exists for scripted ops with prior verification. |
+| `dev-skills-ubd3qz6n` OAuth client is shared with other test infra (test-token minting, smoke scripts) — concurrent CLI ops + ambient test traffic share the same client's token-mint quota and rate limits | Single-action CLI runs are infrequent enough that contention is unlikely in practice. If hit, error surfaces as user-auth 429/5xx with a clear retry path. Real fix (if it ever bites): mint a dedicated `dev-skills-admin-cli` OAuth client at impl time. Listed here so the trade-off is explicit. |
 | Billing service layer changes break wire contract | CLI calls public admin endpoints; any breaking change to those would be a billing release concern surfaced at call time as a clear HTTP error. |
 | prod usage attempt before Wave 1.5 lands prod | Billing returns 404/500 with clear error; CLI passes it through. Documented in §3 non-goals. |
 
