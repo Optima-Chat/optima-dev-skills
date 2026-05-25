@@ -43,11 +43,19 @@ const DEV_SKILLS_CLIENT_SECRET_KEY = 'DEV_SKILLS_OAUTH_CLIENT_SECRET';
 //     retry; any transient failure surfaces immediately. Re-run the CLI.
 const tokenCache: Record<string, string> = {};
 const billingUrlCache: Record<string, string> = {};
+const skillsUrlCache: Record<string, string> = {};
 
 function getBillingUrl(env: string): string {
   if (billingUrlCache[env]) return billingUrlCache[env];
   const url = fetchInfisicalSecret(env, '/shared-secrets/domain-urls', 'BILLING_URL');
   billingUrlCache[env] = url;
+  return url;
+}
+
+function getSkillsUrl(env: string): string {
+  if (skillsUrlCache[env]) return skillsUrlCache[env];
+  const url = fetchInfisicalSecret(env, '/shared-secrets/domain-urls', 'SKILLS_REGISTRY_URL');
+  skillsUrlCache[env] = url;
   return url;
 }
 
@@ -89,7 +97,7 @@ interface BillingErrorEnvelope {
   code?: string;
 }
 
-function formatBillingError(status: number, statusText: string, body: string): string {
+function formatServiceError(status: number, statusText: string, body: string): string {
   let parsed: BillingErrorEnvelope | null = null;
   try { parsed = JSON.parse(body); } catch { /* non-JSON */ }
 
@@ -114,24 +122,25 @@ function formatBillingError(status: number, statusText: string, body: string): s
   return `❌ Error [${status}] ${statusText}\n   Response body (first 500 bytes): ${body.slice(0, 500)}`;
 }
 
-// ───── Public: callBilling ──────────────────────────────────────────────────
-export interface BillingResponse<T> {
+// ───── Public: callService / callBilling / callSkills ───────────────────────
+export interface ServiceResponse<T> {
   status: number;
   body: T;
 }
 
 /**
- * Make an authenticated call to optima-billing. Returns `{status, body}` on
- * 2xx; throws Error with formatted message on non-2xx. Single retry on 5xx
- * (one-shot — no exponential backoff; admin CLI doesn't justify it).
+ * Authenticated call to an Optima service (billing or skills — same dev-skills
+ * M2M token works for both). Returns `{status, body}` on 2xx; throws Error with
+ * formatted message on non-2xx. Single retry on 5xx (no backoff — admin CLI).
  */
-export async function callBilling<T = unknown>(
+async function callService<T>(
+  baseUrl: string,
   env: string,
   method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   path: string,
   body?: object,
-): Promise<BillingResponse<T>> {
-  const url = `${getBillingUrl(env)}${path}`;
+): Promise<ServiceResponse<T>> {
+  const url = `${baseUrl}${path}`;
   const token = getServiceToken(env);
 
   const doFetch = async () => fetch(url, {
@@ -145,18 +154,38 @@ export async function callBilling<T = unknown>(
 
   let res = await doFetch();
   if (res.status >= 500) {
-    // One retry on 5xx
     res = await doFetch();
   }
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(formatBillingError(res.status, res.statusText, text));
+    throw new Error(formatServiceError(res.status, res.statusText, text));
   }
   let parsed: T;
   try {
     parsed = text ? (JSON.parse(text) as T) : (undefined as unknown as T);
   } catch {
-    throw new Error(`Billing returned non-JSON 2xx body: ${text.slice(0, 200)}`);
+    throw new Error(`Service returned non-JSON 2xx body: ${text.slice(0, 200)}`);
   }
   return { status: res.status, body: parsed };
+}
+
+/** Kept as an alias for billing-side callers that reference the response type. */
+export interface BillingResponse<T> extends ServiceResponse<T> {}
+
+export async function callBilling<T = unknown>(
+  env: string,
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+  path: string,
+  body?: object,
+): Promise<ServiceResponse<T>> {
+  return callService<T>(getBillingUrl(env), env, method, path, body);
+}
+
+export async function callSkills<T = unknown>(
+  env: string,
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+  path: string,
+  body?: object,
+): Promise<ServiceResponse<T>> {
+  return callService<T>(getSkillsUrl(env), env, method, path, body);
 }
