@@ -56,10 +56,10 @@ optima-plugin <subcommand> → bin/helpers/plugin.ts (dispatcher)
 
 **Shared HTTP refactor** (low-risk, on freshly-shipped code): generalize `billing-http.ts`'s call core so both billing and skills reuse the fetch + 5xx-retry + envelope-format + token logic.
 
-- Extract the existing `callBilling` body into a private `callService(baseUrl, env, method, path, body?)` that takes a resolved base URL.
-- `callBilling(env, method, path, body?)` → `callService(getBillingUrl(env), ...)` (unchanged behavior + signature — billing path stays byte-identical).
-- Add `getSkillsUrl(env)` (Infisical `SKILLS_REGISTRY_URL`, memoized like `getBillingUrl`) + `callSkills(env, method, path, body?)` → `callService(getSkillsUrl(env), ...)`.
-- `getServiceToken`, `formatBillingError` (rename → `formatServiceError`, keep behavior), caches: shared.
+- Extract the existing `callBilling` body into a private `callService(baseUrl, env, method, path, body?)` that takes a resolved base URL. **The `getServiceToken(env)` mint moves INTO `callService`** (currently inside `callBilling`); the 5xx single-retry + non-JSON-2xx guard move verbatim too.
+- `callBilling(env, method, path, body?)` → `callService(getBillingUrl(env), env, ...)` (unchanged behavior + signature — billing path stays byte-identical).
+- Add `getSkillsUrl(env)` (Infisical `SKILLS_REGISTRY_URL`, memoized like `getBillingUrl`) + `callSkills(env, method, path, body?)` → `callService(getSkillsUrl(env), env, ...)`.
+- `getServiceToken`, `formatBillingError` (rename → `formatServiceError`, keep behavior), caches: shared. **Genericize the one hardcoded string** `"Billing returned non-JSON 2xx body"` → `"Service returned non-JSON 2xx body"` (it now also covers skills).
 
 Reuse unchanged: `confirmIfProd` (prod prompt), `validateEnv` (stage|prod gate), `fetchInfisicalSecret`.
 
