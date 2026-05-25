@@ -11,6 +11,8 @@ Prefer the installed CLI tools over reimplementing long shell workflows:
 - `optima-generate-test-token [options]`
 - `optima-grant-subscription <email> [options]`
 - `optima-grant-balance <email> --amount <usd> [options]`
+- `optima-product <create|update|add-channel|toggle-channel|show> [options]` — manage paid-plugin marketplace Products + Stripe channels (Wave 1.5 admin endpoints; stage default)
+- `optima-entitlement <grant|revoke|list> [options]` — admin-grant / revoke / list paid-plugin entitlements (refuses revoke of PAYMENT / PARTNER source)
 
 For code-reading tasks across Optima repositories, use `gh` commands against `Optima-Chat/<repo>`.
 
