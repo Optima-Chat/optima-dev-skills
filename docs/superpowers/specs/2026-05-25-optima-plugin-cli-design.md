@@ -12,12 +12,16 @@ Add the **skills-side admin command that the marketplace-admin-cli ([#11](https:
 The shipped `optima-product` / `optima-entitlement` CLIs manage only the **billing half** of a paid plugin (Product, Channel, Entitlement). But the flag that actually makes a plugin paid/free to users — `Plugin.isPaid` — lives in **optima-skills**, and it is the real access gate:
 
 ```ts
-// optima-skills src/routes/plugins.ts:132 (+ user-plugins.ts:96)
+// optima-skills src/routes/plugins.ts:132 (GET /:slug/download-url) + user-plugins.ts:96 (install)
+// NOTE: this gate is on the install/download paths, NOT the plain detail read
+// GET /:slug (line 72) that `show` uses — so `show` is unaffected by isPaid.
 if (plugin.isPaid) {
-  const ok = await hasEntitlement({ userId, pluginId, isPaid: true }); // real billing HTTP call (post-Wave-1.5)
-  if (!ok) throw 402 PAYMENT_REQUIRED  // → plugin.salesUrl
+  const ok = await hasEntitlement({ userId, pluginId, isPaid: true }); // REAL billing HTTP call
+  if (!ok) throw 402 PAYMENT_REQUIRED  // → plugin.salesUrl (fallback: sales.optima.onl)
 }
 ```
+
+(`hasEntitlement` is the real implementation — `entitlement-checker.ts` calls billing's `checkEntitlement` with caching + fail-mode. The stale `// stub for Phase 0` comment at `plugins.ts:128` is outdated; Wave 1.5 wired the real call.)
 
 Because no plugin currently has `isPaid=true` (the Wave 1/1.5 testing sessions exercised billing only, never flipped the skills flag), **every plugin including scout is effectively free regardless of its billing Product**. There is no CLI to flip this. The skills admin endpoint exists and its auth middleware comment explicitly says it is "callable by the dev-skills CLI" — but the command was never built.
 
@@ -25,7 +29,7 @@ Because no plugin currently has `isPaid=true` (the Wave 1/1.5 testing sessions e
 
 ## 2. Background — verified facts (2026-05-25)
 
-- **Endpoint**: `PATCH /api/admin/plugins/:slug` (optima-skills `src/routes/admin-plugins.ts:31`). Strict zod body: `{ trustLevel?, status?, category?, tags?, readme?, defaultForUser?, isPaid? }`. Returns the full updated Plugin row.
+- **Endpoint**: `PATCH /api/admin/plugins/:slug` (optima-skills `src/routes/admin-plugins.ts:19-31`). **`.strict()`** zod body — accepts ONLY `{ trustLevel?, status?, category?, tags?, readme?, defaultForUser?, isPaid? }`. **`salesUrl` is NOT accepted** (verified: `.strict()` → any extra key incl. `salesUrl` → ZodError 400). `salesUrl` is writable **only at publish time** from `pluginJson.metadata.salesUrl` (`plugin-publish-persister.ts:71`). Returns the full updated Plugin row.
 - **Auth**: `requireAdminService` = `tryM2mAuth` + `requireAdminServiceClient` (`src/middleware/admin-service.ts`). Same model as billing: verified service JWT (`type: "service"`) + clientId on `ADMIN_SERVICE_ALLOWLIST` (default `'sales-page,dev-skills'`, prefix match). **Verified live**: minted a dev-skills M2M token via the existing `billing-http.getServiceToken('stage')` and a no-op `PATCH /api/admin/plugins/scout {}` returned 200 with scout's row. dev-skills token works against skills admin unchanged.
 - **Skills base URL**: Infisical `/shared-secrets/domain-urls/SKILLS_REGISTRY_URL`. Stage = `https://skills.stage.optima.onl` (verified). Prod value to confirm in impl T1 — **note skills IS deployed to prod** (skills.optima.onl, marketplace-v2 Option A), so `--env prod` may actually be functional for plugin commands, unlike `optima-product` (billing prod is pre-Wave-1.5).
 - **Read path**: public `GET /api/plugins/:slug` exposes `{slug, name, description, version, isPaid, salesUrl, category, tags, components, author, updatedAt}` — enough to verify isPaid/salesUrl, but **NOT** `defaultForUser` / `status` / `trustLevel` (no admin GET-single endpoint exists).
@@ -73,20 +77,20 @@ GET /api/plugins/:slug   (public; no auth needed but token injection is harmless
 
 Output: pretty-printed `{slug, name, version, isPaid, salesUrl, category, tags, ...}`. **Does NOT include defaultForUser / status / trustLevel** — public endpoint omits them (documented gap; skills follow-up to add admin GET-single). One-line note printed when shown.
 
+**Limitation**: `GET /api/plugins/:slug` returns 404 for non-ACTIVE plugins (`plugins.ts:78` rejects `status !== 'ACTIVE'`). `show` therefore only works for ACTIVE plugins; a BETA/DEPRECATED plugin surfaces as `404 NOT_FOUND`. Acceptable — scout/skillify are ACTIVE. (The same admin GET-single follow-up in §7 would lift this.)
+
 ### 5.2 `optima-plugin set-paid`
 
 ```
-optima-plugin set-paid --slug <slug> --paid true|false
-                       [--sales-url <url>] [--env stage|prod] [--yes]
+optima-plugin set-paid --slug <slug> --paid true|false [--env stage|prod] [--yes]
 
 PATCH /api/admin/plugins/:slug
-Body: { isPaid: <bool> }                       # --paid alone
-      { isPaid: <bool>, salesUrl: <url> }      # if --sales-url given
+Body: { isPaid: <bool> }
 ```
 
 - `--paid` required (`true`|`false`); maps to `isPaid`.
-- `--sales-url` optional. Only included in the body when explicitly passed. `--paid false` does NOT auto-clear an existing salesUrl unless `--sales-url ""` is given (to clear, pass empty string → sends `salesUrl: null`).
-- prod confirm prompt (resolved action: slug + isPaid + salesUrl + env), `--yes` bypass.
+- **No `--sales-url` flag** — the skills PATCH `.strict()` schema rejects `salesUrl` (§2). salesUrl is publish-time-only (`metadata.salesUrl`). When `--paid true` and the plugin's salesUrl is null, the 402 falls back to `sales.optima.onl`. Setting a custom sales page requires either a re-publish with `metadata.salesUrl`, or a skills follow-up to add `salesUrl` to patchSchema (§7). **Reminder printed** on `--paid true`: "ensure a billing Product + channel exists (optima-product) or users will 402 with no purchase path; salesUrl is publish-time-only."
+- prod confirm prompt (resolved action: slug + isPaid + env), `--yes` bypass.
 - Output: pretty-print the returned updated Plugin row (skills PATCH returns full row incl isPaid, salesUrl, defaultForUser).
 
 ### 5.3 `optima-plugin set-default`
@@ -102,6 +106,7 @@ Body: { defaultForUser: <bool> }
 - `--default` required (`true`|`false`); maps to `defaultForUser`.
 - prod confirm prompt, `--yes` bypass.
 - Output: pretty-print returned row.
+- **Note**: the PATCH is a plain `prisma.plugin.update` with no skill-sync broadcast (matches the rollback handler's documented Phase 0 behavior). Flipping `defaultForUser` changes what NEW user syncs receive; it does not retroactively push/remove the plugin for existing users until their next session/sync boundary.
 
 ## 6. Implementation notes
 
@@ -115,7 +120,8 @@ Body: { defaultForUser: <bool> }
 
 | Item | Why deferred |
 |---|---|
-| skills `GET /api/admin/plugins/:slug` (admin read with defaultForUser/status/trustLevel) | No admin GET-single exists. File optima-skills issue. Until then `show` reads the public listing (isPaid/salesUrl only). |
+| skills `GET /api/admin/plugins/:slug` (admin read with defaultForUser/status/trustLevel, any status) | No admin GET-single exists; public GET is ACTIVE-only + omits admin fields. File optima-skills issue. Until then `show` reads the public listing (isPaid/salesUrl, ACTIVE-only). |
+| skills patchSchema: add `salesUrl` (so `set-paid --sales-url` becomes possible) | Currently salesUrl is publish-time-only; `.strict()` PATCH rejects it. If operators need to set custom sales pages without re-publishing, file an optima-skills issue to add `salesUrl: z.string().nullable().optional()` to patchSchema, then add `--sales-url` to set-paid. |
 | `optima-plugin` verbs for trustLevel/status/category/tags/readme | PATCH supports them but no current need. Add when required. |
 | Auto-set `defaultForUser=true` when making a plugin free | Deliberate non-goal — operator controls independently (§3). |
 
@@ -126,7 +132,7 @@ Smoke-only (matches all existing dev-skills helpers; no unit tests).
 Stage smoke (use `scout` — the real plugin we want paid, and `skillify` — should stay free):
 
 1. `optima-plugin show --slug scout --env stage` → isPaid=false, salesUrl=null (current state)
-2. `optima-plugin set-paid --slug scout --paid true --sales-url https://sales.stage.optima.onl/scout --env stage` → 200, returned row isPaid=true, salesUrl set
+2. `optima-plugin set-paid --slug scout --paid true --env stage` → 200, returned row isPaid=true (salesUrl stays whatever publish set — likely null; 402 falls back to sales.optima.onl)
 3. `optima-plugin show --slug scout --env stage` → isPaid=true reflected
 4. `optima-plugin set-default --slug scout --default false --env stage` → 200, returned row defaultForUser=false (verify via the returned PATCH body since show can't read it)
 5. `optima-plugin set-paid --slug skillify --paid false --env stage` → 200, isPaid=false (confirms idempotent / skillify stays free)
@@ -146,4 +152,5 @@ Stage smoke (use `scout` — the real plugin we want paid, and `skillify` — sh
 ## 10. Open questions
 
 1. **[T1]** prod `SKILLS_REGISTRY_URL` value + prod dev-skills client (`dev-skills-hinxa0rs`) on prod skills `ADMIN_SERVICE_ALLOWLIST`?
-2. **[T1]** Does public `GET /api/plugins/:slug` return non-ACTIVE plugins (the list endpoint filters `status:'ACTIVE'`; the single-GET may differ)? Affects whether `show` works for BETA/DEPRECATED plugins. Non-blocking — scout is ACTIVE.
+
+(Resolved during spec review: public `GET /api/plugins/:slug` rejects non-ACTIVE plugins with 404 — `plugins.ts:78`. `show` is ACTIVE-only; documented in §5.1. `salesUrl` is not PATCH-settable — `set-paid` drops `--sales-url`; documented in §2/§5.2/§7.)
