@@ -83,7 +83,7 @@ function getSkillsUrl(env: string): string {
 const skillsUrlCache: Record<string, string> = {};
 ```
 
-(c) Rename `formatBillingError` → `formatServiceError` (update the one call site) and genericize its non-JSON branch comment/behavior (no string change there — that string is in callService, see step (e)).
+(c) Rename `formatBillingError` → `formatServiceError` (declaration at `billing-http.ts:92` + its one call site, now inside `callService` per step (d)). The `"Billing returned non-JSON 2xx body"` string lives in the call core and is genericized to `"Service returned..."` in step (d)'s code block.
 
 (d) Replace the `callBilling` function (lines ~117-162) with a generic core + two thin wrappers:
 
