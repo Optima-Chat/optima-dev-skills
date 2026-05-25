@@ -1,4 +1,4 @@
-import { callBilling } from '../billing-http';
+import { callBilling, validateEnv } from '../billing-http';
 
 interface ToggleArgs {
   key: string;
@@ -43,6 +43,7 @@ Optional:
 
 export async function runToggleChannel(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
+  validateEnv(args.env);
   console.log(`\n🔁 Setting ${args.provider} channel enabled=${args.enabled} on ${args.key} (${args.env.toUpperCase()})...`);
   const res = await callBilling(
     args.env,

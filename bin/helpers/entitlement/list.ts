@@ -1,4 +1,4 @@
-import { callBilling } from '../billing-http';
+import { callBilling, validateEnv } from '../billing-http';
 import { getInfisicalConfig, getInfisicalToken, resolveUserId } from '../db-utils';
 
 interface ListArgs {
@@ -42,6 +42,7 @@ interface EntitlementRow {
 
 export async function runList(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
+  validateEnv(args.env);
 
   const cfg = getInfisicalConfig();
   const token = getInfisicalToken(cfg);

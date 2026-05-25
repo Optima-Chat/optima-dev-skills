@@ -1,4 +1,4 @@
-import { callBilling } from '../billing-http';
+import { callBilling, validateEnv } from '../billing-http';
 
 interface UpdateArgs {
   key: string;
@@ -54,6 +54,7 @@ membership, create a new Product with a new key.`);
 
 export async function runUpdate(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
+  validateEnv(args.env);
   const body: Record<string, unknown> = {};
   if (args.refundWindowDays !== undefined) body.refundWindowDays = args.refundWindowDays;
   if (args.refundProrateMaxDays !== undefined) body.refundProrateMaxDays = args.refundProrateMaxDays;

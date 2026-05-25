@@ -1,4 +1,4 @@
-import { callBilling } from '../billing-http';
+import { callBilling, validateEnv } from '../billing-http';
 import { confirmIfProd } from '../confirm-prompt';
 import { getInfisicalConfig, getInfisicalToken, resolveUserId } from '../db-utils';
 
@@ -59,6 +59,7 @@ const PARTNER_REFUSAL = `refusing to revoke a PARTNER-source entitlement via CLI
 
 export async function runRevoke(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
+  validateEnv(args.env);
 
   const cfg = getInfisicalConfig();
   const token = getInfisicalToken(cfg);

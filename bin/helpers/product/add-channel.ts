@@ -1,4 +1,4 @@
-import { callBilling } from '../billing-http';
+import { callBilling, validateEnv } from '../billing-http';
 
 interface AddChannelArgs {
   key: string;
@@ -56,6 +56,7 @@ Optional:
 
 export async function runAddChannel(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
+  validateEnv(args.env);
   const body: Record<string, unknown> = {
     provider: args.provider,
     externalProductId: args.stripePriceId,
