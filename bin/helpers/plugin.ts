@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { runShow } from './plugin/show';
+import { runSetPaid } from './plugin/set-paid';
 
 function printHelp() {
   console.log(`Usage: optima-plugin <subcommand> [options]
@@ -18,7 +19,7 @@ async function main() {
   if (!subcommand || subcommand === '-h' || subcommand === '--help') { printHelp(); process.exit(0); }
   switch (subcommand) {
     case 'show': await runShow(rest); break;
-    case 'set-paid':
+    case 'set-paid': await runSetPaid(rest); break;
     case 'set-default':
       console.error(`Subcommand '${subcommand}' not yet implemented (added in a later task).`);
       process.exit(1);
