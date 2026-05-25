@@ -7,6 +7,23 @@ const USER_AUTH_URLS: Record<string, string> = {
   prod: 'https://auth.optima.onl',
 };
 
+/**
+ * Validate the --env flag value at command entry, before any I/O.
+ *
+ * Without this, a typo like `--env staging` flows downstream and surfaces as
+ * a confusing error: entitlement subcommands hit resolveUserId first (SSH
+ * tunnel to RDS_HOSTS[undefined] → cryptic ssh failure), product subcommands
+ * reach getServiceToken (USER_AUTH_URLS[undefined] → "Unknown env"). All
+ * fail-closed (no wrong-env write), but the UX diverges per subcommand.
+ * Every runX handler calls this first so the error is uniform and immediate.
+ */
+export function validateEnv(env: string): 'stage' | 'prod' {
+  if (env !== 'stage' && env !== 'prod') {
+    throw new Error(`--env must be "stage" or "prod" (got: ${env})`);
+  }
+  return env;
+}
+
 // T1 discovered: client_id differs per env (stage=dev-skills-ubd3qz6n,
 // prod=dev-skills-hinxa0rs). Both stored in Infisical alongside the
 // secret at /shared-secrets/oauth-clients/.

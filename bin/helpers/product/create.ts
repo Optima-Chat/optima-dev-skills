@@ -1,4 +1,4 @@
-import { callBilling } from '../billing-http';
+import { callBilling, validateEnv } from '../billing-http';
 
 interface CreateArgs {
   key: string;
@@ -72,6 +72,7 @@ Optional:
 
 export async function runCreate(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
+  validateEnv(args.env);
 
   const body: Record<string, unknown> = {
     productKey: args.key,

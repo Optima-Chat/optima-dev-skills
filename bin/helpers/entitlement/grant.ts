@@ -1,4 +1,4 @@
-import { callBilling } from '../billing-http';
+import { callBilling, validateEnv } from '../billing-http';
 import { confirmIfProd } from '../confirm-prompt';
 import { getInfisicalConfig, getInfisicalToken, resolveUserId } from '../db-utils';
 
@@ -47,6 +47,7 @@ Hardcoded server-side: source=ADMIN_GRANT, priceCents=0, currency=USD, grantedBy
 
 export async function runGrant(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
+  validateEnv(args.env);
 
   const cfg = getInfisicalConfig();
   const token = getInfisicalToken(cfg);

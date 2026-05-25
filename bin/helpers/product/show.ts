@@ -1,4 +1,4 @@
-import { callBilling } from '../billing-http';
+import { callBilling, validateEnv } from '../billing-http';
 
 interface ShowArgs {
   key: string;
@@ -37,6 +37,7 @@ directly via optima-query-db. Tracked as follow-up in spec §7.`);
 
 export async function runShow(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
+  validateEnv(args.env);
   const res = await callBilling(args.env, 'GET', `/api/internal/products/${encodeURIComponent(args.key)}`);
   console.log(JSON.stringify(res.body, null, 2));
 }
