@@ -25,7 +25,7 @@ Optional:
     switch (a) {
       case '--campaign': out.campaign = next; i++; break;
       case '--code': out.code = next; i++; break;
-      case '--limit': out.limit = parseInt(next, 10); i++; break;
+      case '--limit': { const n = parseInt(next, 10); if (isNaN(n)) throw new Error('--limit requires a number'); out.limit = n; i++; break; }
       case '--env': out.env = next; i++; break;
       default: throw new Error(`Unknown arg: ${a}`);
     }

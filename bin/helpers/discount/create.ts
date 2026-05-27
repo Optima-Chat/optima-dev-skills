@@ -45,7 +45,7 @@ Optional:
     switch (a) {
       case '--code': out.code = next; i++; break;
       case '--percent': out.percentOff = parseInt(next, 10); i++; break;
-      case '--products': out.productKeys = next.split(',').map((s) => s.trim()).filter(Boolean); i++; break;
+      case '--products': if (!next) throw new Error('--products requires a value'); out.productKeys = next.split(',').map((s) => s.trim()).filter(Boolean); i++; break;
       case '--starts': out.startsAt = toIso(next); i++; break;
       case '--ends': out.endsAt = toIso(next); i++; break;
       case '--max': out.maxRedemptions = parseInt(next, 10); i++; break;

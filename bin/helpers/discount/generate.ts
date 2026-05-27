@@ -47,7 +47,7 @@ Optional:
       case '--count': out.count = parseInt(next, 10); i++; break;
       case '--percent': out.percentOff = parseInt(next, 10); i++; break;
       case '--campaign': out.campaign = next; i++; break;
-      case '--products': out.productKeys = next.split(',').map((s) => s.trim()).filter(Boolean); i++; break;
+      case '--products': if (!next) throw new Error('--products requires a value'); out.productKeys = next.split(',').map((s) => s.trim()).filter(Boolean); i++; break;
       case '--starts': out.startsAt = toIso(next); i++; break;
       case '--ends': out.endsAt = toIso(next); i++; break;
       case '--env': out.env = next; i++; break;
