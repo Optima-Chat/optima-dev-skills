@@ -10,6 +10,7 @@
     "optima-grant-balance": "dist/bin/helpers/grant-balance.js",
     "optima-grant-subscription": "dist/bin/helpers/grant-subscription.js",
     "optima-plugin": "dist/bin/helpers/plugin.js",
+    "optima-discount": "dist/bin/helpers/discount.js",
     "optima-product": "dist/bin/helpers/product.js",
     "optima-query-db": "dist/bin/helpers/query-db.js",
     "optima-show-env": "dist/bin/helpers/show-env.js"
