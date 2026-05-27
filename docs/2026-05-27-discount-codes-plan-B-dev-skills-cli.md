@@ -31,6 +31,9 @@
 - `README.md` — skill 列表 + CLI 工具表加 discount
 - `.gitignore` — 已加 `.worktrees/`（首个 commit 带上）
 
+> ⚠️ **核对契约看 `origin/main`，不是 billing 本地工作树**：billing 本地 checkout 在 `integration/wave-1.5-deploy`，磁盘上没有 discount 文件；端点在 `origin/main`（billing#65 已 merge）。要核对用 `git show origin/main:src/routes/admin-discount-codes.ts`。
+> **越界值服务端兜底**（thin client 哲学）：`--percent` 越界（非 1..100）、`--count` 越界（非 1..1000）、`--max 0` 由 billing 服务端校验返 400，`callService` 抛错 → dispatcher 打印干净错误。CLI 只做 `isNaN` 这类基本检查，不重复服务端的业务边界校验。
+
 **端点契约**（billing Plan A 已实现，service-JWT 守卫 `requireAdminService`）：
 - `POST /api/billing/admin/discount-codes` body `{code, percentOff, productKeys?, startsAt?, endsAt?, maxRedemptions?, campaign?}` → 201 创建的行
 - `POST /api/billing/admin/discount-codes/batch` body `{count, percentOff, campaign, productKeys?, startsAt?, endsAt?}` → 201 `{codes: string[]}`
@@ -210,7 +213,8 @@ export async function runGenerate(argv: string[]): Promise<void> {
 
   const safeCampaign = args.campaign.replace(/[^A-Za-z0-9_-]/g, '');
   const file = `./discount-codes-${safeCampaign}-${Date.now()}.txt`;
-  fs.writeFileSync(file, codes.join('\n') + '\n', 'utf-8');
+  // mode 0o600: single-use codes are sensitive-ish; written to the operator's CWD.
+  fs.writeFileSync(file, codes.join('\n') + '\n', { encoding: 'utf-8', mode: 0o600 });
   console.log(`✓ Generated ${codes.length} codes (HTTP ${res.status}). Written to: ${file}`);
   console.log(`  (codes are in the file, not printed, to keep them copy-paste clean)`);
 }
