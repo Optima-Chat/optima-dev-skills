@@ -40,3 +40,5 @@ database-connections*.md
 
 # npm auth (token via NPM_TOKEN env var)
 .npmrc
+
+.worktrees/
