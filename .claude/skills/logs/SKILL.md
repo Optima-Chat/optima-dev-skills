@@ -1,6 +1,6 @@
 ---
 name: "logs"
-description: "当用户请求查看日志、查看服务日志、排查问题、看看日志、检查日志、商品服务日志、后端日志、API日志、正式环境日志、生产环境日志、CI环境日志、开发环境日志时，使用此技能。支持 CI、Stage、Prod 三个环境的 commerce-backend、user-auth、agentic-chat、bi-backend、session-gateway 等服务。"
+description: "当用户请求查看日志、查看服务日志、排查问题、看看日志、检查日志、商品服务日志、后端日志、API日志、正式环境日志、生产环境日志、CI环境日志、开发环境日志、阿里云日志、cn-prod 日志、SAE 日志时，使用此技能。支持 CI、Stage、Prod（AWS ECS/CloudWatch）以及 cn-prod（阿里云 SAE，经 buildbox）四个环境的 commerce-backend、user-auth、agentic-chat、gateway-core、optima-scout、optima-skills 等服务。"
 allowed-tools: ["Bash", "SlashCommand"]
 ---
 
@@ -174,6 +174,19 @@ INFO - Database query took 3200ms: SELECT * FROM products WHERE...
 - AWS ECS Fargate 运行
 - 通过 CloudWatch Logs 查看
 - 日志保留 7 天
+
+### cn-prod 环境（阿里云）
+
+```
+/logs gateway-core 100 cn-prod
+/logs agentic-chat 80 cn
+```
+
+**特点**：
+- 阿里云 **SAE**（cn-beijing），不是 AWS
+- 经 buildbox（`root@47.94.105.163`）调 SAE `DescribeInstanceLog`
+- SAE 未配 SLS → 只取实例**当前 stdout 缓冲**（非历史检索）
+- 技术细节 + service→AppId 映射见 `/logs --help`（第 3 节）
 
 ## 支持的服务列表
 

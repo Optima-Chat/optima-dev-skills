@@ -50,6 +50,7 @@
   - `ci` - CI 持续集成环境（开发环境，默认）
   - `stage` - Stage 预发布环境（ECS Fargate）
   - `prod` - 生产环境（ECS Fargate）
+  - `cn-prod`（别名 `cn`）- 阿里云 cn-prod 环境（SAE，cn-beijing，经 buildbox 取日志）
 
 ## 示例
 
@@ -71,6 +72,7 @@
 - `ci` 或未指定 → 使用 SSH + Docker Compose（第 0 节，默认）
 - `stage` → 使用 AWS CloudWatch Logs - ECS（第 1 节）
 - `prod` → 使用 AWS CloudWatch Logs - ECS（第 2 节）
+- `cn-prod` / `cn` → 阿里云 SAE，经 buildbox 调 `DescribeInstanceLog`（第 3 节）
 
 ### 0. CI 环境（environment = "ci" 或默认）
 
@@ -208,6 +210,59 @@ aws logs get-log-events --log-group-name /ecs/commerce-backend-prod --log-stream
 - `optima-sentinel-worker` → `/ecs/optima-sentinel-worker-prod`
 
 **注意**: `optima-store` 仅在 Stage 环境部署
+
+### 3. cn-prod 环境（environment = "cn-prod" 或 "cn"）
+
+**部署方式**: 阿里云 **SAE**（Serverless App Engine，cn-beijing），不是 ECS/CloudWatch。
+**访问方式**: 经 buildbox（`root@47.94.105.163`，唯一装了 `aliyun-optima` profile + VPC 可达的机器）调 SAE OpenAPI。
+
+> ⚠️ SAE **未配 SLS**，stdout 日志只能用 `DescribeInstanceLog` 取实例**当前缓冲**（非历史检索；重启/滚动后旧日志丢）。要历史检索需给 SAE 配 SLS。
+
+**日志链**: service → AppId → GroupId → InstanceId → `DescribeInstanceLog`
+
+**关键坑**（实测）:
+- API 是 RPC-style `aliyun sae DescribeInstanceLog`，ROA 路径是 `/pop/v1/sam/**instance**/describeInstanceLog`（不是 `/sam/app/...`，写错报 "can not find api by path"）。
+- buildbox 密码在 1P `op://Optima/gdmixcizjci5bvuu3nuvgg4ooe/password`（标题带括号必须用 item ID）。
+
+**service → AppId 映射**（cn-prod，2026-06-01；新增/变动用 `aliyun sae ListApplications` 重查）:
+
+| service | AppId |
+|---|---|
+| `gateway-core` | `a08ce23f-3d3e-4d89-a2cf-53c8adba614e` |
+| `agentic-chat` | `6e290c73-a646-43ef-9da5-ad0b2e7eff73` |
+| `gw-admin` | `c6bc5a78-b27f-46e2-825a-eaa338c23645` |
+| `user-auth` | `d6fbf9de-fed6-4165-978f-7b3a0a456acc` |
+| `user-auth-admin` | `54093f99-37bf-4354-abd7-f6e76abdbcb6` |
+| `optima-scout` | `f5bb7e82-e57c-4bd4-83ae-2c25f8d38647` |
+| `optima-skills` | `55a63ee7-fb75-46e4-99f3-20854a699237` |
+| `infisical` | `52b33fc6-b26d-495a-8885-225d38b3d42f` |
+
+**完整脚本**（本地跑、经 buildbox 中转；改 `SERVICE`/`LINES`）:
+```bash
+SERVICE=gateway-core; LINES=80
+BBPW=$(op-win read "op://Optima/gdmixcizjci5bvuu3nuvgg4ooe/password")
+declare -A APPID=(
+  [gateway-core]=a08ce23f-3d3e-4d89-a2cf-53c8adba614e
+  [agentic-chat]=6e290c73-a646-43ef-9da5-ad0b2e7eff73
+  [gw-admin]=c6bc5a78-b27f-46e2-825a-eaa338c23645
+  [user-auth]=d6fbf9de-fed6-4165-978f-7b3a0a456acc
+  [user-auth-admin]=54093f99-37bf-4354-abd7-f6e76abdbcb6
+  [optima-scout]=f5bb7e82-e57c-4bd4-83ae-2c25f8d38647
+  [optima-skills]=55a63ee7-fb75-46e4-99f3-20854a699237
+  [infisical]=52b33fc6-b26d-495a-8885-225d38b3d42f )
+AID=${APPID[$SERVICE]}
+sshpass -p "$BBPW" ssh -o StrictHostKeyChecking=no root@47.94.105.163 "bash -s" <<REMOTE | tail -n $LINES
+P="--region cn-beijing --profile aliyun-optima"
+GID=\$(aliyun sae GET /pop/v1/sam/app/describeApplicationGroups --AppId $AID \$P 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['Data'][0]['GroupId'])")
+IID=\$(aliyun sae GET /pop/v1/sam/app/describeApplicationInstances --AppId $AID --GroupId \$GID \$P 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin)['Data'];print((d if isinstance(d,list) else d['Instances'])[0]['InstanceId'])")
+aliyun sae DescribeInstanceLog --InstanceId "\$IID" \$P 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('Data',''))"
+REMOTE
+```
+
+**局限 / 提示**:
+- 只取第 1 个 InstanceId；多副本要遍历 `Data` 里全部 instance。
+- `agent-runtime` 不在 SAE（是 ECI 动态容器）——它的日志看 `gateway-core` 里 `eci-bridge` 的转发/错误行，或单独查对应 ECI。
+- 过滤：把上面输出 `| grep -iE 'error|eci|fail'` 即可（例：排 agentic-chat 链路 ECI 失败就 grep `gateway-core` 日志的 `eci-bridge`）。
 
 ## 完整示例脚本
 
