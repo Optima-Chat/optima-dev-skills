@@ -201,7 +201,8 @@ async function main() {
     }
   }
   if (asJson) console.log(JSON.stringify(results, null, 2));
-  process.exit(worstOk ? 0 : 1);
+  // 用 exitCode 而非 process.exit():后者会在管道(--json | jq)未 flush 完就退出而截断输出
+  process.exitCode = worstOk ? 0 : 1;
 }
 
 main();
