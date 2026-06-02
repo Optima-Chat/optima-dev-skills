@@ -32,6 +32,7 @@ switch (command) {
     log('Available Commands:', 'yellow');
     log('  optima-query-db <service> "<sql>" [env]              Query database', 'cyan');
     log('  optima-show-env <service> [env]                      Show service env vars', 'cyan');
+    log('  optima-verify-health <service> [--env cn|prod|all]   Probe L1-L5 上线健康', 'cyan');
     log('  optima-generate-test-token [--env production]        Generate test token', 'cyan');
     log('  optima-grant-balance <email> --amount <usd> [--env]  Grant USD wallet balance', 'cyan');
     log('  optima-grant-subscription <email> --plan <p> [--env] Grant subscription', 'cyan');
