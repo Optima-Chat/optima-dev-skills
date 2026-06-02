@@ -13,7 +13,8 @@
     "optima-discount": "dist/bin/helpers/discount.js",
     "optima-product": "dist/bin/helpers/product.js",
     "optima-query-db": "dist/bin/helpers/query-db.js",
-    "optima-show-env": "dist/bin/helpers/show-env.js"
+    "optima-show-env": "dist/bin/helpers/show-env.js",
+    "optima-verify-health": "dist/bin/helpers/verify-health.js"
   },
   "scripts": {
     "postinstall": "node scripts/install.js",
