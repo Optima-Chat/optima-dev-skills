@@ -24,7 +24,7 @@ interface MerchantSetupResponse {
   user_id: string;
 }
 
-type Environment = 'ci' | 'stage' | 'prod';
+type Environment = 'ci' | 'stage' | 'prod' | 'cn-prod';
 
 interface EnvironmentConfig {
   authUrl: string;
@@ -51,6 +51,15 @@ const ENV_CONFIG: Record<Environment, EnvironmentConfig> = {
     apiUrl: 'https://api.optima.onl',
     clientId: 'commerce-cli-ecs-pro-i2r5of1h',
     envName: 'prod'
+  },
+  'cn-prod': {
+    // 阿里云 cn-beijing 部署 (SAE),Infisical 引导
+    // 注: commerce-backend 在 W4 才上线 (Optima-Chat/optima-terraform#52),
+    // 在那之前 setupMerchantProfile 会因 commerce 不可达 graceful 跳过 (使用 --skip-merchant 显式)
+    authUrl: 'https://auth-cn.optima.chat',
+    apiUrl: 'https://commerce-backend-cn.optima.chat',
+    clientId: 'dev-skill-cli-cn-pro-acvkmcuq',
+    envName: 'cn-prod'
   }
 };
 
@@ -173,6 +182,7 @@ async function main() {
   let phone: string | undefined;
   let address: string | undefined;
   let environment: Environment = 'ci';
+  let skipMerchant = false;
 
   // 解析命令行参数
   for (let i = 0; i < args.length; i++) {
@@ -190,12 +200,14 @@ async function main() {
       address = args[++i];
     } else if (arg === '--env' && args[i + 1]) {
       const envArg = args[++i];
-      if (envArg === 'ci' || envArg === 'stage' || envArg === 'prod') {
-        environment = envArg;
+      if (envArg === 'ci' || envArg === 'stage' || envArg === 'prod' || envArg === 'cn-prod') {
+        environment = envArg as Environment;
       } else {
-        console.error(`❌ Invalid environment: ${envArg}. Must be 'ci', 'stage', or 'prod'.`);
+        console.error(`❌ Invalid environment: ${envArg}. Must be 'ci', 'stage', 'prod', or 'cn-prod'.`);
         process.exit(1);
       }
+    } else if (arg === '--skip-merchant') {
+      skipMerchant = true;
     } else if (arg === '--help' || arg === '-h') {
       console.log(`
 Usage: optima-generate-test-token [options]
@@ -206,18 +218,22 @@ Options:
   --business-name <name>       Merchant business name (default: auto-generated)
   --phone <phone>              Merchant phone number (optional)
   --address <address>          Merchant address (optional)
-  --env <environment>          Environment: ci (default), stage, or prod
+  --env <environment>          Environment: ci (default), stage, prod, or cn-prod
+  --skip-merchant              Skip Commerce API merchant profile setup (auth + token only)
   --help, -h                   Show this help message
 
 Environments:
-  ci      CI 环境 (auth.optima.chat, api.optima.chat)
-  stage   Stage 环境 (auth.stage.optima.onl, api.stage.optima.onl)
-  prod    Prod 环境 (auth.optima.onl, api.optima.onl)
+  ci       CI 环境 (auth.optima.chat, api.optima.chat)
+  stage    Stage 环境 (auth.stage.optima.onl, api.stage.optima.onl)
+  prod     Prod 环境 (auth.optima.onl, api.optima.onl)
+  cn-prod  阿里云 cn-prod (auth-cn.optima.chat, commerce-backend-cn.optima.chat)
+           注: cn commerce-backend 计划 W4 上线,在那之前用 --skip-merchant
 
 Example:
   optima-generate-test-token
   optima-generate-test-token --env stage
   optima-generate-test-token --env prod
+  optima-generate-test-token --env cn-prod --skip-merchant
   optima-generate-test-token --business-name "My Test Shop" --env stage
       `);
       process.exit(0);
@@ -242,8 +258,14 @@ Example:
     // 2. 获取 token
     const token = await getToken(email, password, config);
 
-    // 3. 设置 merchant profile（Commerce API）
-    const merchantProfile = await setupMerchantProfile(token, businessName, config);
+    // 3. 设置 merchant profile（Commerce API）- 可 skip
+    let merchantProfile: MerchantSetupResponse;
+    if (skipMerchant) {
+      console.log(`\n⏭  Skipping Commerce API merchant profile setup (--skip-merchant)`);
+      merchantProfile = { merchant_id: '', business_name: businessName, user_id: '' };
+    } else {
+      merchantProfile = await setupMerchantProfile(token, businessName, config);
+    }
 
     // 4. 保存 token 到临时文件
     const tmpDir = os.tmpdir();
