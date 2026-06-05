@@ -2,6 +2,7 @@
 
 import { execSync } from 'child_process';
 import * as fs from 'fs';
+import { setupTunnel } from './db-utils';
 
 interface InfisicalConfig {
   url: string;
@@ -96,9 +97,6 @@ const RDS_HOSTS = {
   prod: 'optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com'
 };
 
-// 统一使用 BI Data ARM Host 作为跳板机
-const EC2_HOST = '3.0.210.113';
-
 function parseDatabaseUrl(url: string): { user: string; password: string; host: string; port: number; database: string } {
   // postgresql://user:password@host:port/database?params
   const match = url.match(/^postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/([^?]+)/);
@@ -146,29 +144,6 @@ function getInfisicalSecrets(config: InfisicalConfig, token: string, environment
     secrets[secret.secretKey] = secret.secretValue;
   }
   return secrets;
-}
-
-function setupSSHTunnel(ec2Host: string, dbHost: string, localPort: number): void {
-  // 检查是否已有隧道
-  try {
-    execSync(`lsof -ti:${localPort}`, { stdio: 'ignore' });
-    console.log(`✓ SSH tunnel already exists on port ${localPort}`);
-    return;
-  } catch {
-    // 端口未占用，创建隧道
-  }
-
-  const sshKeyPath = `${process.env.HOME}/.ssh/optima-ec2-key`;
-  if (!fs.existsSync(sshKeyPath)) {
-    throw new Error(`SSH key not found: ${sshKeyPath}. Please obtain optima-ec2-key from xbfool.`);
-  }
-
-  console.log(`Creating SSH tunnel: localhost:${localPort} -> ${ec2Host} -> ${dbHost}:5432`);
-  execSync(
-    `ssh -i ${sshKeyPath} -f -N -o StrictHostKeyChecking=no -L ${localPort}:${dbHost}:5432 ec2-user@${ec2Host}`,
-    { stdio: 'inherit' }
-  );
-  console.log(`✓ SSH tunnel established on port ${localPort}`);
 }
 
 function findPsqlPath(): string {
@@ -323,10 +298,7 @@ async function main() {
 
     const localPort = environment === 'stage' ? 15432 : 15433;
 
-    setupSSHTunnel(EC2_HOST, dbHost, localPort);
-
-    // 等待隧道建立
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    setupTunnel(dbHost, localPort);
 
     const result = queryDatabase('localhost', localPort, dbUser, dbPassword, database, sql);
     console.log('\n' + result);

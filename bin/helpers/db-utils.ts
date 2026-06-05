@@ -1,5 +1,6 @@
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 export interface InfisicalConfig { url: string; clientId: string; clientSecret: string; projectId: string }
@@ -18,6 +19,11 @@ export const RDS_HOSTS: Record<string, string> = {
   prod:  'optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com',
 };
 
+// Shared bastion (optima-bi-data EC2, shared-services stack). Reached via SSM —
+// no public port 22 dependency, so it is immune to the MaxStartups throttling that
+// the open-to-world sshd suffers under internet scan load. SSH path kept as fallback.
+const AWS_REGION = 'ap-southeast-1';
+const BASTION_INSTANCE_ID = 'i-03286fb0a9ce7e6b1';
 const EC2_HOST = '3.0.210.113';
 
 // ─── SQL escaping ───────────────────────────────────────────────────────────
@@ -114,6 +120,75 @@ export function setupSSHTunnel(dbHost: string, localPort: number): void {
   );
 }
 
+/** Block the current (sync) call for `ms` without spawning a subprocess. */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function assertSSMPrereqs(): void {
+  for (const [bin, hint] of [
+    ['session-manager-plugin', 'https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html'],
+    ['aws', 'AWS CLI v2: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html'],
+  ] as const) {
+    try { execSync(`command -v ${bin}`, { stdio: 'ignore' }); }
+    catch { throw new Error(`${bin} not found — required for the SSM DB tunnel. Install: ${hint}\n(or set OPTIMA_DB_TUNNEL=ssh to fall back to the legacy SSH tunnel)`); }
+  }
+}
+
+/**
+ * Open a local→RDS tunnel through the shared bastion using SSM port forwarding.
+ * No public SSH port is touched. A healthy existing tunnel on the port is reused
+ * (the ~2s SSM cold start is paid once, then every query is just a round-trip).
+ */
+export function setupSSMTunnel(dbHost: string, localPort: number): void {
+  let portInUse = false;
+  try { execSync(`lsof -ti:${localPort}`, { stdio: 'ignore' }); portInUse = true; } catch { /* free */ }
+
+  if (portInUse) {
+    if (isTunnelHealthy(localPort)) return;        // warm reuse — no cold start
+    console.log(`! Tunnel on port ${localPort} not responding (zombie), replacing...`);
+    killOrphanTunnel(localPort);
+  }
+
+  assertSSMPrereqs();
+  console.log(`Creating SSM tunnel: localhost:${localPort} -> ${BASTION_INSTANCE_ID} -> ${dbHost}:5432`);
+
+  const logFile = `${os.tmpdir()}/optima-ssm-tunnel-${localPort}.log`;
+  const out = fs.openSync(logFile, 'w');
+  const child = spawn('aws', [
+    'ssm', 'start-session',
+    '--region', AWS_REGION,
+    '--target', BASTION_INSTANCE_ID,
+    '--document-name', 'AWS-StartPortForwardingSessionToRemoteHost',
+    '--parameters', `host=${dbHost},portNumber=5432,localPortNumber=${localPort}`,
+  ], { detached: true, stdio: ['ignore', out, out] });
+  child.unref();
+
+  // Wait until the remote leg actually forwards (pg_isready probes RDS through the
+  // tunnel). Local port binds instantly; the remote hop needs ~1-2s to come up.
+  const deadlineMs = Date.now() + 20000;
+  while (Date.now() < deadlineMs) {
+    if (isTunnelHealthy(localPort)) { console.log(`✓ SSM tunnel ready on port ${localPort}`); return; }
+    sleepSync(500);
+  }
+
+  let tail = '(no log)';
+  try { tail = fs.readFileSync(logFile, 'utf-8').split('\n').slice(-8).join('\n'); } catch { /* ignore */ }
+  throw new Error(`SSM tunnel on port ${localPort} did not become ready within 20s.\n--- ${logFile} ---\n${tail}`);
+}
+
+/**
+ * Open a DB tunnel through the shared bastion. Defaults to SSM (no public port 22);
+ * set OPTIMA_DB_TUNNEL=ssh to fall back to the legacy SSH tunnel.
+ */
+export function setupTunnel(dbHost: string, localPort: number): void {
+  if ((process.env.OPTIMA_DB_TUNNEL || 'ssm').toLowerCase() === 'ssh') {
+    setupSSHTunnel(dbHost, localPort);
+  } else {
+    setupSSMTunnel(dbHost, localPort);
+  }
+}
+
 // ─── psql ───────────────────────────────────────────────────────────────────
 function findPsqlPath(): string {
   try {
@@ -142,8 +217,7 @@ export async function connectAuthDB(env: string, infisicalConfig: InfisicalConfi
   const host = RDS_HOSTS[env as 'stage' | 'prod'];
   const port = env === 'stage' ? 15432 : 15433;
 
-  setupSSHTunnel(host, port);
-  await new Promise(r => setTimeout(r, 1000));
+  setupTunnel(host, port);
 
   const conn: DBConnection = { host: 'localhost', port, user: secrets['AUTH_DB_USER'], password: secrets['AUTH_DB_PASSWORD'], database: 'optima_auth' };
   return { query: (sql: string) => queryDB(conn, sql) };
@@ -158,8 +232,7 @@ export async function connectBillingDB(env: string, infisicalConfig: InfisicalCo
 
   const parsed = parseDatabaseUrl(dbUrl);
   const port = env === 'stage' ? 15434 : 15435;
-  setupSSHTunnel(parsed.host, port);
-  await new Promise(r => setTimeout(r, 1000));
+  setupTunnel(parsed.host, port);
 
   const conn: DBConnection = { host: 'localhost', port, user: parsed.user, password: parsed.password, database: parsed.database };
   return { query: (sql: string) => queryDB(conn, sql) };
