@@ -1,13 +1,7 @@
 #!/usr/bin/env node
 
 import { execSync } from 'child_process';
-
-interface InfisicalConfig {
-  url: string;
-  clientId: string;
-  clientSecret: string;
-  projectId: string;
-}
+import { getInfisicalConfig, getInfisicalToken, InfisicalConfig } from './db-utils';
 
 // 支持的服务列表（Infisical 路径为 /services/<service-name>）
 const SUPPORTED_SERVICES = [
@@ -44,27 +38,8 @@ const ENV_MAP: Record<string, string> = {
   prod: 'prod'
 };
 
-function getGitHubVariable(name: string): string {
-  return execSync(`gh variable get ${name} -R Optima-Chat/optima-dev-skills`, { encoding: 'utf-8' }).trim();
-}
-
-function getInfisicalConfig(): InfisicalConfig {
-  return {
-    url: getGitHubVariable('INFISICAL_URL'),
-    clientId: getGitHubVariable('INFISICAL_CLIENT_ID'),
-    clientSecret: getGitHubVariable('INFISICAL_CLIENT_SECRET'),
-    projectId: getGitHubVariable('INFISICAL_PROJECT_ID')
-  };
-}
-
-function getInfisicalToken(config: InfisicalConfig): string {
-  const response = execSync(
-    `curl -s -X POST "${config.url}/api/v1/auth/universal-auth/login" -H "Content-Type: application/json" -d '{"clientId": "${config.clientId}", "clientSecret": "${config.clientSecret}"}'`,
-    { encoding: 'utf-8' }
-  );
-  return JSON.parse(response).accessToken;
-}
-
+// NOTE: getInfisicalSecrets is kept local because it encodes secretPath (encodeURIComponent),
+// unlike db-utils' raw-path variant; getGitHubVariable/getInfisicalConfig/getInfisicalToken are shared from db-utils.
 function getInfisicalSecrets(config: InfisicalConfig, token: string, environment: string, secretPath: string): Record<string, string> {
   const response = execSync(
     `curl -s "${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${encodeURIComponent(secretPath)}" -H "Authorization: Bearer ${token}"`,

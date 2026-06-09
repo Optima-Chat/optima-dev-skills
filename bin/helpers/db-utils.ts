@@ -34,7 +34,8 @@ export function escapeSQL(value: string): string {
 
 // ─── GitHub Variables ───────────────────────────────────────────────────────
 export function getGitHubVariable(name: string): string {
-  return execSync(`gh variable get ${name} -R Optima-Chat/optima-dev-skills`, { encoding: 'utf-8' }).trim();
+  // `gh variable` has no `get` subcommand (only list/set/delete); read the value via the REST variables endpoint.
+  return execSync(`gh api repos/Optima-Chat/optima-dev-skills/actions/variables/${name} --jq .value`, { encoding: 'utf-8' }).trim();
 }
 
 // ─── Infisical ──────────────────────────────────────────────────────────────
