@@ -6,7 +6,7 @@
 // ⚠️ 语义变化：旧 wallet granted 无期限；积分 bonus 桶标准 30 天有效期。
 import { randomUUID } from 'crypto';
 import { getInfisicalConfig, getInfisicalToken, resolveUserId } from './db-utils';
-import { callBilling, validateEnv } from './billing-http';
+import { callBilling, resolveUserIdByEmail, validateEnvCnProd } from './billing-http';
 
 function parseArgs(args: string[]): { email: string; amountUsd: number; description: string | null; env: string } {
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
@@ -19,12 +19,13 @@ $1 = 700 credits (P15 unified ledger; the USD wallet is retired).
 Options:
   --amount <usd>        USD amount to grant (required, e.g. 5 for $5.00 = 3500 credits)
   --description <text>  Description for audit trail (optional)
-  --env <env>           Environment: stage, prod (default: stage)
+  --env <env>           Environment: stage, prod, cn-prod (default: stage)
   -h, --help            Show this help
 
 Examples:
   optima-grant-balance user@example.com --amount 5 --env prod
-  optima-grant-balance user@example.com --amount 10 --description "Service outage compensation"`);
+  optima-grant-balance user@example.com --amount 10 --description "Service outage compensation"
+  optima-grant-balance user@example.com --amount 1 --env cn-prod   # ¥-priced env, still USD input ($1 = 700 credits)`);
     process.exit(0);
   }
 
@@ -43,20 +44,27 @@ Examples:
     console.error('--amount is required and must be > 0 (USD)');
     process.exit(1);
   }
-  validateEnv(env);
+  validateEnvCnProd(env);
 
   return { email, amountUsd, description, env };
 }
 
 async function main() {
   const { email, amountUsd, description, env } = parseArgs(process.argv.slice(2));
-  const infisicalConfig = getInfisicalConfig();
-  const token = getInfisicalToken(infisicalConfig);
 
   console.log(`\n🎁 Granting $${amountUsd.toFixed(2)} (${Math.round(amountUsd * 700)} credits) to ${email} [${env.toUpperCase()}]\n`);
   if (description) console.log(`   Reason: ${description}`);
 
-  const userId = await resolveUserId(email, env, infisicalConfig, token);
+  // cn-prod has no SSH tunnel into the Aliyun RDS — resolve via user-auth's
+  // internal lookup API instead of the direct SQL path.
+  let userId: string;
+  if (env === 'cn-prod') {
+    userId = await resolveUserIdByEmail(env, email);
+  } else {
+    const infisicalConfig = getInfisicalConfig();
+    const token = getInfisicalToken(infisicalConfig);
+    userId = await resolveUserId(email, env, infisicalConfig, token);
+  }
 
   // 幂等键 per-invocation 生成、callBilling 的 5xx retry 复用同 body —— 「已
   // commit 但响应 5xx」场景重试不双发（billing spec R2-M3）。

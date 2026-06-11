@@ -89,23 +89,54 @@ function isTunnelHealthy(localPort: number): boolean {
   }
 }
 
-function killOrphanTunnel(localPort: number): void {
+function portPids(localPort: number): string[] {
   try {
-    const pids = execSync(`lsof -ti:${localPort}`, { encoding: 'utf-8' }).trim();
-    if (pids) execSync(`kill -9 ${pids.split(/\s+/).join(' ')}`, { stdio: 'ignore' });
-  } catch { /* nothing to kill */ }
+    return execSync(`lsof -ti:${localPort}`, { encoding: 'utf-8' }).trim().split(/\s+/).filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
-export function setupSSHTunnel(dbHost: string, localPort: number): void {
-  let portInUse = false;
-  try { execSync(`lsof -ti:${localPort}`, { stdio: 'ignore' }); portInUse = true; } catch { /* free */ }
-
-  if (portInUse) {
-    if (isTunnelHealthy(localPort)) return;
-    console.log(`! SSH tunnel on port ${localPort} not responding (zombie), replacing...`);
-    killOrphanTunnel(localPort);
+// lsof 只能看到「有进程 bind」的端口。Docker 发布端口走 iptables DNAT 时主机上
+// 没有进程绑定（lsof 空），但流量照样被内核截给容器 —— 在这种端口上建隧道，
+// psql 连的还是容器里的库。所以空闲判定必须用客户端视角：真去 connect，有人
+// 应答（无论进程还是 DNAT）就算被占。
+function isPortResponding(localPort: number): boolean {
+  try {
+    // 单条命令：connect 失败 bash 即 exit 非 0（再跟一条命令会把退出码盖掉）；
+    // fd 随 bash 进程退出自动关闭。
+    execSync(`bash -c 'exec 3<>/dev/tcp/127.0.0.1/${localPort}'`, { stdio: 'ignore', timeout: 2000 });
+    return true;
+  } catch {
+    return false;
   }
+}
 
+// 端口被占 ≠ 是我们的隧道：本机 Docker PG 也会监听这些端口，且对 pg_isready
+// 完全健康 —— 曾把 prod 凭证发给本机 15433 上的 Docker PG，报「密码错误」。
+// 判别器 = 占用进程的 comm：ssh（legacy 隧道）或 session-manager-plugin（SSM）。
+function isTunnelProcessOnPort(localPort: number): boolean {
+  return portPids(localPort).some(pid => {
+    try {
+      const comm = execSync(`ps -o comm= -p ${pid}`, { encoding: 'utf-8' }).trim();
+      return comm === 'ssh' || comm.includes('session-manager');
+    } catch {
+      return false;
+    }
+  });
+}
+
+function killOrphanTunnel(localPort: number): void {
+  // 只杀我们的隧道进程 —— 端口上若是别人（docker-proxy/postgres），kill -9 是破坏性的。
+  for (const pid of portPids(localPort)) {
+    try {
+      const comm = execSync(`ps -o comm= -p ${pid}`, { encoding: 'utf-8' }).trim();
+      if (comm === 'ssh' || comm.includes('session-manager')) execSync(`kill -9 ${pid}`, { stdio: 'ignore' });
+    } catch { /* already gone */ }
+  }
+}
+
+function setupSSHTunnel(dbHost: string, localPort: number): void {
   const sshKeyPath = `${process.env.HOME}/.ssh/optima-ec2-key`;
   if (!fs.existsSync(sshKeyPath)) throw new Error(`SSH key not found: ${sshKeyPath}. Please obtain optima-ec2-key from xbfool.`);
   console.log(`Creating SSH tunnel: localhost:${localPort} -> ${EC2_HOST} -> ${dbHost}:5432`);
@@ -141,16 +172,7 @@ function assertSSMPrereqs(): void {
  * No public SSH port is touched. A healthy existing tunnel on the port is reused
  * (the ~2s SSM cold start is paid once, then every query is just a round-trip).
  */
-export function setupSSMTunnel(dbHost: string, localPort: number): void {
-  let portInUse = false;
-  try { execSync(`lsof -ti:${localPort}`, { stdio: 'ignore' }); portInUse = true; } catch { /* free */ }
-
-  if (portInUse) {
-    if (isTunnelHealthy(localPort)) return;        // warm reuse — no cold start
-    console.log(`! Tunnel on port ${localPort} not responding (zombie), replacing...`);
-    killOrphanTunnel(localPort);
-  }
-
+function setupSSMTunnel(dbHost: string, localPort: number): void {
   assertSSMPrereqs();
   console.log(`Creating SSM tunnel: localhost:${localPort} -> ${BASTION_INSTANCE_ID} -> ${dbHost}:5432`);
 
@@ -178,16 +200,72 @@ export function setupSSMTunnel(dbHost: string, localPort: number): void {
   throw new Error(`SSM tunnel on port ${localPort} did not become ready within 20s.\n--- ${logFile} ---\n${tail}`);
 }
 
-/**
- * Open a DB tunnel through the shared bastion. Defaults to SSM (no public port 22);
- * set OPTIMA_DB_TUNNEL=ssh to fall back to the legacy SSH tunnel.
- */
-export function setupTunnel(dbHost: string, localPort: number): void {
-  if ((process.env.OPTIMA_DB_TUNNEL || 'ssm').toLowerCase() === 'ssh') {
-    setupSSHTunnel(dbHost, localPort);
-  } else {
-    setupSSMTunnel(dbHost, localPort);
+// ─── Tunnel port registry ───────────────────────────────────────────────────
+// 端口动态分配：固定端口（旧 15432-15435）会撞本机服务（Docker PG 占 15433 →
+// prod 凭证发给错误的库报「密码错误」）。每个 RDS host 一条隧道，实际端口记在
+// 注册文件里，复用前验证「端口上确实是我们的隧道进程且健康」。
+const TUNNEL_REGISTRY = `${os.homedir()}/.cache/optima-dev-skills/tunnel-ports.json`;
+// 基址刻意避开 1543x/543x：本机 Docker PG 常映射在那一带，DNAT 端口即使我们的
+// 隧道进程 bind 成功，OUTPUT 链的 DNAT 仍会把 127.0.0.1 流量截给容器（实测），
+// 复用判定无法从外部区分 —— 离它远点是最便宜的防线。
+const TUNNEL_PORT_SCAN_BASE = 25432;
+const TUNNEL_PORT_SCAN_LIMIT = 100;
+
+function readTunnelRegistry(): Record<string, number> {
+  try {
+    return JSON.parse(fs.readFileSync(TUNNEL_REGISTRY, 'utf-8'));
+  } catch {
+    return {};
   }
+}
+
+function writeTunnelRegistry(reg: Record<string, number>): void {
+  // 注册文件非并发安全（全量覆盖、无锁）：并发 CLI 进程可能互相覆盖记录或抢同
+  // 一空闲端口。后果 fail-closed（多建一条隧道 / 第二个 bind 失败报错重试），
+  // 对单人运维 CLI 可接受，不为此引入锁。
+  fs.mkdirSync(`${os.homedir()}/.cache/optima-dev-skills`, { recursive: true });
+  fs.writeFileSync(TUNNEL_REGISTRY, JSON.stringify(reg, null, 2));
+}
+
+/** First free local port, preferring the registry's previous assignment. */
+function pickTunnelPort(preferred?: number): number {
+  const candidates = preferred ? [preferred] : [];
+  for (let p = TUNNEL_PORT_SCAN_BASE; p < TUNNEL_PORT_SCAN_BASE + TUNNEL_PORT_SCAN_LIMIT; p++) {
+    if (p !== preferred) candidates.push(p);
+  }
+  for (const p of candidates) {
+    if (portPids(p).length === 0 && !isPortResponding(p)) return p;
+  }
+  throw new Error(`No free local port in ${TUNNEL_PORT_SCAN_BASE}-${TUNNEL_PORT_SCAN_BASE + TUNNEL_PORT_SCAN_LIMIT - 1} for the DB tunnel`);
+}
+
+/**
+ * Ensure a local→RDS tunnel to `dbHost` exists and return its local port.
+ * One tunnel per RDS host (auth/billing on the same instance share it).
+ * Defaults to SSM (no public port 22); set OPTIMA_DB_TUNNEL=ssh for the
+ * legacy SSH tunnel.
+ */
+export function ensureTunnel(dbHost: string): number {
+  const reg = readTunnelRegistry();
+  const known = reg[dbHost];
+
+  if (known !== undefined && isTunnelProcessOnPort(known)) {
+    if (isTunnelHealthy(known)) return known; // warm reuse — no cold start
+    console.log(`! Tunnel on port ${known} not responding (zombie), replacing...`);
+    killOrphanTunnel(known);
+  }
+
+  // Foreign process on the recorded port (e.g. a local Docker PG) → pick a
+  // different port instead of talking to whatever squats there.
+  const port = pickTunnelPort(known);
+  if ((process.env.OPTIMA_DB_TUNNEL || 'ssm').toLowerCase() === 'ssh') {
+    setupSSHTunnel(dbHost, port);
+  } else {
+    setupSSMTunnel(dbHost, port);
+  }
+  reg[dbHost] = port;
+  writeTunnelRegistry(reg);
+  return port;
 }
 
 // ─── psql ───────────────────────────────────────────────────────────────────
@@ -216,9 +294,7 @@ export async function connectAuthDB(env: string, infisicalConfig: InfisicalConfi
   const infisicalEnv = env === 'stage' ? 'staging' : 'prod';
   const secrets = getInfisicalSecrets(infisicalConfig, token, infisicalEnv, '/shared-secrets/database-users');
   const host = RDS_HOSTS[env as 'stage' | 'prod'];
-  const port = env === 'stage' ? 15432 : 15433;
-
-  setupTunnel(host, port);
+  const port = ensureTunnel(host);
 
   const conn: DBConnection = { host: 'localhost', port, user: secrets['AUTH_DB_USER'], password: secrets['AUTH_DB_PASSWORD'], database: 'optima_auth' };
   return { query: (sql: string) => queryDB(conn, sql) };
@@ -232,8 +308,7 @@ export async function connectBillingDB(env: string, infisicalConfig: InfisicalCo
   if (!dbUrl) throw new Error('DATABASE_URL not found for billing service');
 
   const parsed = parseDatabaseUrl(dbUrl);
-  const port = env === 'stage' ? 15434 : 15435;
-  setupTunnel(parsed.host, port);
+  const port = ensureTunnel(parsed.host);
 
   const conn: DBConnection = { host: 'localhost', port, user: parsed.user, password: parsed.password, database: parsed.database };
   return { query: (sql: string) => queryDB(conn, sql) };

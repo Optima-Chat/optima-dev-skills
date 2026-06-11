@@ -49,7 +49,9 @@ optima-grant-balance user@example.com --amount 20 --description "服务中断补
 | `<email>` | 用户邮箱（必填） | - |
 | `--amount <usd>` | USD 金额（必填，> 0） | - |
 | `--description <text>` | 描述/原因（仅 console 输出） | - |
-| `--env <env>` | 环境：stage, prod | stage |
+| `--env <env>` | 环境：stage, prod, cn-prod | stage |
+
+> **cn-prod**：走 HTTPS（auth-cn/billing-cn.optima.chat），email 查找经 user-auth internal lookup API（无 SSH 隧道）。金额输入仍是 USD（$1 = 700 积分 = ¥7 档积分口径一致）。
 
 ## 与 grant-subscription 的区别
 
