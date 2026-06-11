@@ -6,7 +6,7 @@ allowed-tools: ["Bash"]
 
 # 赠送 USD 余额（Grant Balance）
 
-当你需要为用户赠送 wallet USD 余额时，使用这个场景。金额会加到 `usd_wallets.granted_balance_micros`，billing 服务在扣费时会优先消费 granted balance。
+当你需要为用户赠送 wallet USD 余额时，使用这个场景。金额按 $1=700 积分换算，经 billing API 入 **bonus 积分桶（30 天有效期）**（P15 钱包退役后语义），billing 服务在扣费时会优先消费 granted balance。
 
 ## 执行方式：使用 CLI 工具
 
@@ -17,8 +17,8 @@ optima-grant-balance <email> --amount <usd> [options]
 **为什么使用 CLI 工具**：
 - 自动通过 email 查找 userId（跨 user-auth 数据库）
 - 自动处理 SSH 隧道和数据库连接
-- 不会影响现有订阅和已有余额（纯追加到 granted balance）
-- 自动写入 audit trail（`usd_wallet_topups` source=admin_grant）
+- 不会影响现有订阅和已有余额（发放 bonus 积分（30 天有效期，重复执行会叠加发放））
+- 自动留审计痕迹（credit_lot 行，幂等键前缀 `dev-skills-grant:`）
 
 ## 适用情况
 
@@ -41,7 +41,7 @@ optima-grant-balance user@example.com --amount 20 --description "服务中断补
 ```
 
 > **单位是美元（USD）**。`--amount 5` 即赠送 $5.00 到 granted balance。
-> 数据库底层用 micro-USD 精度（1 USD = 1,000,000 micros），CLI 自动换算。
+> 数据库底层用 micro-USD 精度（1 USD = 700 积分（P15 统一账本口径）
 
 ### 参数说明
 
@@ -93,10 +93,10 @@ optima-grant-balance xxx@gmail.com --amount 20 --env stage
 1. **Stage 优先**：默认操作 Stage 环境
 2. **Prod 谨慎**：操作 Prod 前确认邮箱和金额
 3. **纯追加**：不会影响现有余额和订阅（累加到 granted balance）
-4. **Audit trail**：每次赠送会插入一条 `usd_wallet_topups` 记录（source=`admin_grant`）
+4. **Audit trail**：每次赠送对应一个 credit_lot（幂等键前缀 `dev-skills-grant:`，type=bonus）
 
 ## 相关命令
 
 - `optima-grant-balance` - 赠送 USD 余额（主要方式）
 - `optima-grant-subscription` - 开通订阅计划
-- `optima-query-db` - 查询数据库验证结果（`SELECT granted_balance_micros FROM usd_wallets WHERE user_id=...`）
+- `optima-query-db` - 查询数据库验证结果（`GET /api/billing/balance（credits.byType.bonus）或 query-db credit_lot
