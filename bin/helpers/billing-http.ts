@@ -252,7 +252,7 @@ export async function resolveUserIdByEmail(env: string, email: string): Promise<
   });
   const text = await res.text();
   if (res.status === 404) {
-    throw new Error(`User not found: ${email}`);
+    throw new Error(`User not found (${env}): ${email}`);
   }
   if (!res.ok) {
     throw new Error(formatServiceError(res.status, res.statusText, text));

@@ -220,6 +220,9 @@ function readTunnelRegistry(): Record<string, number> {
 }
 
 function writeTunnelRegistry(reg: Record<string, number>): void {
+  // 注册文件非并发安全（全量覆盖、无锁）：并发 CLI 进程可能互相覆盖记录或抢同
+  // 一空闲端口。后果 fail-closed（多建一条隧道 / 第二个 bind 失败报错重试），
+  // 对单人运维 CLI 可接受，不为此引入锁。
   fs.mkdirSync(`${os.homedir()}/.cache/optima-dev-skills`, { recursive: true });
   fs.writeFileSync(TUNNEL_REGISTRY, JSON.stringify(reg, null, 2));
 }
