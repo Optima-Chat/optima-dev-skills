@@ -2,7 +2,7 @@
 
 import { execSync } from 'child_process';
 import * as fs from 'fs';
-import { setupTunnel, getGitHubVariable, getInfisicalConfig, getInfisicalToken, getInfisicalSecrets } from './db-utils';
+import { ensureTunnel, getGitHubVariable, getInfisicalConfig, getInfisicalToken, getInfisicalSecrets } from './db-utils';
 
 interface DatabaseConfig {
   host: string;
@@ -255,9 +255,7 @@ async function main() {
       }
     }
 
-    const localPort = environment === 'stage' ? 15432 : 15433;
-
-    setupTunnel(dbHost, localPort);
+    const localPort = ensureTunnel(dbHost);
 
     const result = queryDatabase('localhost', localPort, dbUser, dbPassword, database, sql);
     console.log('\n' + result);
