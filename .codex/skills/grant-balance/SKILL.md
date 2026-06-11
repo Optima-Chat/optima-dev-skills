@@ -17,7 +17,7 @@ optima-grant-balance <email> --amount <usd> [options]
 - 自动通过 email 查找 userId（跨 user-auth 数据库）
 - 自动处理 SSH 隧道和数据库连接
 - 不会影响现有订阅和已有余额（发放 bonus 积分（30 天有效期，重复执行会叠加发放））
-- 自动写入 audit trail（`usd_wallet_topups` source=admin_grant）
+- 自动留审计痕迹（credit_lot 行，幂等键前缀 `dev-skills-grant:`）
 
 ## 适用情况
 
@@ -92,7 +92,7 @@ optima-grant-balance xxx@gmail.com --amount 20 --env stage
 1. **Stage 优先**：默认操作 Stage 环境
 2. **Prod 谨慎**：操作 Prod 前确认邮箱和金额
 3. **纯追加**：不会影响现有余额和订阅（累加到 granted balance）
-4. **Audit trail**：每次赠送会插入一条 `usd_wallet_topups` 记录（source=`admin_grant`）
+4. **Audit trail**：每次赠送对应一个 credit_lot（幂等键前缀 `dev-skills-grant:`，type=bonus）
 
 ## 相关命令
 
