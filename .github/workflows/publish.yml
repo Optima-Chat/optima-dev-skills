@@ -1,0 +1,23 @@
+name: Publish to npm
+
+# 手动发版：gh workflow run publish.yml
+# 用 repo secret NPM_TOKEN（granular token 须有 @optima-chat/dev-skills 的
+# read+write packages 权限）。版本号取 package.json 当前值——发版前先在本地
+# npm version patch 并 push。
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run build
+      - run: npm publish --access restricted
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
