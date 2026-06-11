@@ -2,14 +2,7 @@
 
 import { execSync } from 'child_process';
 import * as fs from 'fs';
-import { setupTunnel } from './db-utils';
-
-interface InfisicalConfig {
-  url: string;
-  clientId: string;
-  clientSecret: string;
-  projectId: string;
-}
+import { setupTunnel, getGitHubVariable, getInfisicalConfig, getInfisicalToken, getInfisicalSecrets } from './db-utils';
 
 interface DatabaseConfig {
   host: string;
@@ -110,40 +103,6 @@ function parseDatabaseUrl(url: string): { user: string; password: string; host: 
     port: parseInt(match[4]),
     database: match[5]
   };
-}
-
-function getGitHubVariable(name: string): string {
-  return execSync(`gh variable get ${name} -R Optima-Chat/optima-dev-skills`, { encoding: 'utf-8' }).trim();
-}
-
-function getInfisicalConfig(): InfisicalConfig {
-  return {
-    url: getGitHubVariable('INFISICAL_URL'),
-    clientId: getGitHubVariable('INFISICAL_CLIENT_ID'),
-    clientSecret: getGitHubVariable('INFISICAL_CLIENT_SECRET'),
-    projectId: getGitHubVariable('INFISICAL_PROJECT_ID')
-  };
-}
-
-function getInfisicalToken(config: InfisicalConfig): string {
-  const response = execSync(
-    `curl -s -X POST "${config.url}/api/v1/auth/universal-auth/login" -H "Content-Type: application/json" -d '{"clientId": "${config.clientId}", "clientSecret": "${config.clientSecret}"}'`,
-    { encoding: 'utf-8' }
-  );
-  return JSON.parse(response).accessToken;
-}
-
-function getInfisicalSecrets(config: InfisicalConfig, token: string, environment: string, secretPath: string): Record<string, string> {
-  const response = execSync(
-    `curl -s "${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${secretPath}" -H "Authorization: Bearer ${token}"`,
-    { encoding: 'utf-8' }
-  );
-  const data = JSON.parse(response);
-  const secrets: Record<string, string> = {};
-  for (const secret of data.secrets || []) {
-    secrets[secret.secretKey] = secret.secretValue;
-  }
-  return secrets;
 }
 
 function findPsqlPath(): string {
