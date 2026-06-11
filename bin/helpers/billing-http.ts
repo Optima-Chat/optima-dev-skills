@@ -5,7 +5,13 @@ import { getInfisicalConfig, getInfisicalToken } from './db-utils';
 const USER_AUTH_URLS: Record<string, string> = {
   stage: 'https://auth.stage.optima.onl',
   prod: 'https://auth.optima.onl',
+  'cn-prod': 'https://auth-cn.optima.chat',
 };
+
+// cn-prod URLs are hardcoded: cn Infisical (secrets-cn.optima.chat) is a
+// separate instance dev-skills has no machine identity for, and these domains
+// are stable. AWS envs keep reading /shared-secrets/domain-urls.
+const CN_PROD_BILLING_URL = 'https://billing-cn.optima.chat';
 
 /**
  * Validate the --env flag value at command entry, before any I/O.
@@ -24,12 +30,41 @@ export function validateEnv(env: string): 'stage' | 'prod' {
   return env;
 }
 
+/**
+ * Variant for commands that also support cn-prod — currently grant-balance /
+ * grant-subscription, which reach billing + user-auth over HTTPS only.
+ * Other commands resolve users via the AWS RDS SSH tunnel, which does not
+ * exist for cn-prod (Aliyun VPC-internal RDS) — keep them on validateEnv so a
+ * cn-prod typo fails fast instead of dying inside the tunnel setup.
+ */
+export function validateEnvCnProd(env: string): 'stage' | 'prod' | 'cn-prod' {
+  if (env !== 'stage' && env !== 'prod' && env !== 'cn-prod') {
+    throw new Error(`--env must be "stage", "prod" or "cn-prod" (got: ${env})`);
+  }
+  return env;
+}
+
 // T1 discovered: client_id differs per env (stage=dev-skills-ubd3qz6n,
 // prod=dev-skills-hinxa0rs). Both stored in Infisical alongside the
 // secret at /shared-secrets/oauth-clients/.
 const DEV_SKILLS_OAUTH_PATH = '/shared-secrets/oauth-clients';
 const DEV_SKILLS_CLIENT_ID_KEY = 'DEV_SKILLS_OAUTH_CLIENT_ID';
 const DEV_SKILLS_CLIENT_SECRET_KEY = 'DEV_SKILLS_OAUTH_CLIENT_SECRET';
+
+// cn-prod: the client (dev-skills-ecee51qo) lives in cn user-auth, but its
+// credentials are mirrored into AWS Infisical (prod environment, same path)
+// under CN_PROD-prefixed keys so we reuse the existing Infisical access —
+// zero new credential chain. Canonical copy lives in cn Infisical
+// /shared-secrets/oauth-clients (DEV_SKILLS_OAUTH_CLIENT_ID/SECRET).
+const DEV_SKILLS_CN_CLIENT_ID_KEY = 'DEV_SKILLS_CN_PROD_OAUTH_CLIENT_ID';
+const DEV_SKILLS_CN_CLIENT_SECRET_KEY = 'DEV_SKILLS_CN_PROD_OAUTH_CLIENT_SECRET';
+
+// cn-prod tokens must carry this scope: resolveUserIdByEmail calls cn
+// user-auth POST /api/v1/internal/users/lookup, whose guard
+// (verify_internal_service_token) requires it. user-auth issues
+// request∩allowed_scopes and an unscoped request yields scope="" (verified
+// against cn-prod 2026-06-12), so the request must name it explicitly.
+const CN_PROD_TOKEN_SCOPE = 'internal:users:write';
 
 // ───── Cache (process-lifetime) ─────────────────────────────────────────────
 // One CLI invocation does at most a handful of HTTP calls. We mint the M2M
@@ -46,6 +81,7 @@ const billingUrlCache: Record<string, string> = {};
 const skillsUrlCache: Record<string, string> = {};
 
 function getBillingUrl(env: string): string {
+  if (env === 'cn-prod') return CN_PROD_BILLING_URL;
   if (billingUrlCache[env]) return billingUrlCache[env];
   const url = fetchInfisicalSecret(env, '/shared-secrets/domain-urls', 'BILLING_URL');
   billingUrlCache[env] = url;
@@ -65,13 +101,20 @@ export function getServiceToken(env: string): string {
   const cfg = getInfisicalConfig();
   const tok = getInfisicalToken(cfg);
   // Fetch BOTH client_id and client_secret from Infisical — they differ per env.
-  const clientId = fetchInfisicalSecret(env, DEV_SKILLS_OAUTH_PATH, DEV_SKILLS_CLIENT_ID_KEY, cfg, tok);
-  const clientSecret = fetchInfisicalSecret(env, DEV_SKILLS_OAUTH_PATH, DEV_SKILLS_CLIENT_SECRET_KEY, cfg, tok);
+  // cn-prod credentials are mirrored in the AWS Infisical *prod* environment
+  // (fetchInfisicalSecret has no cn-prod env slug), under CN-specific keys.
+  const isCn = env === 'cn-prod';
+  const infisicalEnv = isCn ? 'prod' : env;
+  const idKey = isCn ? DEV_SKILLS_CN_CLIENT_ID_KEY : DEV_SKILLS_CLIENT_ID_KEY;
+  const secretKey = isCn ? DEV_SKILLS_CN_CLIENT_SECRET_KEY : DEV_SKILLS_CLIENT_SECRET_KEY;
+  const clientId = fetchInfisicalSecret(infisicalEnv, DEV_SKILLS_OAUTH_PATH, idKey, cfg, tok);
+  const clientSecret = fetchInfisicalSecret(infisicalEnv, DEV_SKILLS_OAUTH_PATH, secretKey, cfg, tok);
 
   const authUrl = USER_AUTH_URLS[env];
   if (!authUrl) throw new Error(`Unknown env: ${env}`);
 
-  const body = `grant_type=client_credentials&client_id=${encodeURIComponent(clientId)}&client_secret=${encodeURIComponent(clientSecret)}`;
+  const scopeParam = isCn ? `&scope=${encodeURIComponent(CN_PROD_TOKEN_SCOPE)}` : '';
+  const body = `grant_type=client_credentials&client_id=${encodeURIComponent(clientId)}&client_secret=${encodeURIComponent(clientSecret)}${scopeParam}`;
   const response = execSync(
     `curl -s -X POST '${authUrl}/api/v1/oauth/token' -H 'Content-Type: application/x-www-form-urlencoded' -d '${body}'`,
     { encoding: 'utf-8' },
@@ -188,4 +231,41 @@ export async function callSkills<T = unknown>(
   body?: object,
 ): Promise<ServiceResponse<T>> {
   return callService<T>(getSkillsUrl(env), env, method, path, body);
+}
+
+/**
+ * Resolve a user's id by email via user-auth's internal lookup endpoint
+ * (POST /api/v1/internal/users/lookup). cn-prod only: AWS envs resolve via
+ * the RDS SSH tunnel (db-utils resolveUserId) and their dev-skills clients
+ * don't carry the internal:users:write scope this endpoint requires.
+ */
+export async function resolveUserIdByEmail(env: string, email: string): Promise<string> {
+  console.log(`Looking up user by email: ${email}`);
+  const token = getServiceToken(env);
+  const authUrl = USER_AUTH_URLS[env];
+  if (!authUrl) throw new Error(`Unknown env: ${env}`);
+
+  const res = await fetch(`${authUrl}/api/v1/internal/users/lookup`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  const text = await res.text();
+  if (res.status === 404) {
+    throw new Error(`User not found: ${email}`);
+  }
+  if (!res.ok) {
+    throw new Error(formatServiceError(res.status, res.statusText, text));
+  }
+  let parsed: { user_id?: string };
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`user-auth lookup returned non-JSON 2xx body: ${text.slice(0, 200)}`);
+  }
+  if (!parsed.user_id) {
+    throw new Error(`user-auth lookup response missing user_id: ${text.slice(0, 200)}`);
+  }
+  console.log(`✓ Found user: ${parsed.user_id}`);
+  return parsed.user_id;
 }
