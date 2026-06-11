@@ -19,8 +19,8 @@ optima-grant-subscription <email> [options]
 **为什么使用 CLI 工具**：
 - 自动通过 email 查找 userId（跨 user-auth 数据库）
 - 自动处理 SSH 隧道和数据库连接
-- 自动取消旧订阅、重置 wallet granted balance
-- 自动按 plan 配置授予 USD wallet 余额和 token quota
+- 自动取消旧订阅、经 billing API supersede 旧授予（void 旧 subscription lot + 发新）
+- 自动按 plan 配置发放 subscription 积分（期末过期）和 token quota
 - 一条命令完成所有操作
 
 ## 适用情况
@@ -66,7 +66,7 @@ optima-grant-subscription user@example.com --plan enterprise --env prod
 | pro | $20.00 | 2,000 | 8M | 40M |
 | enterprise | $100.00 | 10,000 | 16M | 80M |
 
-> 1 credit = $0.01 = 10,000 micros。授予额存入 `usd_wallets.granted_balance_micros`。
+> 积分经 billing API 发放（subscription 桶，期末过期；P15 后无 wallet）
 
 ## 常见使用场景
 
@@ -102,7 +102,7 @@ optima-grant-subscription user@example.com --plan starter --env prod
 2. 加载对应 plan 的配置（月授予额、token 限额等）
 3. 取消该用户的所有活跃订阅
 4. 创建新订阅（设置到期时间）
-5. 重置 wallet granted balance 并授予新额度
+5. 经 billing API supersede 旧授予（void 旧 subscription lot + 发新） 并授予新额度
 6. 记录 topup 审计记录（source: subscription_grant）
 7. 更新 token quota 限额
 
