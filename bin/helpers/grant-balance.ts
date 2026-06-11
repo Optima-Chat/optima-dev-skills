@@ -1,16 +1,23 @@
 #!/usr/bin/env node
 
-import { getInfisicalConfig, getInfisicalToken, resolveUserId, connectBillingDB, escapeSQL } from './db-utils';
+// P15 D8b（optima-billing docs/2026-06-11-p15-wallet-sunset-spec.md）：
+// USD 钱包已退役——原「SSH 直写 usd_wallets.granted_balance_micros」作废，
+// 改调 billing 服务态端点（grantCredits → bonus 积分）。
+// ⚠️ 语义变化：旧 wallet granted 无期限；积分 bonus 桶标准 30 天有效期。
+import { randomUUID } from 'crypto';
+import { getInfisicalConfig, getInfisicalToken, resolveUserId } from './db-utils';
+import { callBilling, validateEnv } from './billing-http';
 
 function parseArgs(args: string[]): { email: string; amountUsd: number; description: string | null; env: string } {
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     console.log(`Usage: optima-grant-balance <email> --amount <usd> [options]
 
-Add USD balance to a user's wallet (granted_balance_micros).
+Grant credits to a user (bonus bucket, expires in 30 days).
 Used for promotional grants, compensation, referral rewards, etc.
+$1 = 700 credits (P15 unified ledger; the USD wallet is retired).
 
 Options:
-  --amount <usd>        USD amount to grant (required, e.g. 5 for $5.00)
+  --amount <usd>        USD amount to grant (required, e.g. 5 for $5.00 = 3500 credits)
   --description <text>  Description for audit trail (optional)
   --env <env>           Environment: stage, prod (default: stage)
   -h, --help            Show this help
@@ -36,10 +43,7 @@ Examples:
     console.error('--amount is required and must be > 0 (USD)');
     process.exit(1);
   }
-  if (!['stage', 'prod'].includes(env)) {
-    console.error('Env must be stage or prod (billing DB not available in CI)');
-    process.exit(1);
-  }
+  validateEnv(env);
 
   return { email, amountUsd, description, env };
 }
@@ -49,44 +53,25 @@ async function main() {
   const infisicalConfig = getInfisicalConfig();
   const token = getInfisicalToken(infisicalConfig);
 
-  // 1 USD = 1,000,000 micros. Round to integer micros.
-  const amountMicros = Math.round(amountUsd * 1_000_000);
-  console.log(`\n🎁 Granting $${amountUsd.toFixed(2)} to ${email} [${env.toUpperCase()}]\n`);
+  console.log(`\n🎁 Granting $${amountUsd.toFixed(2)} (${Math.round(amountUsd * 700)} credits) to ${email} [${env.toUpperCase()}]\n`);
   if (description) console.log(`   Reason: ${description}`);
 
   const userId = await resolveUserId(email, env, infisicalConfig, token);
-  const billing = await connectBillingDB(env, infisicalConfig, token);
-  const bq = billing.query;
 
-  const now = new Date().toISOString();
-  const safeUserId = escapeSQL(userId);
+  // 幂等键 per-invocation 生成、callBilling 的 5xx retry 复用同 body —— 「已
+  // commit 但响应 5xx」场景重试不双发（billing spec R2-M3）。
+  const { body } = await callBilling<{ success: boolean; lotId: string; credits: number }>(
+    env, 'POST', '/api/billing/admin/grant-credits',
+    {
+      userId,
+      amountUsd,
+      description: description ?? undefined,
+      idempotencyKey: `dev-skills-grant:${randomUUID()}`,
+    },
+  );
 
-  console.log(`Granting to wallet...`);
-  const txSQL = `
-BEGIN;
-
--- Ensure wallet exists
-INSERT INTO usd_wallets (id, user_id, balance_micros, reserved_micros, granted_balance_micros, created_at, updated_at)
-VALUES (gen_random_uuid(), '${safeUserId}', 0, 0, 0, '${now}', '${now}')
-ON CONFLICT (user_id) DO NOTHING;
-
--- Add to granted balance
-UPDATE usd_wallets SET granted_balance_micros = granted_balance_micros + ${amountMicros}, updated_at = '${now}'
-WHERE user_id = '${safeUserId}';
-
--- Record topup for audit trail (source='admin_grant' aligns with billing service convention)
-INSERT INTO usd_wallet_topups (id, wallet_id, amount_micros, service_fee_micros, net_credit_micros, status, source, service_namespace, created_at, completed_at)
-SELECT gen_random_uuid(), w.id, ${amountMicros}, 0, ${amountMicros}, 'completed', 'admin_grant', 'platform', '${now}', '${now}'
-FROM usd_wallets w WHERE w.user_id = '${safeUserId}';
-
-COMMIT;
-  `.trim();
-  bq(txSQL);
-  console.log(`✓ Granted $${amountUsd.toFixed(2)} to wallet`);
-
-  const balanceMicros = bq(`SELECT granted_balance_micros FROM usd_wallets WHERE user_id='${safeUserId}'`);
-  const balanceUsd = (parseInt(balanceMicros, 10) / 1000000).toFixed(2);
-  console.log(`\n✅ Done! ${email} now has $${balanceUsd} granted balance\n`);
+  console.log(`✓ Granted ${body.credits} credits (lot ${body.lotId})`);
+  console.log(`\n✅ Done! ${email} received ${body.credits} bonus credits (expires in 30 days)\n`);
 }
 
 main().catch(error => {
