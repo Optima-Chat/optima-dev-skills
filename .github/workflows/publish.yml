@@ -18,6 +18,8 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npm run build
-      - run: npm publish --access restricted
+      # 必须 public：org 无私有包付费计划，restricted 会被 npm 以误导性的
+      # E503（对已存在的包）/ E402（对新包）拒掉。本包本来就是 public。
+      - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
