@@ -2,7 +2,7 @@
 
 import { execSync } from 'child_process';
 import * as fs from 'fs';
-import { ensureTunnel, getGitHubVariable, getInfisicalConfig, getInfisicalToken, getInfisicalSecrets } from './db-utils';
+import { ensureTunnel, getGitHubVariable, getInfisicalConfig, getInfisicalToken, getInfisicalSecrets, parseDatabaseUrl } from './db-utils';
 
 interface DatabaseConfig {
   host: string;
@@ -90,20 +90,8 @@ const RDS_HOSTS = {
   prod: 'optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com'
 };
 
-function parseDatabaseUrl(url: string): { user: string; password: string; host: string; port: number; database: string } {
-  // postgresql://user:password@host:port/database?params
-  const match = url.match(/^postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/([^?]+)/);
-  if (!match) {
-    throw new Error(`Failed to parse DATABASE_URL: ${url}`);
-  }
-  return {
-    user: decodeURIComponent(match[1]),
-    password: decodeURIComponent(match[2]),
-    host: match[3],
-    port: parseInt(match[4]),
-    database: match[5]
-  };
-}
+// parseDatabaseUrl 统一用 db-utils 的实现：右切 userinfo 容忍密码特殊字符，
+// 且报错不回显 URL（这里曾把含密码的完整 URL 打进错误信息）。
 
 function findPsqlPath(): string {
   // 1. 优先从 PATH 中查找

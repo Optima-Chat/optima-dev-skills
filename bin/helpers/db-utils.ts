@@ -70,10 +70,43 @@ export function getInfisicalSecrets(config: InfisicalConfig, token: string, envi
 }
 
 // ─── Database URL parsing ───────────────────────────────────────────────────
+/** decodeURIComponent，但密码未做 URL 编码、含裸 % 时不炸：原样返回。 */
+function safeDecode(s: string): string {
+  try { return decodeURIComponent(s); } catch { return s; }
+}
+
+/**
+ * 解析 DATABASE_URL。不用正则一把抓：userinfo 从 authority 的**最后一个 @** 右切，
+ * 密码含 @ * + $ 等特殊字符也不会把密码段误并进 host（曾导致隧道目标变成
+ * `密码片段@pgm-xxx` 且把密码打进 console）。容忍驱动后缀（postgresql+asyncpg://）。
+ * ⚠️ 所有错误信息不回显 URL 本身 —— DATABASE_URL 含凭证，不能进日志。
+ */
 export function parseDatabaseUrl(url: string): { user: string; password: string; host: string; port: number; database: string } {
-  const match = url.match(/^postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/([^?]+)/);
-  if (!match) throw new Error('Failed to parse DATABASE_URL (format: postgresql://user:pass@host:port/db)');
-  return { user: decodeURIComponent(match[1]), password: decodeURIComponent(match[2]), host: match[3], port: parseInt(match[4], 10), database: match[5] };
+  const fail = (why: string): never => {
+    throw new Error(`Failed to parse DATABASE_URL (${why}; format: postgresql://user:pass@host:port/db)`);
+  };
+  const scheme = url.match(/^postgres(?:ql)?(?:\+\w+)?:\/\//);
+  if (!scheme) fail('unsupported scheme');
+  const rest = url.slice(scheme![0].length);
+  const slash = rest.indexOf('/');
+  const authority = slash === -1 ? rest : rest.slice(0, slash);
+  const at = authority.lastIndexOf('@');
+  if (at === -1) fail('missing user:pass@');
+  const userinfo = authority.slice(0, at);
+  const colon = userinfo.indexOf(':');
+  if (colon === -1) fail('missing password in userinfo');
+  // host 只允许域名字符 —— 解析错位时密码片段会落到这里，fail-closed 别让它流向隧道命令/日志
+  const hostport = authority.slice(at + 1).match(/^([A-Za-z0-9.-]+)(?::(\d+))?$/);
+  if (!hostport) fail('invalid host:port');
+  const database = slash === -1 ? '' : rest.slice(slash + 1).split('?')[0];
+  if (!database) fail('missing database name');
+  return {
+    user: safeDecode(userinfo.slice(0, colon)),
+    password: safeDecode(userinfo.slice(colon + 1)),
+    host: hostport![1],
+    port: hostport![2] ? parseInt(hostport![2], 10) : 5432,
+    database,
+  };
 }
 
 // ─── SSH tunnel ─────────────────────────────────────────────────────────────
