@@ -5,13 +5,15 @@ import { getInfisicalConfig, getInfisicalToken } from './db-utils';
 const USER_AUTH_URLS: Record<string, string> = {
   stage: 'https://auth.stage.optima.onl',
   prod: 'https://auth.optima.onl',
-  'cn-prod': 'https://auth-cn.optima.chat',
+  // #201: yzsgo.com 全量迁移 (2026-06-12), 旧 auth-cn.optima.chat 路由已下线
+  'cn-prod': 'https://auth.yzsgo.com',
 };
 
 // cn-prod URLs are hardcoded: cn Infisical (secrets-cn.optima.chat) is a
 // separate instance dev-skills has no machine identity for, and these domains
 // are stable. AWS envs keep reading /shared-secrets/domain-urls.
-const CN_PROD_BILLING_URL = 'https://billing-cn.optima.chat';
+// #201: yzsgo.com 全量迁移 (2026-06-12), 旧 billing-cn.optima.chat 路由已下线
+const CN_PROD_BILLING_URL = 'https://billing-api.yzsgo.com';
 
 /**
  * Validate the --env flag value at command entry, before any I/O.
