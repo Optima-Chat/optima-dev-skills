@@ -20,7 +20,7 @@
  *   optima-verify-health user-auth --env prod        # 环境 stage|prod|cn|all
  *   optima-verify-health --all --env all             # stage/prod/cn 三环境矩阵
  *   optima-verify-health gateway-core --expect-commit a1b2c3d
- *   optima-verify-health --url https://auth-cn.optima.chat/health
+ *   optima-verify-health --url https://auth.yzsgo.com/health
  *   optima-verify-health --all --json                # 机器可读,接 CI
  *   optima-verify-health --all --strict              # warn 也算不通过
  * 退出码:fail → 非 0;warn 默认放行(0),--strict 让 warn 也非 0。
@@ -33,15 +33,16 @@ type Env = 'stage' | 'prod' | 'cn';
 interface SvcCfg { path: string; stage?: string; prod?: string; cn?: string; cn_path?: string; }
 
 // 服务 × 环境 FQDN 表。某服务某环境没部署 → 该 env 键缺省,探时跳过。
-// cn-prod 真实 subdomain 抄自 optima-terraform 的 stack main.tf(非文档表,如 agentic-chat 真名是 agentic-chat-cn 不是 ai-cn)。
+// cn-prod 真实 subdomain 抄自 optima-terraform alicloud/stacks/cn-prod-ingress-sae/main.tf。
+// #201 (2026-06-12): yzsgo.com 全量迁移完成,旧 *-cn.optima.chat 路由已下线。
 const SERVICES: Record<string, SvcCfg> = {
-  'user-auth':        { path: '/health',     stage: 'auth-stage.optima.onl', prod: 'auth.optima.onl', cn: 'auth-cn.optima.chat' },
-  'agentic-chat':     { path: '/api/health', stage: 'ai-stage.optima.onl',   prod: 'ai.optima.onl',   cn: 'agentic-chat-cn.optima.chat' },
-  'commerce-backend': { path: '/health',     stage: 'api-stage.optima.onl',  prod: 'api.optima.onl',  cn: 'api-cn.optima.chat', cn_path: '/health/live' },
+  'user-auth':        { path: '/health',     stage: 'auth-stage.optima.onl', prod: 'auth.optima.onl', cn: 'auth.yzsgo.com' },
+  'agentic-chat':     { path: '/api/health', stage: 'ai-stage.optima.onl',   prod: 'ai.optima.onl',   cn: 'app.yzsgo.com' },
+  'commerce-backend': { path: '/health',     stage: 'api-stage.optima.onl',  prod: 'api.optima.onl',  cn: 'commerce.yzsgo.com', cn_path: '/health/live' },
   'mcp-host':         { path: '/health',     stage: 'mcp-stage.optima.onl',  prod: 'mcp.optima.onl' },
-  'gateway-core':     { path: '/health',     cn: 'gw-cn.optima.chat' },
-  'optima-scout':     { path: '/health',     cn: 'scout-cn.optima.chat' },
-  'optima-skills':    { path: '/health',     cn: 'skills-cn.optima.chat' },
+  'gateway-core':     { path: '/health',     cn: 'gw.yzsgo.com' },
+  'optima-scout':     { path: '/health',     cn: 'scout.yzsgo.com' },
+  'optima-skills':    { path: '/health',     cn: 'skills.yzsgo.com' },
 };
 const ENVS: Env[] = ['stage', 'prod', 'cn'];
 
