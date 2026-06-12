@@ -52,7 +52,7 @@ optima-grant-balance user@example.com --amount 20 --description "服务中断补
 | `--description <text>` | 描述/原因（仅 console 输出） | - |
 | `--env <env>` | 环境：stage, prod, cn-prod | stage |
 
-> **cn-prod（国内环境）**：全程 HTTPS（auth-cn/billing-cn.optima.chat），email 查找走 user-auth internal lookup API（无 SSH 隧道）。金额输入仍是 USD（$1 = 700 积分，与 CN ¥1 = 100 积分同一账本单位）。例：`optima-grant-balance user@example.com --amount 1 --env cn-prod`
+> **cn-prod（国内环境）**：全程 HTTPS（auth.yzsgo.com / billing-api.yzsgo.com），email 查找走 user-auth internal lookup API（无 SSH 隧道）。金额输入仍是 USD（$1 = 700 积分，与 CN ¥1 = 100 积分同一账本单位）。例：`optima-grant-balance user@example.com --amount 1 --env cn-prod`
 
 ## 与 grant-subscription 的区别
 
