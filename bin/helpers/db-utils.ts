@@ -1,4 +1,4 @@
-import { execSync, spawn } from 'child_process';
+import { execSync, execFileSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 
@@ -25,6 +25,20 @@ export const RDS_HOSTS: Record<string, string> = {
 const AWS_REGION = 'ap-southeast-1';
 const BASTION_INSTANCE_ID = 'i-03286fb0a9ce7e6b1';
 const EC2_HOST = '3.0.210.113';
+
+// ─── cn-prod (阿里云) 常量 ────────────────────────────────────────────────────
+// cn-prod 跑在阿里云 SAE，与海外 AWS 完全独立：独立 Infisical (secrets-cn.optima.chat)
+// + 内网 RDS（无公网端点）经 buildbox ECS 跳板 SSH 隧道访问。设计见 optima-dev-skills#21。
+const CN_INFISICAL_URL     = process.env.INFISICAL_CN_URL     || 'https://secrets-cn.optima.chat';
+const CN_INFISICAL_ORG     = process.env.INFISICAL_CN_ORG     || 'f44012fa-0659-4f7e-b0ac-ed01244efc8a';
+const CN_INFISICAL_PROJECT = process.env.INFISICAL_CN_PROJECT || '4deef229-11be-40a5-8f56-b61f0bce7240';
+const CN_RDS_HOST          = 'pgm-2zexwx9eso9e4yla.pg.rds.aliyuncs.com';
+const CN_BUILDBOX_HOST     = process.env.OPTIMA_CN_BUILDBOX_HOST || '47.94.105.163';
+
+/** env 是否指向 cn-prod（阿里云）。接受 `cn` / `cn-prod`。 */
+export function isCnEnv(env: string): boolean {
+  return env === 'cn' || env === 'cn-prod';
+}
 
 // ─── SQL escaping ───────────────────────────────────────────────────────────
 /** Escape a string value for safe inclusion in SQL single-quoted literals. */
@@ -69,11 +83,89 @@ export function getInfisicalSecrets(config: InfisicalConfig, token: string, envi
   return secrets;
 }
 
+// ─── cn Infisical（独立实例，admin email/password 认证）──────────────────────
+/** curl → JSON，用 execFileSync 传参（避免 shell 引号坑，跨平台安全）。 */
+function curlJson(args: string[]): any {
+  const out = execFileSync('curl', ['-s', ...args], { encoding: 'utf-8' });
+  try { return JSON.parse(out || '{}'); }
+  catch { throw new Error(`cn Infisical: non-JSON response: ${String(out).slice(0, 200)}`); }
+}
+
+/**
+ * 认证 cn Infisical（admin email/password → org-scoped token）。
+ * ⚠️ 字段名坑：login 返回 `accessToken`（不是 token），select-organization 才返回 `token`。
+ */
+export function getCnInfisicalToken(): string {
+  const email = process.env.INFISICAL_CN_EMAIL;
+  const password = process.env.INFISICAL_CN_PASSWORD;
+  if (!email || !password) {
+    throw new Error('cn Infisical 需要 INFISICAL_CN_EMAIL + INFISICAL_CN_PASSWORD 环境变量（admin user，1P "Infisical cn-prod admin (secrets-cn.optima.chat)"）。见 optima-dev-skills#21。');
+  }
+  const login = curlJson([
+    '-X', 'POST', `${CN_INFISICAL_URL}/api/v3/auth/login`,
+    '-H', 'Content-Type: application/json',
+    '-d', JSON.stringify({ email, password }),
+  ]);
+  if (!login.accessToken) throw new Error(`cn Infisical login 失败: ${JSON.stringify(login).slice(0, 200)}`);
+  const org = curlJson([
+    '-X', 'POST', `${CN_INFISICAL_URL}/api/v3/auth/select-organization`,
+    '-H', 'Content-Type: application/json',
+    '-H', `Authorization: Bearer ${login.accessToken}`,
+    '-d', JSON.stringify({ organizationId: CN_INFISICAL_ORG }),
+  ]);
+  if (!org.token) throw new Error(`cn Infisical select-organization 失败: ${JSON.stringify(org).slice(0, 200)}`);
+  return org.token;
+}
+
+/** 读 cn Infisical 某 folder（prod env）→ key→value map。expand=true 让服务端解析 `${...}` 引用。 */
+export function getCnSecrets(token: string, secretPath: string, expand = false): Record<string, string> {
+  const data = curlJson([
+    `${CN_INFISICAL_URL}/api/v3/secrets/raw?workspaceId=${CN_INFISICAL_PROJECT}&environment=prod&secretPath=${encodeURIComponent(secretPath)}&expandSecretReferences=${expand}`,
+    '-H', `Authorization: Bearer ${token}`,
+  ]);
+  const secrets: Record<string, string> = {};
+  for (const s of data.secrets || []) secrets[s.secretKey] = s.secretValue;
+  return secrets;
+}
+
 // ─── Database URL parsing ───────────────────────────────────────────────────
+/** decodeURIComponent，但密码未做 URL 编码、含裸 % 时不炸：原样返回。 */
+function safeDecode(s: string): string {
+  try { return decodeURIComponent(s); } catch { return s; }
+}
+
+/**
+ * 解析 DATABASE_URL。不用正则一把抓：userinfo 从 authority 的**最后一个 @** 右切，
+ * 密码含 @ * + $ 等特殊字符也不会把密码段误并进 host（曾导致隧道目标变成
+ * `密码片段@pgm-xxx` 且把密码打进 console）。容忍驱动后缀（postgresql+asyncpg://）。
+ * ⚠️ 所有错误信息不回显 URL 本身 —— DATABASE_URL 含凭证，不能进日志。
+ */
 export function parseDatabaseUrl(url: string): { user: string; password: string; host: string; port: number; database: string } {
-  const match = url.match(/^postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/([^?]+)/);
-  if (!match) throw new Error('Failed to parse DATABASE_URL (format: postgresql://user:pass@host:port/db)');
-  return { user: decodeURIComponent(match[1]), password: decodeURIComponent(match[2]), host: match[3], port: parseInt(match[4], 10), database: match[5] };
+  const fail = (why: string): never => {
+    throw new Error(`Failed to parse DATABASE_URL (${why}; format: postgresql://user:pass@host:port/db)`);
+  };
+  const scheme = url.match(/^postgres(?:ql)?(?:\+\w+)?:\/\//);
+  if (!scheme) fail('unsupported scheme');
+  const rest = url.slice(scheme![0].length);
+  const slash = rest.indexOf('/');
+  const authority = slash === -1 ? rest : rest.slice(0, slash);
+  const at = authority.lastIndexOf('@');
+  if (at === -1) fail('missing user:pass@');
+  const userinfo = authority.slice(0, at);
+  const colon = userinfo.indexOf(':');
+  if (colon === -1) fail('missing password in userinfo');
+  // host 只允许域名字符 —— 解析错位时密码片段会落到这里，fail-closed 别让它流向隧道命令/日志
+  const hostport = authority.slice(at + 1).match(/^([A-Za-z0-9.-]+)(?::(\d+))?$/);
+  if (!hostport) fail('invalid host:port');
+  const database = slash === -1 ? '' : rest.slice(slash + 1).split('?')[0];
+  if (!database) fail('missing database name');
+  return {
+    user: safeDecode(userinfo.slice(0, colon)),
+    password: safeDecode(userinfo.slice(colon + 1)),
+    host: hostport![1],
+    port: hostport![2] ? parseInt(hostport![2], 10) : 5432,
+    database,
+  };
 }
 
 // ─── SSH tunnel ─────────────────────────────────────────────────────────────
@@ -200,6 +292,33 @@ function setupSSMTunnel(dbHost: string, localPort: number): void {
   throw new Error(`SSM tunnel on port ${localPort} did not become ready within 20s.\n--- ${logFile} ---\n${tail}`);
 }
 
+/**
+ * 隧道 localhost:localPort → cn 内网 RDS，经 buildbox ECS 跳板（sshpass SSH）。
+ * 密码经 SSHPASS 环境变量传给 `sshpass -e`：不进命令行（ps 不可见）、不经 shell 引号展开。
+ */
+function setupCnSSHTunnel(dbHost: string, localPort: number): void {
+  const pw = process.env.OPTIMA_CN_BUILDBOX_PASSWORD;
+  if (!pw) throw new Error('cn DB 隧道需要 OPTIMA_CN_BUILDBOX_PASSWORD 环境变量（buildbox root 密码，1P "Aliyun cn-prod buildbox ECS (root)"）。见 optima-dev-skills#21。');
+  try { execSync('command -v sshpass', { stdio: 'ignore' }); }
+  catch { throw new Error('sshpass not found — cn buildbox 隧道需要（apt install sshpass / brew install esolitos/ipa/sshpass）。Windows 用 WSL。'); }
+
+  console.log(`Creating cn tunnel: localhost:${localPort} -> buildbox ${CN_BUILDBOX_HOST} -> ${dbHost}:5432`);
+  execSync(
+    `sshpass -e ssh -f -N -o StrictHostKeyChecking=no ` +
+    `-o ServerAliveInterval=30 -o ServerAliveCountMax=3 ` +
+    `-o ExitOnForwardFailure=yes -o ConnectTimeout=12 ` +
+    `-L ${localPort}:${dbHost}:5432 root@${CN_BUILDBOX_HOST}`,
+    { stdio: 'inherit', env: { ...process.env, SSHPASS: pw } }
+  );
+
+  const deadlineMs = Date.now() + 20000;
+  while (Date.now() < deadlineMs) {
+    if (isTunnelHealthy(localPort)) { console.log(`✓ cn tunnel ready on port ${localPort}`); return; }
+    sleepSync(500);
+  }
+  throw new Error(`cn tunnel on port ${localPort} did not become ready within 20s`);
+}
+
 // ─── Tunnel port registry ───────────────────────────────────────────────────
 // 端口动态分配：固定端口（旧 15432-15435）会撞本机服务（Docker PG 占 15433 →
 // prod 凭证发给错误的库报「密码错误」）。每个 RDS host 一条隧道，实际端口记在
@@ -241,11 +360,14 @@ function pickTunnelPort(preferred?: number): number {
 
 /**
  * Ensure a local→RDS tunnel to `dbHost` exists and return its local port.
- * One tunnel per RDS host (auth/billing on the same instance share it).
- * Defaults to SSM (no public port 22); set OPTIMA_DB_TUNNEL=ssh for the
- * legacy SSH tunnel.
+ * One tunnel per RDS host (auth/billing on the same instance share it) —
+ * registry 按 dbHost 记端口，换库自然换隧道，不存在「端口被占就当同一条」的错配。
+ * AWS defaults to SSM (no public port 22; set OPTIMA_DB_TUNNEL=ssh for legacy SSH);
+ * `via: 'cn-buildbox'` 走阿里云 buildbox ECS 跳板（cn 内网 RDS 无公网端点）。
  */
-export function ensureTunnel(dbHost: string): number {
+export function ensureTunnel(dbHost: string, via: 'aws' | 'cn-buildbox' = 'aws'): number {
+  // dbHost 可能来自解析的 DATABASE_URL，且会进 ssh 命令行/日志 —— 只放行域名字符。
+  if (!/^[A-Za-z0-9.-]+$/.test(dbHost)) throw new Error('ensureTunnel: dbHost contains unexpected characters (refusing to build tunnel command)');
   const reg = readTunnelRegistry();
   const known = reg[dbHost];
 
@@ -258,7 +380,9 @@ export function ensureTunnel(dbHost: string): number {
   // Foreign process on the recorded port (e.g. a local Docker PG) → pick a
   // different port instead of talking to whatever squats there.
   const port = pickTunnelPort(known);
-  if ((process.env.OPTIMA_DB_TUNNEL || 'ssm').toLowerCase() === 'ssh') {
+  if (via === 'cn-buildbox') {
+    setupCnSSHTunnel(dbHost, port);
+  } else if ((process.env.OPTIMA_DB_TUNNEL || 'ssm').toLowerCase() === 'ssh') {
     setupSSHTunnel(dbHost, port);
   } else {
     setupSSMTunnel(dbHost, port);
@@ -288,6 +412,43 @@ export function queryDB(conn: DBConnection, sql: string): string {
 }
 
 // ─── High-level connection helpers ──────────────────────────────────────────
+
+/**
+ * 连 cn-prod 某服务库：creds 取自 cn Infisical 的 /shared-secrets/database-users +
+ * /database-names（按 prefix，如 AUTH/BILLING），经 buildbox 跳板隧道（动态端口）。
+ */
+export function connectCnDB(prefix: string): { query: (sql: string) => string } {
+  const token = getCnInfisicalToken();
+  const users = getCnSecrets(token, '/shared-secrets/database-users');
+  const names = getCnSecrets(token, '/shared-secrets/database-names');
+  const user = users[`${prefix}_DB_USER`];
+  const password = users[`${prefix}_DB_PASSWORD`];
+  const database = names[`${prefix}_DB_NAME`];
+  if (!user || !password || !database) {
+    throw new Error(`cn DB creds 不全 for ${prefix}（需 ${prefix}_DB_USER/PASSWORD@database-users + ${prefix}_DB_NAME@database-names）。该服务 cn 可能用字面 DATABASE_URL，见 optima-dev-skills#21。`);
+  }
+  const port = ensureTunnel(CN_RDS_HOST, 'cn-buildbox');
+  const conn: DBConnection = { host: 'localhost', port, user, password, database };
+  return { query: (sql: string) => queryDB(conn, sql) };
+}
+
+/**
+ * 连 cn-prod 某服务库，creds 来自该服务 /services/<svc> 的字面/展开 DATABASE_URL。
+ * 用于 cred 不在 shared-secrets/database-users 的服务（如 gateway-core）。
+ * expandSecretReferences=true 让 cn Infisical 解析 `${...}` 引用为字面值。
+ */
+export function connectCnDBFromUrl(servicePath: string): { query: (sql: string) => string } {
+  const token = getCnInfisicalToken();
+  const secrets = getCnSecrets(token, servicePath, true);
+  const dbUrl = secrets['DATABASE_URL'];
+  if (!dbUrl) throw new Error(`cn DATABASE_URL 未找到 at ${servicePath}`);
+  // 注意：DATABASE_URL 含凭证，报错只说事实，不回显值
+  if (dbUrl.includes('${')) throw new Error(`cn DATABASE_URL 仍含未解析引用（expand 失败）at ${servicePath}`);
+  const parsed = parseDatabaseUrl(dbUrl);   // host = cn 内网 RDS（经 buildbox 隧道到达）
+  const port = ensureTunnel(parsed.host, 'cn-buildbox');
+  const conn: DBConnection = { host: 'localhost', port, user: parsed.user, password: parsed.password, database: parsed.database };
+  return { query: (sql: string) => queryDB(conn, sql) };
+}
 
 /** Connect to user-auth DB and return a query function. */
 export async function connectAuthDB(env: string, infisicalConfig: InfisicalConfig, token: string): Promise<{ query: (sql: string) => string }> {

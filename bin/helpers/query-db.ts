@@ -2,7 +2,7 @@
 
 import { execSync } from 'child_process';
 import * as fs from 'fs';
-import { ensureTunnel, getGitHubVariable, getInfisicalConfig, getInfisicalToken, getInfisicalSecrets } from './db-utils';
+import { ensureTunnel, getGitHubVariable, getInfisicalConfig, getInfisicalToken, getInfisicalSecrets, parseDatabaseUrl, isCnEnv, connectCnDB, connectCnDBFromUrl } from './db-utils';
 
 interface DatabaseConfig {
   host: string;
@@ -90,20 +90,8 @@ const RDS_HOSTS = {
   prod: 'optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com'
 };
 
-function parseDatabaseUrl(url: string): { user: string; password: string; host: string; port: number; database: string } {
-  // postgresql://user:password@host:port/database?params
-  const match = url.match(/^postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/([^?]+)/);
-  if (!match) {
-    throw new Error(`Failed to parse DATABASE_URL: ${url}`);
-  }
-  return {
-    user: decodeURIComponent(match[1]),
-    password: decodeURIComponent(match[2]),
-    host: match[3],
-    port: parseInt(match[4]),
-    database: match[5]
-  };
-}
+// parseDatabaseUrl 统一用 db-utils 的实现：右切 userinfo 容忍密码特殊字符，
+// 且报错不回显 URL（这里曾把含密码的完整 URL 打进错误信息）。
 
 function findPsqlPath(): string {
   // 1. 优先从 PATH 中查找
@@ -169,7 +157,7 @@ async function main() {
     console.error('Usage: query-db.ts <service> <sql> [environment]');
     console.error('');
     console.error('Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway, gateway-core, optima-logistics, billing, ads-backend, amazon-backend, browser-backend, shopify-backend, optima-generation, optima-sentinel');
-    console.error('Environments: ci (default), stage, prod');
+    console.error('Environments: ci (default), stage, prod, cn (阿里云 cn-prod)');
     console.error('');
     console.error('Example: query-db.ts user-auth "SELECT COUNT(*) FROM users" prod');
     process.exit(1);
@@ -181,6 +169,26 @@ async function main() {
     console.error(`Unknown service: ${service}`);
     console.error('Available services:', Object.keys(SERVICE_DB_MAP).join(', '));
     process.exit(1);
+  }
+
+  // cn-prod（阿里云）：独立 Infisical + 经 buildbox 跳板连内网 RDS（动态端口隧道）。
+  // 两类 cred：① shared-secrets/database-users（按 prefix）② 服务自己的 DATABASE_URL（展开引用）。
+  if (isCnEnv(environment)) {
+    const prodCfg = SERVICE_DB_MAP[service as keyof typeof SERVICE_DB_MAP].prod as any;
+    let db: { query: (sql: string) => string };
+    if (prodCfg?.userKey) {
+      const prefix = prodCfg.userKey.replace(/_DB_USER$/, '');
+      console.log(`\n🔍 Querying ${service} (CN-PROD, prefix ${prefix})...`);
+      db = connectCnDB(prefix);
+    } else if (prodCfg?.databaseUrlPath) {
+      console.log(`\n🔍 Querying ${service} (CN-PROD, DATABASE_URL @ ${prodCfg.databaseUrlPath})...`);
+      db = connectCnDBFromUrl(prodCfg.databaseUrlPath);
+    } else {
+      console.error(`cn-prod query 暂不支持 ${service}（既无 userKey 也无 databaseUrlPath）。见 optima-dev-skills#21。`);
+      process.exit(1);
+    }
+    console.log('\n' + db.query(sql));
+    return;
   }
 
   const serviceConfig = SERVICE_DB_MAP[service as keyof typeof SERVICE_DB_MAP][environment as 'ci' | 'stage' | 'prod'];
