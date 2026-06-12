@@ -2,7 +2,7 @@
 
 import { execSync } from 'child_process';
 import * as fs from 'fs';
-import { ensureTunnel, getGitHubVariable, getInfisicalConfig, getInfisicalToken, getInfisicalSecrets, parseDatabaseUrl } from './db-utils';
+import { ensureTunnel, getGitHubVariable, getInfisicalConfig, getInfisicalToken, getInfisicalSecrets, parseDatabaseUrl, isCnEnv, connectCnDB, connectCnDBFromUrl } from './db-utils';
 
 interface DatabaseConfig {
   host: string;
@@ -157,7 +157,7 @@ async function main() {
     console.error('Usage: query-db.ts <service> <sql> [environment]');
     console.error('');
     console.error('Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway, gateway-core, optima-logistics, billing, ads-backend, amazon-backend, browser-backend, shopify-backend, optima-generation, optima-sentinel');
-    console.error('Environments: ci (default), stage, prod');
+    console.error('Environments: ci (default), stage, prod, cn (阿里云 cn-prod)');
     console.error('');
     console.error('Example: query-db.ts user-auth "SELECT COUNT(*) FROM users" prod');
     process.exit(1);
@@ -169,6 +169,26 @@ async function main() {
     console.error(`Unknown service: ${service}`);
     console.error('Available services:', Object.keys(SERVICE_DB_MAP).join(', '));
     process.exit(1);
+  }
+
+  // cn-prod（阿里云）：独立 Infisical + 经 buildbox 跳板连内网 RDS（动态端口隧道）。
+  // 两类 cred：① shared-secrets/database-users（按 prefix）② 服务自己的 DATABASE_URL（展开引用）。
+  if (isCnEnv(environment)) {
+    const prodCfg = SERVICE_DB_MAP[service as keyof typeof SERVICE_DB_MAP].prod as any;
+    let db: { query: (sql: string) => string };
+    if (prodCfg?.userKey) {
+      const prefix = prodCfg.userKey.replace(/_DB_USER$/, '');
+      console.log(`\n🔍 Querying ${service} (CN-PROD, prefix ${prefix})...`);
+      db = connectCnDB(prefix);
+    } else if (prodCfg?.databaseUrlPath) {
+      console.log(`\n🔍 Querying ${service} (CN-PROD, DATABASE_URL @ ${prodCfg.databaseUrlPath})...`);
+      db = connectCnDBFromUrl(prodCfg.databaseUrlPath);
+    } else {
+      console.error(`cn-prod query 暂不支持 ${service}（既无 userKey 也无 databaseUrlPath）。见 optima-dev-skills#21。`);
+      process.exit(1);
+    }
+    console.log('\n' + db.query(sql));
+    return;
   }
 
   const serviceConfig = SERVICE_DB_MAP[service as keyof typeof SERVICE_DB_MAP][environment as 'ci' | 'stage' | 'prod'];
