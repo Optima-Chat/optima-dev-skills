@@ -1,6 +1,6 @@
 ---
 name: "grant-subscription"
-description: "当用户请求开通会员、赠送订阅、grant subscription、开通 Pro/Starter/Enterprise、升级计划、给用户开会员时，使用此技能。支持 Stage、Prod 两个环境。"
+description: "当用户请求开通会员、赠送订阅、grant subscription、开通 Pro/Starter/Enterprise、升级计划、给用户开会员时，使用此技能。支持 Stage、Prod、cn-prod 三个环境。"
 allowed-tools: ["Bash"]
 ---
 
@@ -46,6 +46,10 @@ optima-grant-subscription user@example.com --plan starter --months 3
 
 # 开通 Enterprise，Prod 环境
 optima-grant-subscription user@example.com --plan enterprise --env prod
+
+# cn-prod（国内环境）：plan 用 -cn 档，默认 pro-cn
+optima-grant-subscription user@example.com --env cn-prod
+optima-grant-subscription user@example.com --plan starter-cn --env cn-prod
 ```
 
 ### 参数说明
@@ -55,7 +59,9 @@ optima-grant-subscription user@example.com --plan enterprise --env prod
 | `<email>` | 用户邮箱（必填） | - |
 | `--plan <id>` | 计划：trial, starter, pro, enterprise | pro |
 | `--months <n>` | 时长（月） | 1 |
-| `--env <env>` | 环境：stage, prod | stage |
+| `--env <env>` | 环境：stage, prod, cn-prod | stage |
+
+> **cn-prod（国内环境）**：plan 用 CNY 定价的 `-cn` 档（trial / starter-cn / pro-cn / enterprise-cn，默认 pro-cn）；裸 USD 档 id 会被客户端拒绝（防止给 CN 用户误赠 USD 档积分量）。email 查找走 user-auth internal lookup API（无 SSH 隧道）。
 
 ### 计划配置
 
