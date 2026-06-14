@@ -19,7 +19,8 @@
   "scripts": {
     "postinstall": "node scripts/install.js",
     "build": "tsc",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "test": "node --test tests/*.test.js"
   },
   "keywords": [
     "claude-code",
