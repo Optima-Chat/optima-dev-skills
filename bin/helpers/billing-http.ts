@@ -271,3 +271,75 @@ export async function resolveUserIdByEmail(env: string, email: string): Promise<
   console.log(`✓ Found user: ${parsed.user_id}`);
   return parsed.user_id;
 }
+
+/**
+ * Resolve a user's id by phone via user-auth's internal lookup endpoint
+ * (POST /api/v1/internal/users/lookup with {phone}). Mirrors
+ * resolveUserIdByEmail — pure-phone CN users have no email, so this is the
+ * only id path for them (gateway#923 root cause: email-only lookup couldn't
+ * resolve them and a wrong userId got hand-fed instead).
+ */
+export async function resolveUserIdByPhone(env: string, phone: string): Promise<string> {
+  console.log(`Looking up user by phone: ${phone}`);
+  const token = getServiceToken(env);
+  const authUrl = USER_AUTH_URLS[env];
+  if (!authUrl) throw new Error(`Unknown env: ${env}`);
+
+  const res = await fetch(`${authUrl}/api/v1/internal/users/lookup`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone }),
+  });
+  const text = await res.text();
+  if (res.status === 404) {
+    throw new Error(`User not found by phone (${env}): ${phone}`);
+  }
+  if (!res.ok) {
+    throw new Error(formatServiceError(res.status, res.statusText, text));
+  }
+  let parsed: { user_id?: string };
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`user-auth lookup returned non-JSON 2xx body: ${text.slice(0, 200)}`);
+  }
+  if (!parsed.user_id) {
+    throw new Error(`user-auth lookup response missing user_id: ${text.slice(0, 200)}`);
+  }
+  console.log(`✓ Found user: ${parsed.user_id}`);
+  return parsed.user_id;
+}
+
+/**
+ * Fetch a user's identity by id via user-auth's internal endpoint
+ * (GET /api/v1/internal/users/{userId}). Used to reverse-verify the target
+ * account before granting — prints phone/email/current_plan so the operator
+ * can confirm they're hitting the right account (gateway#923).
+ */
+export async function getUserById(
+  env: string,
+  userId: string,
+): Promise<{ user_id: string; phone: string | null; email: string | null; current_plan?: string }> {
+  const token = getServiceToken(env);
+  const authUrl = USER_AUTH_URLS[env];
+  if (!authUrl) throw new Error(`Unknown env: ${env}`);
+
+  const res = await fetch(`${authUrl}/api/v1/internal/users/${encodeURIComponent(userId)}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const text = await res.text();
+  if (res.status === 404) {
+    throw new Error(`User not found by id (${env}): ${userId}`);
+  }
+  if (!res.ok) {
+    throw new Error(formatServiceError(res.status, res.statusText, text));
+  }
+  let parsed: { user_id: string; phone: string | null; email: string | null; current_plan?: string };
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`user-auth user lookup returned non-JSON 2xx body: ${text.slice(0, 200)}`);
+  }
+  return parsed;
+}
