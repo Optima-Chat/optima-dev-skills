@@ -4,7 +4,7 @@ const path = require('node:path');
 
 // Test the compiled dist artifacts (package main/bin point at dist/), not the
 // .ts source — run `npm run build` first.
-const { classifyIdentifier, assertPhoneMatch } = require(
+const { classifyIdentifier, assertPhoneMatch, assertAwsEmailOnly } = require(
   path.resolve(__dirname, '..', 'dist', 'bin', 'helpers', 'grant-subscription.js'),
 );
 
@@ -32,4 +32,17 @@ test('assertPhoneMatch throws when phones differ', () => {
 
 test('assertPhoneMatch throws when account has no phone', () => {
   assert.throws(() => assertPhoneMatch('18898654855', null), /手机号不匹配/);
+});
+
+test('assertAwsEmailOnly rejects non-email on stage/prod (no internal HTTP scope)', () => {
+  assert.throws(() => assertAwsEmailOnly('stage', 'phone'), /仅支持 email/);
+  assert.throws(() => assertAwsEmailOnly('prod', 'userId'), /仅支持 email/);
+});
+
+test('assertAwsEmailOnly allows email on AWS and anything on cn-prod', () => {
+  assert.doesNotThrow(() => assertAwsEmailOnly('stage', 'email'));
+  assert.doesNotThrow(() => assertAwsEmailOnly('prod', 'email'));
+  assert.doesNotThrow(() => assertAwsEmailOnly('cn-prod', 'phone'));
+  assert.doesNotThrow(() => assertAwsEmailOnly('cn-prod', 'userId'));
+  assert.doesNotThrow(() => assertAwsEmailOnly('cn-prod', 'email'));
 });

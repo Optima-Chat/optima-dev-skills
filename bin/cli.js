@@ -35,7 +35,7 @@ switch (command) {
     log('  optima-verify-health <service> [--env cn|prod|all]   Probe L1-L5 上线健康', 'cyan');
     log('  optima-generate-test-token [--env production]        Generate test token', 'cyan');
     log('  optima-grant-balance <email> --amount <usd> [--env]  Grant USD wallet balance', 'cyan');
-    log('  optima-grant-subscription <email> --plan <p> [--env] Grant subscription', 'cyan');
+    log('  optima-grant-subscription <email|phone|userId> --plan <p> [--env] Grant subscription', 'cyan');
     log('  /logs <service> [lines] [env]                        View service logs (skill)', 'cyan');
     log('  /restart-ecs <service> [env]                         Restart ECS service (skill)', 'cyan');
 

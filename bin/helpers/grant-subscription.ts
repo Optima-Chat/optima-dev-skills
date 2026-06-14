@@ -48,6 +48,22 @@ export function assertPhoneMatch(inputPhone: string, accountPhone: string | null
   }
 }
 
+/**
+ * AWS (stage/prod) only supports email identifiers. The HTTP reverse-verify
+ * (getUserById) and phone/userId resolution rely on user-auth's internal
+ * endpoints, which require the token scope `internal:users:write` — only the
+ * cn-prod dev-skills client carries it (see billing-http getServiceToken).
+ * AWS resolves users via the RDS SSH tunnel (resolveUserId) and never hits
+ * those endpoints, so phone/userId here would 403. gateway#923 (wrong-account
+ * grant) is a cn-prod-only, pure-phone-user problem; AWS users have unambiguous
+ * emails, so restricting AWS to email is a zero-regression no-op for them.
+ */
+export function assertAwsEmailOnly(env: string, kind: 'email' | 'phone' | 'userId'): void {
+  if ((env === 'stage' || env === 'prod') && kind !== 'email') {
+    throw new Error('stage/prod 仅支持 email 标识；手机号/userId 解析仅 cn-prod 可用');
+  }
+}
+
 // cn-prod sells the CNY-priced -cn plans (P12); the bare USD plan ids also
 // exist in the cn DB, so a per-env whitelist (not billing-side validation)
 // is what prevents accidentally granting a USD-priced plan to a CN user.
@@ -97,36 +113,47 @@ async function main() {
   const { identifier, plan, months, env } = parseArgs(process.argv.slice(2));
 
   const kind = classifyIdentifier(identifier);
+  assertAwsEmailOnly(env, kind);
   console.log(`\n🎁 Granting ${plan} subscription to ${identifier} (${kind}) for ${months} month(s) [${env.toUpperCase()}]\n`);
 
-  // Resolve to a userId. email/phone go through user-auth's internal lookup;
-  // a userId is used as-is (no lookup). For non-cn AWS envs an email can also
-  // resolve via the RDS SSH tunnel (resolveUserId).
+  // identity is the verified target account to print on success. AWS keeps the
+  // pre-change behavior (email-only, no internal HTTP reverse-verify); only
+  // cn-prod runs the full classify→resolve→getUserById→phone-assert防呆 path.
   let userId: string;
-  if (kind === 'userId') {
-    userId = identifier;
-  } else if (kind === 'phone') {
-    userId = await resolveUserIdByPhone(env, identifier);
-  } else if (env === 'cn-prod') {
-    // cn-prod has no SSH tunnel into the Aliyun RDS — resolve via user-auth.
-    userId = await resolveUserIdByEmail(env, identifier);
+  let identity: { phone: string | null; email: string | null };
+
+  if (env === 'cn-prod') {
+    // cn-prod has no SSH tunnel into the Aliyun RDS — resolve via user-auth,
+    // and its dev-skills token carries internal:users:write for the lookups.
+    if (kind === 'userId') {
+      userId = identifier;
+    } else if (kind === 'phone') {
+      userId = await resolveUserIdByPhone(env, identifier);
+    } else {
+      userId = await resolveUserIdByEmail(env, identifier);
+    }
+
+    // Reverse-verify: fetch and loudly print the target account identity
+    // before granting, so a wrong userId is caught by eye (gateway#923).
+    const acct = await getUserById(env, userId);
+    console.log(
+      `🎯 目标账号: userId=${userId} 手机=${acct.phone || '(无)'} email=${acct.email || '(无)'} 当前plan=${acct.current_plan || '?'}`,
+    );
+
+    // Hard assertion: a phone-input grant must land on an account whose phone
+    // matches. Runs BEFORE callBilling — a mismatch aborts without granting.
+    if (kind === 'phone') {
+      assertPhoneMatch(identifier, acct.phone);
+    }
+    identity = { phone: acct.phone, email: acct.email };
   } else {
+    // AWS (stage/prod): email-only, resolved via the RDS SSH tunnel. No
+    // internal HTTP reverse-verify (token lacks internal:users:write → 403).
     const infisicalConfig = getInfisicalConfig();
     const token = getInfisicalToken(infisicalConfig);
     userId = await resolveUserId(identifier, env, infisicalConfig, token);
-  }
-
-  // Reverse-verify: fetch and loudly print the target account identity before
-  // granting, so a wrong userId is caught by eye (gateway#923).
-  const acct = await getUserById(env, userId);
-  console.log(
-    `🎯 目标账号: userId=${userId} 手机=${acct.phone || '(无)'} email=${acct.email || '(无)'} 当前plan=${acct.current_plan || '?'}`,
-  );
-
-  // Hard assertion: a phone-input grant must land on an account whose phone
-  // matches. Runs BEFORE callBilling — a mismatch aborts without granting.
-  if (kind === 'phone') {
-    assertPhoneMatch(identifier, acct.phone);
+    console.log(`🎯 目标账号: userId=${userId} email=${identifier}`);
+    identity = { phone: null, email: identifier };
   }
 
   const { body } = await callBilling<{
@@ -145,7 +172,7 @@ async function main() {
   console.log(`✓ Token limits: session ${body.sessionTokenLimit.toLocaleString()} / weekly ${body.weeklyTokenLimit.toLocaleString()}`);
   if (body.warning) console.log(`⚠️  ${body.warning}`);
   console.log(
-    `\n✅ Done! 用户 userId=${userId} 手机=${acct.phone || '(无)'} email=${acct.email || '(无)'} now has ${body.planId} until ${body.expiresAt}\n`,
+    `\n✅ Done! 用户 userId=${userId} 手机=${identity.phone || '(无)'} email=${identity.email || '(无)'} now has ${body.planId} until ${body.expiresAt}\n`,
   );
 }
 
