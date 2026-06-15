@@ -60,7 +60,7 @@ export function assertPhoneMatch(inputPhone: string, accountPhone: string | null
  */
 export function assertAwsEmailOnly(env: string, kind: 'email' | 'phone' | 'userId'): void {
   if ((env === 'stage' || env === 'prod') && kind !== 'email') {
-    throw new Error('stage/prod 仅支持 email 标识；手机号/userId 解析仅 cn-prod 可用');
+    throw new Error('stage/prod 仅支持 email 标识；手机号/userId 解析仅 cn-prod / cn-stage 可用');
   }
 }
 
@@ -71,6 +71,8 @@ const PLANS_BY_ENV: Record<string, string[]> = {
   stage: ['trial', 'starter', 'pro', 'enterprise'],
   prod: ['trial', 'starter', 'pro', 'enterprise'],
   'cn-prod': ['trial', 'starter-cn', 'pro-cn', 'enterprise-cn'],
+  // cn-stage 卖同一套 CNY -cn plan（billing plan 目录与 cn-prod 一致）
+  'cn-stage': ['trial', 'starter-cn', 'pro-cn', 'enterprise-cn'],
 };
 
 function parseArgs(args: string[]): { identifier: string; plan: string; months: number; env: string } {
@@ -79,9 +81,9 @@ function parseArgs(args: string[]): { identifier: string; plan: string; months: 
 
 Options:
   --plan <id>       Plan: trial, starter, pro, enterprise (default: pro)
-                    cn-prod plans: trial, starter-cn, pro-cn, enterprise-cn (default: pro-cn)
+                    cn-prod/cn-stage plans: trial, starter-cn, pro-cn, enterprise-cn (default: pro-cn)
   --months <n>      Duration in months (default: 1)
-  --env <env>       Environment: stage, prod, cn-prod (default: stage)
+  --env <env>       Environment: stage, prod, cn-prod, cn-stage (default: stage)
   -h, --help        Show this help`);
     process.exit(0);
   }
@@ -98,7 +100,7 @@ Options:
   }
 
   validateEnvCnProd(env);
-  plan = plan ?? (env === 'cn-prod' ? 'pro-cn' : 'pro');
+  plan = plan ?? (env === 'cn-prod' || env === 'cn-stage' ? 'pro-cn' : 'pro');
   const allowed = PLANS_BY_ENV[env];
   if (!allowed.includes(plan)) {
     console.error(`Unknown plan for ${env}: ${plan}. Available: ${allowed.join(', ')}`);
@@ -118,13 +120,13 @@ async function main() {
 
   // identity is the verified target account to print on success. AWS keeps the
   // pre-change behavior (email-only, no internal HTTP reverse-verify); only
-  // cn-prod runs the full classify→resolve→getUserById→phone-assert防呆 path.
+  // cn-prod / cn-stage run the full classify→resolve→getUserById→phone-assert防呆 path.
   let userId: string;
   let identity: { phone: string | null; email: string | null };
 
-  if (env === 'cn-prod') {
-    // cn-prod has no SSH tunnel into the Aliyun RDS — resolve via user-auth,
-    // and its dev-skills token carries internal:users:write for the lookups.
+  if (env === 'cn-prod' || env === 'cn-stage') {
+    // cn-prod / cn-stage have no SSH tunnel into the Aliyun RDS — resolve via
+    // user-auth, and the dev-skills token carries internal:users:write for lookups.
     if (kind === 'userId') {
       userId = identifier;
     } else if (kind === 'phone') {

@@ -29,22 +29,23 @@ import { promises as dns } from 'node:dns';
 import * as tls from 'node:tls';
 import * as https from 'node:https';
 
-type Env = 'stage' | 'prod' | 'cn';
-interface SvcCfg { path: string; stage?: string; prod?: string; cn?: string; cn_path?: string; }
+type Env = 'stage' | 'prod' | 'cn' | 'cn-stage';
+interface SvcCfg { path: string; stage?: string; prod?: string; cn?: string; cn_path?: string; 'cn-stage'?: string; 'cn-stage_path'?: string; }
 
 // 服务 × 环境 FQDN 表。某服务某环境没部署 → 该 env 键缺省,探时跳过。
 // cn-prod 真实 subdomain 抄自 optima-terraform alicloud/stacks/cn-prod-ingress-sae/main.tf。
 // #201 (2026-06-12): yzsgo.com 全量迁移完成,旧 *-cn.optima.chat 路由已下线。
+// cn-stage（阿里云预发）域名 *.stage.optima.chat，抄自 cn-stage-ingress-sae services map。
 const SERVICES: Record<string, SvcCfg> = {
-  'user-auth':        { path: '/health',     stage: 'auth-stage.optima.onl', prod: 'auth.optima.onl', cn: 'auth.yzsgo.com' },
-  'agentic-chat':     { path: '/api/health', stage: 'ai-stage.optima.onl',   prod: 'ai.optima.onl',   cn: 'app.yzsgo.com' },
-  'commerce-backend': { path: '/health',     stage: 'api-stage.optima.onl',  prod: 'api.optima.onl',  cn: 'commerce.yzsgo.com', cn_path: '/health/live' },
+  'user-auth':        { path: '/health',     stage: 'auth-stage.optima.onl', prod: 'auth.optima.onl', cn: 'auth.yzsgo.com', 'cn-stage': 'auth.stage.optima.chat' },
+  'agentic-chat':     { path: '/api/health', stage: 'ai-stage.optima.onl',   prod: 'ai.optima.onl',   cn: 'app.yzsgo.com', 'cn-stage': 'app.stage.optima.chat' },
+  'commerce-backend': { path: '/health',     stage: 'api-stage.optima.onl',  prod: 'api.optima.onl',  cn: 'commerce.yzsgo.com', cn_path: '/health/live', 'cn-stage': 'commerce.stage.optima.chat', 'cn-stage_path': '/health/live' },
   'mcp-host':         { path: '/health',     stage: 'mcp-stage.optima.onl',  prod: 'mcp.optima.onl' },
-  'gateway-core':     { path: '/health',     cn: 'gw.yzsgo.com' },
-  'optima-scout':     { path: '/health',     cn: 'scout.yzsgo.com' },
-  'optima-skills':    { path: '/health',     cn: 'skills.yzsgo.com' },
+  'gateway-core':     { path: '/health',     cn: 'gw.yzsgo.com', 'cn-stage': 'gw.stage.optima.chat' },
+  'optima-scout':     { path: '/health',     cn: 'scout.yzsgo.com', 'cn-stage': 'scout.stage.optima.chat' },
+  'optima-skills':    { path: '/health',     cn: 'skills.yzsgo.com', 'cn-stage': 'skills.stage.optima.chat' },
 };
-const ENVS: Env[] = ['stage', 'prod', 'cn'];
+const ENVS: Env[] = ['stage', 'prod', 'cn', 'cn-stage'];
 
 const G = '\x1b[32m', R = '\x1b[31m', Y = '\x1b[33m', B = '\x1b[34m', N = '\x1b[0m';
 const MARK: Record<string, string> = { ok: `${G}✅${N}`, fail: `${R}❌${N}`, warn: `${Y}⚠️ ${N}`, na: `${B}··${N}` };

@@ -1,6 +1,6 @@
 ---
 name: "grant-balance"
-description: "当用户请求赠送余额、充值 USD 余额、grant balance、加余额、奖励、补偿、推荐奖励、运营发放时，使用此技能。支持 Stage、Prod、cn-prod 三个环境。"
+description: "当用户请求赠送余额、充值 USD 余额、grant balance、加余额、奖励、补偿、推荐奖励、运营发放时，使用此技能。支持 Stage、Prod、cn-prod、cn-stage 四个环境。"
 allowed-tools: ["Bash"]
 ---
 
@@ -50,9 +50,11 @@ optima-grant-balance user@example.com --amount 20 --description "服务中断补
 | `<email>` | 用户邮箱（必填） | - |
 | `--amount <usd>` | USD 金额（必填，> 0） | - |
 | `--description <text>` | 描述/原因（仅 console 输出） | - |
-| `--env <env>` | 环境：stage, prod, cn-prod | stage |
+| `--env <env>` | 环境：stage, prod, cn-prod, cn-stage | stage |
 
 > **cn-prod（国内环境）**：全程 HTTPS（auth.yzsgo.com / billing-api.yzsgo.com），email 查找走 user-auth internal lookup API（无 SSH 隧道）。金额输入仍是 USD（$1 = 700 积分，与 CN ¥1 = 100 积分同一账本单位）。例：`optima-grant-balance user@example.com --amount 1 --env cn-prod`
+>
+> **cn-stage（阿里云预发）**：同 cn-prod 走 HTTPS（auth.stage.optima.chat / billing-api.stage.optima.chat）。M2M 凭证读 cn Infisical **staging** /shared-secrets/oauth-clients，运行时需 `INFISICAL_CN_EMAIL`/`INFISICAL_CN_PASSWORD`（admin user）。例：`optima-grant-balance user@example.com --amount 1 --env cn-stage`
 
 ## 与 grant-subscription 的区别
 

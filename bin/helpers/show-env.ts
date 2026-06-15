@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execSync } from 'child_process';
-import { getInfisicalConfig, getInfisicalToken, InfisicalConfig } from './db-utils';
+import { getInfisicalConfig, getInfisicalToken, InfisicalConfig, isCnEnv, cnInfisicalEnv, getCnInfisicalToken, getCnSecrets } from './db-utils';
 
 // 支持的服务列表（Infisical 路径为 /services/<service-name>）
 const SUPPORTED_SERVICES = [
@@ -32,11 +32,16 @@ const SUPPORTED_SERVICES = [
   'shopify-backend',
 ];
 
-// 环境到 Infisical environment 的映射
+// 环境到 AWS Infisical environment 的映射（cn 走独立 cn Infisical，见下方分支）
 const ENV_MAP: Record<string, string> = {
   stage: 'staging',
   prod: 'prod'
 };
+
+/** 该 environment 是否被支持（AWS stage/prod 或阿里云 cn-prod/cn-stage）。 */
+function isSupportedEnv(env: string): boolean {
+  return ENV_MAP[env] !== undefined || isCnEnv(env);
+}
 
 // NOTE: getInfisicalSecrets is kept local because it encodes secretPath (encodeURIComponent),
 // unlike db-utils' raw-path variant; getGitHubVariable/getInfisicalConfig/getInfisicalToken are shared from db-utils.
@@ -60,17 +65,22 @@ Usage: optima-show-env <service> <environment> [options]
 
 Arguments:
   service      Service name (${SUPPORTED_SERVICES.join(', ')})
-  environment  Environment (stage, prod)
+  environment  Environment (stage, prod, cn-prod, cn-stage)
 
 Options:
   --filter     Filter by key pattern (e.g., --filter DATABASE)
   --keys-only  Show only key names, not values
   --help       Show this help message
 
+Note:
+  cn-prod / cn-stage 读阿里云 cn Infisical（需 INFISICAL_CN_EMAIL/PASSWORD 环境变量，
+  admin user，见 optima-dev-skills#21）。stage/prod 读 AWS Infisical（GitHub Variables）。
+
 Examples:
   optima-show-env commerce-backend stage
   optima-show-env user-auth prod --filter DATABASE
-  optima-show-env bi stage --keys-only
+  optima-show-env gateway-core cn-stage
+  optima-show-env bi-backend stage --keys-only
 `);
 }
 
@@ -114,9 +124,9 @@ async function main() {
   }
 
   // 验证环境
-  if (!ENV_MAP[environment]) {
+  if (!isSupportedEnv(environment)) {
     console.error(`Error: Unknown environment '${environment}'`);
-    console.error('Available environments: stage, prod');
+    console.error('Available environments: stage, prod, cn-prod, cn-stage');
     process.exit(1);
   }
 
@@ -126,15 +136,24 @@ async function main() {
   console.log(`\n🔍 Fetching environment variables for ${service} (${environment.toUpperCase()})...\n`);
 
   try {
-    const infisicalConfig = getInfisicalConfig();
-    console.log('✓ Loaded Infisical config from GitHub Variables');
+    let secrets: Record<string, string>;
+    if (isCnEnv(environment)) {
+      // 阿里云 cn Infisical（独立实例，admin email/password 认证；prod / staging 双环境）
+      const cnToken = getCnInfisicalToken();
+      console.log('✓ Obtained cn Infisical access token');
+      secrets = getCnSecrets(cnToken, secretPath, false, cnInfisicalEnv(environment));
+      console.log(`✓ Retrieved secrets from cn Infisical (env: ${cnInfisicalEnv(environment)}, path: ${secretPath})\n`);
+    } else {
+      const infisicalConfig = getInfisicalConfig();
+      console.log('✓ Loaded Infisical config from GitHub Variables');
 
-    const token = getInfisicalToken(infisicalConfig);
-    console.log('✓ Obtained Infisical access token');
+      const token = getInfisicalToken(infisicalConfig);
+      console.log('✓ Obtained Infisical access token');
 
-    const infisicalEnv = ENV_MAP[environment];
-    const secrets = getInfisicalSecrets(infisicalConfig, token, infisicalEnv, secretPath);
-    console.log(`✓ Retrieved secrets from Infisical (path: ${secretPath})\n`);
+      const infisicalEnv = ENV_MAP[environment];
+      secrets = getInfisicalSecrets(infisicalConfig, token, infisicalEnv, secretPath);
+      console.log(`✓ Retrieved secrets from Infisical (path: ${secretPath})\n`);
+    }
 
     const keys = Object.keys(secrets).sort();
 

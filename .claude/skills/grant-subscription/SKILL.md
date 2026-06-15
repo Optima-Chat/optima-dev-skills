@@ -1,6 +1,6 @@
 ---
 name: "grant-subscription"
-description: "当用户请求开通会员、赠送订阅、grant subscription、开通 Pro/Starter/Enterprise、升级计划、给用户开会员时，使用此技能。支持 Stage、Prod、cn-prod 三个环境。"
+description: "当用户请求开通会员、赠送订阅、grant subscription、开通 Pro/Starter/Enterprise、升级计划、给用户开会员时，使用此技能。支持 Stage、Prod、cn-prod、cn-stage 四个环境。"
 allowed-tools: ["Bash"]
 ---
 
@@ -50,6 +50,10 @@ optima-grant-subscription user@example.com --plan enterprise --env prod
 # cn-prod（国内环境）：plan 用 -cn 档，默认 pro-cn
 optima-grant-subscription user@example.com --env cn-prod
 optima-grant-subscription user@example.com --plan starter-cn --env cn-prod
+
+# cn-stage（阿里云预发）：同 cn-prod 用 -cn 档；需 INFISICAL_CN_EMAIL/PASSWORD。
+# ⚠️ cn-stage billing 的 plan 目录可能未 seed（报 403 Plan not found）——属 cn-stage 基建缺口，非本工具问题。
+optima-grant-subscription user@example.com --plan pro-cn --env cn-stage
 ```
 
 ### 参数说明
