@@ -24,7 +24,7 @@ interface MerchantSetupResponse {
   user_id: string;
 }
 
-type Environment = 'ci' | 'stage' | 'prod' | 'cn-prod';
+type Environment = 'ci' | 'stage' | 'prod' | 'cn-prod' | 'cn-stage';
 
 interface EnvironmentConfig {
   authUrl: string;
@@ -60,6 +60,14 @@ const ENV_CONFIG: Record<Environment, EnvironmentConfig> = {
     // 注意不要换成同名的 confidential client `commerce-cli-cn-prod-*`，那个需要 client_secret，走不通 CLI 的 public ROPC flow。
     clientId: 'dev-skill-cli-cn-pro-acvkmcuq',
     envName: 'cn-prod'
+  },
+  'cn-stage': {
+    // 阿里云预发（独立于 AWS stage `.optima.onl`）。域名 *.stage.optima.chat。
+    authUrl: 'https://auth.stage.optima.chat',
+    apiUrl: 'https://commerce.stage.optima.chat',
+    // cn-stage user-auth 里注册的 public client（开 password grant，ROPC flow）。
+    clientId: 'dev-skill-cli-cn-sta-3dvsxzdo',
+    envName: 'cn-stage'
   }
 };
 
@@ -183,6 +191,7 @@ async function main() {
   let phone: string | undefined;
   let address: string | undefined;
   let environment: Environment = 'ci';
+  let skipMerchant = false;
 
   // 解析命令行参数
   for (let i = 0; i < args.length; i++) {
@@ -198,12 +207,14 @@ async function main() {
       phone = args[++i];
     } else if (arg === '--address' && args[i + 1]) {
       address = args[++i];
+    } else if (arg === '--skip-merchant') {
+      skipMerchant = true;
     } else if (arg === '--env' && args[i + 1]) {
       const envArg = args[++i];
-      if (envArg === 'ci' || envArg === 'stage' || envArg === 'prod' || envArg === 'cn-prod') {
+      if (envArg === 'ci' || envArg === 'stage' || envArg === 'prod' || envArg === 'cn-prod' || envArg === 'cn-stage') {
         environment = envArg as Environment;
       } else {
-        console.error(`❌ Invalid environment: ${envArg}. Must be 'ci', 'stage', 'prod', or 'cn-prod'.`);
+        console.error(`❌ Invalid environment: ${envArg}. Must be 'ci', 'stage', 'prod', 'cn-prod', or 'cn-stage'.`);
         process.exit(1);
       }
     } else if (arg === '--help' || arg === '-h') {
@@ -216,20 +227,24 @@ Options:
   --business-name <name>       Merchant business name (default: auto-generated)
   --phone <phone>              Merchant phone number (optional)
   --address <address>          Merchant address (optional)
-  --env <environment>          Environment: ci (default), stage, prod, or cn-prod
+  --skip-merchant              只注册用户 + 拿 token，跳过 Commerce merchant profile 设置
+                               （token-only；用于 gateway E2E、或 commerce 未就绪的环境）
+  --env <environment>          Environment: ci (default), stage, prod, cn-prod, or cn-stage
   --help, -h                   Show this help message
 
 Environments:
-  ci       CI 环境 (auth.optima.chat, api.optima.chat)
-  stage    Stage 环境 (auth.stage.optima.onl, api.stage.optima.onl)
-  prod     Prod 环境 (auth.optima.onl, api.optima.onl)
-  cn-prod  阿里云生产环境 (auth.yzsgo.com, commerce.yzsgo.com) [#201]
+  ci        CI 环境 (auth.optima.chat, api.optima.chat)
+  stage     Stage 环境 (auth.stage.optima.onl, api.stage.optima.onl)
+  prod      Prod 环境 (auth.optima.onl, api.optima.onl)
+  cn-prod   阿里云生产环境 (auth.yzsgo.com, commerce.yzsgo.com) [#201]
+  cn-stage  阿里云预发环境 (auth.stage.optima.chat, commerce.stage.optima.chat)
 
 Example:
   optima-generate-test-token
   optima-generate-test-token --env stage
   optima-generate-test-token --env prod
   optima-generate-test-token --env cn-prod
+  optima-generate-test-token --env cn-stage
   optima-generate-test-token --business-name "My Test Shop" --env stage
       `);
       process.exit(0);
@@ -254,8 +269,11 @@ Example:
     // 2. 获取 token
     const token = await getToken(email, password, config);
 
-    // 3. 设置 merchant profile（Commerce API）
-    const merchantProfile = await setupMerchantProfile(token, businessName, config);
+    // 3. 设置 merchant profile（Commerce API）；--skip-merchant 时跳过（token-only）
+    const merchantProfile = skipMerchant
+      ? { merchant_id: 'N/A (skipped)' } as MerchantSetupResponse
+      : await setupMerchantProfile(token, businessName, config);
+    if (skipMerchant) console.log('\n⏭️  Skipped merchant profile setup (--skip-merchant)');
 
     // 4. 保存 token 到临时文件
     const tmpDir = os.tmpdir();

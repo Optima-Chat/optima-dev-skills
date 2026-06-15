@@ -1,19 +1,22 @@
 import { execSync } from 'child_process';
 import { fetchInfisicalSecret } from './infisical-secrets';
-import { getInfisicalConfig, getInfisicalToken } from './db-utils';
+import { getInfisicalConfig, getInfisicalToken, getCnInfisicalToken, getCnSecrets } from './db-utils';
 
 const USER_AUTH_URLS: Record<string, string> = {
   stage: 'https://auth.stage.optima.onl',
   prod: 'https://auth.optima.onl',
   // #201: yzsgo.com 全量迁移 (2026-06-12), 旧 auth-cn.optima.chat 路由已下线
   'cn-prod': 'https://auth.yzsgo.com',
+  // cn-stage（阿里云预发，独立于 AWS stage `.optima.onl`）
+  'cn-stage': 'https://auth.stage.optima.chat',
 };
 
-// cn-prod URLs are hardcoded: cn Infisical (secrets-cn.optima.chat) is a
+// cn URLs are hardcoded: cn Infisical (secrets-cn.optima.chat) is a
 // separate instance dev-skills has no machine identity for, and these domains
 // are stable. AWS envs keep reading /shared-secrets/domain-urls.
 // #201: yzsgo.com 全量迁移 (2026-06-12), 旧 billing-cn.optima.chat 路由已下线
 const CN_PROD_BILLING_URL = 'https://billing-api.yzsgo.com';
+const CN_STAGE_BILLING_URL = 'https://billing-api.stage.optima.chat';
 
 /**
  * Validate the --env flag value at command entry, before any I/O.
@@ -39,9 +42,9 @@ export function validateEnv(env: string): 'stage' | 'prod' {
  * exist for cn-prod (Aliyun VPC-internal RDS) — keep them on validateEnv so a
  * cn-prod typo fails fast instead of dying inside the tunnel setup.
  */
-export function validateEnvCnProd(env: string): 'stage' | 'prod' | 'cn-prod' {
-  if (env !== 'stage' && env !== 'prod' && env !== 'cn-prod') {
-    throw new Error(`--env must be "stage", "prod" or "cn-prod" (got: ${env})`);
+export function validateEnvCnProd(env: string): 'stage' | 'prod' | 'cn-prod' | 'cn-stage' {
+  if (env !== 'stage' && env !== 'prod' && env !== 'cn-prod' && env !== 'cn-stage') {
+    throw new Error(`--env must be "stage", "prod", "cn-prod" or "cn-stage" (got: ${env})`);
   }
   return env;
 }
@@ -84,6 +87,7 @@ const skillsUrlCache: Record<string, string> = {};
 
 function getBillingUrl(env: string): string {
   if (env === 'cn-prod') return CN_PROD_BILLING_URL;
+  if (env === 'cn-stage') return CN_STAGE_BILLING_URL;
   if (billingUrlCache[env]) return billingUrlCache[env];
   const url = fetchInfisicalSecret(env, '/shared-secrets/domain-urls', 'BILLING_URL');
   billingUrlCache[env] = url;
@@ -100,17 +104,33 @@ function getSkillsUrl(env: string): string {
 export function getServiceToken(env: string): string {
   if (tokenCache[env]) return tokenCache[env];
 
-  const cfg = getInfisicalConfig();
-  const tok = getInfisicalToken(cfg);
-  // Fetch BOTH client_id and client_secret from Infisical — they differ per env.
-  // cn-prod credentials are mirrored in the AWS Infisical *prod* environment
-  // (fetchInfisicalSecret has no cn-prod env slug), under CN-specific keys.
-  const isCn = env === 'cn-prod';
-  const infisicalEnv = isCn ? 'prod' : env;
-  const idKey = isCn ? DEV_SKILLS_CN_CLIENT_ID_KEY : DEV_SKILLS_CLIENT_ID_KEY;
-  const secretKey = isCn ? DEV_SKILLS_CN_CLIENT_SECRET_KEY : DEV_SKILLS_CLIENT_SECRET_KEY;
-  const clientId = fetchInfisicalSecret(infisicalEnv, DEV_SKILLS_OAUTH_PATH, idKey, cfg, tok);
-  const clientSecret = fetchInfisicalSecret(infisicalEnv, DEV_SKILLS_OAUTH_PATH, secretKey, cfg, tok);
+  // cn-prod 与 cn-stage 都用 client_credentials M2M token，scope=internal:users:write。
+  // 凭证来源不同：
+  //  · cn-prod —— 镜像在 AWS Infisical prod 环境（CN_PROD_ 前缀键），复用既有 AWS 访问。
+  //  · cn-stage —— canonical 在 cn Infisical staging /shared-secrets/oauth-clients
+  //    （dev-skills 无该 client 的 AWS 镜像；用 admin email/password 直读，
+  //     运行时需 INFISICAL_CN_EMAIL/PASSWORD，与 query-db cn 同一前提）。
+  const isCn = env === 'cn-prod' || env === 'cn-stage';
+  let clientId: string;
+  let clientSecret: string;
+  if (env === 'cn-stage') {
+    const cnTok = getCnInfisicalToken();
+    const oc = getCnSecrets(cnTok, '/shared-secrets/oauth-clients', false, 'staging');
+    clientId = oc['DEV_SKILLS_OAUTH_CLIENT_ID'];
+    clientSecret = oc['DEV_SKILLS_OAUTH_CLIENT_SECRET'];
+    if (!clientId || !clientSecret) {
+      throw new Error('cn-stage dev-skills OAuth client 凭证缺失（cn Infisical staging /shared-secrets/oauth-clients 的 DEV_SKILLS_OAUTH_CLIENT_ID/SECRET）。');
+    }
+  } else {
+    const cfg = getInfisicalConfig();
+    const tok = getInfisicalToken(cfg);
+    // Fetch BOTH client_id and client_secret from Infisical — they differ per env.
+    const infisicalEnv = env === 'cn-prod' ? 'prod' : env;
+    const idKey = env === 'cn-prod' ? DEV_SKILLS_CN_CLIENT_ID_KEY : DEV_SKILLS_CLIENT_ID_KEY;
+    const secretKey = env === 'cn-prod' ? DEV_SKILLS_CN_CLIENT_SECRET_KEY : DEV_SKILLS_CLIENT_SECRET_KEY;
+    clientId = fetchInfisicalSecret(infisicalEnv, DEV_SKILLS_OAUTH_PATH, idKey, cfg, tok);
+    clientSecret = fetchInfisicalSecret(infisicalEnv, DEV_SKILLS_OAUTH_PATH, secretKey, cfg, tok);
+  }
 
   const authUrl = USER_AUTH_URLS[env];
   if (!authUrl) throw new Error(`Unknown env: ${env}`);

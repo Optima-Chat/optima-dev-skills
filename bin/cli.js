@@ -44,7 +44,7 @@ switch (command) {
     log('  session-gateway  optima-scout  billing  browser-backend  optima-generation', 'cyan');
 
     log('\nEnvironments:', 'yellow');
-    log('  stage (default)   prod', 'cyan');
+    log('  stage (default)   prod   cn-prod (阿里云生产)   cn-stage (阿里云预发)', 'cyan');
 
     log('\nExamples:', 'yellow');
     log('  /logs commerce-backend 100 prod', 'cyan');

@@ -29,15 +29,33 @@ const EC2_HOST = '3.0.210.113';
 // ─── cn-prod (阿里云) 常量 ────────────────────────────────────────────────────
 // cn-prod 跑在阿里云 SAE，与海外 AWS 完全独立：独立 Infisical (secrets-cn.optima.chat)
 // + 内网 RDS（无公网端点）经 buildbox ECS 跳板 SSH 隧道访问。设计见 optima-dev-skills#21。
+// cn Infisical 是【单实例双环境】：prod=cn-prod、staging=cn-stage（URL/org/project 共享，
+// 只切 environment 参数）。cn-stage 数据面共用 prod VPC，故走【同一 buildbox】跳板。
 const CN_INFISICAL_URL     = process.env.INFISICAL_CN_URL     || 'https://secrets-cn.optima.chat';
 const CN_INFISICAL_ORG     = process.env.INFISICAL_CN_ORG     || 'f44012fa-0659-4f7e-b0ac-ed01244efc8a';
 const CN_INFISICAL_PROJECT = process.env.INFISICAL_CN_PROJECT || '4deef229-11be-40a5-8f56-b61f0bce7240';
-const CN_RDS_HOST          = 'pgm-2zexwx9eso9e4yla.pg.rds.aliyuncs.com';
+const CN_RDS_HOST          = 'pgm-2zexwx9eso9e4yla.pg.rds.aliyuncs.com'; // cn-prod RDS
+const CN_STAGE_RDS_HOST    = 'pgm-2zem1u9zdh06boim.pg.rds.aliyuncs.com'; // cn-stage RDS（独立实例，共用 prod VPC）
 const CN_BUILDBOX_HOST     = process.env.OPTIMA_CN_BUILDBOX_HOST || '47.94.105.163';
 
-/** env 是否指向 cn-prod（阿里云）。接受 `cn` / `cn-prod`。 */
+/** env 是否指向阿里云（cn-prod 或 cn-stage）。接受 `cn` / `cn-prod` / `cn-stage`。 */
 export function isCnEnv(env: string): boolean {
-  return env === 'cn' || env === 'cn-prod';
+  return env === 'cn' || env === 'cn-prod' || env === 'cn-stage';
+}
+
+/** env 是否指向 cn-stage（阿里云预发）。 */
+export function isCnStageEnv(env: string): boolean {
+  return env === 'cn-stage';
+}
+
+/** cn env → cn Infisical environment slug。cn-stage→staging，其余 cn→prod。 */
+export function cnInfisicalEnv(env: string): 'prod' | 'staging' {
+  return env === 'cn-stage' ? 'staging' : 'prod';
+}
+
+/** cn env → 内网 RDS host。cn-stage→stage 实例，其余 cn→prod 实例。 */
+export function cnRdsHost(env: string): string {
+  return env === 'cn-stage' ? CN_STAGE_RDS_HOST : CN_RDS_HOST;
 }
 
 // ─── SQL escaping ───────────────────────────────────────────────────────────
@@ -117,10 +135,13 @@ export function getCnInfisicalToken(): string {
   return org.token;
 }
 
-/** 读 cn Infisical 某 folder（prod env）→ key→value map。expand=true 让服务端解析 `${...}` 引用。 */
-export function getCnSecrets(token: string, secretPath: string, expand = false): Record<string, string> {
+/**
+ * 读 cn Infisical 某 folder → key→value map。expand=true 让服务端解析 `${...}` 引用。
+ * environment：cn-prod 用 `prod`、cn-stage 用 `staging`（同一实例双环境）。
+ */
+export function getCnSecrets(token: string, secretPath: string, expand = false, environment: 'prod' | 'staging' = 'prod'): Record<string, string> {
   const data = curlJson([
-    `${CN_INFISICAL_URL}/api/v3/secrets/raw?workspaceId=${CN_INFISICAL_PROJECT}&environment=prod&secretPath=${encodeURIComponent(secretPath)}&expandSecretReferences=${expand}`,
+    `${CN_INFISICAL_URL}/api/v3/secrets/raw?workspaceId=${CN_INFISICAL_PROJECT}&environment=${environment}&secretPath=${encodeURIComponent(secretPath)}&expandSecretReferences=${expand}`,
     '-H', `Authorization: Bearer ${token}`,
   ]);
   const secrets: Record<string, string> = {};
@@ -417,17 +438,18 @@ export function queryDB(conn: DBConnection, sql: string): string {
  * 连 cn-prod 某服务库：creds 取自 cn Infisical 的 /shared-secrets/database-users +
  * /database-names（按 prefix，如 AUTH/BILLING），经 buildbox 跳板隧道（动态端口）。
  */
-export function connectCnDB(prefix: string): { query: (sql: string) => string } {
+export function connectCnDB(prefix: string, cnEnv: string = 'cn-prod'): { query: (sql: string) => string } {
+  const infEnv = cnInfisicalEnv(cnEnv);
   const token = getCnInfisicalToken();
-  const users = getCnSecrets(token, '/shared-secrets/database-users');
-  const names = getCnSecrets(token, '/shared-secrets/database-names');
+  const users = getCnSecrets(token, '/shared-secrets/database-users', false, infEnv);
+  const names = getCnSecrets(token, '/shared-secrets/database-names', false, infEnv);
   const user = users[`${prefix}_DB_USER`];
   const password = users[`${prefix}_DB_PASSWORD`];
   const database = names[`${prefix}_DB_NAME`];
   if (!user || !password || !database) {
     throw new Error(`cn DB creds 不全 for ${prefix}（需 ${prefix}_DB_USER/PASSWORD@database-users + ${prefix}_DB_NAME@database-names）。该服务 cn 可能用字面 DATABASE_URL，见 optima-dev-skills#21。`);
   }
-  const port = ensureTunnel(CN_RDS_HOST, 'cn-buildbox');
+  const port = ensureTunnel(cnRdsHost(cnEnv), 'cn-buildbox');
   const conn: DBConnection = { host: 'localhost', port, user, password, database };
   return { query: (sql: string) => queryDB(conn, sql) };
 }
@@ -437,9 +459,9 @@ export function connectCnDB(prefix: string): { query: (sql: string) => string } 
  * 用于 cred 不在 shared-secrets/database-users 的服务（如 gateway-core）。
  * expandSecretReferences=true 让 cn Infisical 解析 `${...}` 引用为字面值。
  */
-export function connectCnDBFromUrl(servicePath: string): { query: (sql: string) => string } {
+export function connectCnDBFromUrl(servicePath: string, cnEnv: string = 'cn-prod'): { query: (sql: string) => string } {
   const token = getCnInfisicalToken();
-  const secrets = getCnSecrets(token, servicePath, true);
+  const secrets = getCnSecrets(token, servicePath, true, cnInfisicalEnv(cnEnv));
   const dbUrl = secrets['DATABASE_URL'];
   if (!dbUrl) throw new Error(`cn DATABASE_URL 未找到 at ${servicePath}`);
   // 注意：DATABASE_URL 含凭证，报错只说事实，不回显值

@@ -19,13 +19,14 @@ $1 = 700 credits (P15 unified ledger; the USD wallet is retired).
 Options:
   --amount <usd>        USD amount to grant (required, e.g. 5 for $5.00 = 3500 credits)
   --description <text>  Description for audit trail (optional)
-  --env <env>           Environment: stage, prod, cn-prod (default: stage)
+  --env <env>           Environment: stage, prod, cn-prod, cn-stage (default: stage)
   -h, --help            Show this help
 
 Examples:
   optima-grant-balance user@example.com --amount 5 --env prod
   optima-grant-balance user@example.com --amount 10 --description "Service outage compensation"
-  optima-grant-balance user@example.com --amount 1 --env cn-prod   # ¥-priced env, still USD input ($1 = 700 credits)`);
+  optima-grant-balance user@example.com --amount 1 --env cn-prod   # ¥-priced env, still USD input ($1 = 700 credits)
+  optima-grant-balance user@example.com --amount 1 --env cn-stage  # 阿里云预发`);
     process.exit(0);
   }
 
@@ -55,10 +56,10 @@ async function main() {
   console.log(`\n🎁 Granting $${amountUsd.toFixed(2)} (${Math.round(amountUsd * 700)} credits) to ${email} [${env.toUpperCase()}]\n`);
   if (description) console.log(`   Reason: ${description}`);
 
-  // cn-prod has no SSH tunnel into the Aliyun RDS — resolve via user-auth's
-  // internal lookup API instead of the direct SQL path.
+  // cn-prod / cn-stage have no SSH tunnel into the Aliyun RDS — resolve via
+  // user-auth's internal lookup API instead of the direct SQL path.
   let userId: string;
-  if (env === 'cn-prod') {
+  if (env === 'cn-prod' || env === 'cn-stage') {
     userId = await resolveUserIdByEmail(env, email);
   } else {
     const infisicalConfig = getInfisicalConfig();
