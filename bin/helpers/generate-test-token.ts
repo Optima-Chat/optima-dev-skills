@@ -56,7 +56,9 @@ const ENV_CONFIG: Record<Environment, EnvironmentConfig> = {
     // #201: yzsgo.com 全量迁移 (2026-06-12), 旧 *-cn.optima.chat 路由已下线
     authUrl: 'https://auth.yzsgo.com',
     apiUrl: 'https://commerce.yzsgo.com',
-    clientId: 'commerce-cli-cn-prod',
+    // #31: 必须用 cn user-auth 里注册的 public client（开 password grant）。
+    // 注意不要换成同名的 confidential client `commerce-cli-cn-prod-*`，那个需要 client_secret，走不通 CLI 的 public ROPC flow。
+    clientId: 'dev-skill-cli-cn-pro-acvkmcuq',
     envName: 'cn-prod'
   }
 };
@@ -98,7 +100,8 @@ async function registerMerchant(
       body: JSON.stringify(payload)
     });
 
-    console.log(`✓ Merchant registered successfully (ID: ${result.user_id})`);
+    // #31: cn-prod register 返回体字段名是 `id`，AWS 是 `user_id`，两者兼容
+    console.log(`✓ Merchant registered successfully (ID: ${result.user_id ?? (result as any).id})`);
     return result;
   } catch (error: any) {
     if (error.message.includes('409') || error.message.includes('already exists')) {
