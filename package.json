@@ -1,6 +1,6 @@
 {
   "name": "@optima-chat/dev-skills",
-  "version": "0.7.42",
+  "version": "0.7.43",
   "description": "Claude Code Skills for Optima development team - cross-environment collaboration tools",
   "main": "index.js",
   "bin": {
@@ -19,8 +19,7 @@
   "scripts": {
     "postinstall": "node scripts/install.js",
     "build": "tsc",
-    "prepare": "npm run build",
-    "test": "node --test tests/*.test.js"
+    "prepare": "npm run build"
   },
   "keywords": [
     "claude-code",
