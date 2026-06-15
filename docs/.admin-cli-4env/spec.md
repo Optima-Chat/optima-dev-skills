@@ -1,104 +1,101 @@
 # SPEC — dev-skills 运营 admin CLI 4-环境统一 + 账号禁用
 
-> 状态：DRAFT（待 fresh-agent review ×2 + 用户确认 open items）
+> 状态：DRAFT v2（已过 fresh-agent review r1 + 用户 open 答复；待 review r2）
 > 作者：本次 session · 日期：2026-06-16
 > 目标来源（用户原话，2026-06-15）："4个环境（stage, prod, cn-stage, cn-prod）的 grant 和 entitlement 的授予和撤销，以及状态查询。另外加一个账号禁用和恢复。同时支持手机号和邮箱。"
+> 用户锁定：subscription=授予+查询(无撤销)；entitlement=授予+撤销+查询；credits=授予(修手机号)；ban/unban=4环境(admin-用户凭证)。命令面=`optima-account status|ban|unban` 聚合。status 含 credits 余额。
 
-## 1. 目标与范围（已与用户锁定）
+## 1. 目标与范围（已锁定）
 
 | 域 | 授予 | 撤销 | 状态查询 | 备注 |
 |---|---|---|---|---|
-| **subscription（会员）** | ✅ 已有 `grant-subscription` | ❌ **不做** | ✅ **新增** | billing 无 admin 撤销端点；撤销作为后续 |
-| **entitlement（产品权益）** | ✅ 已有 | ✅ 已有 `refund-entitlement` | ✅ 已有 `admin/entitlements` | PR #33 已接 cn-prod，但漏 cn-stage |
-| **credits（USD 余额）** | ✅ 已有 `grant-balance` | ❌ 无端点 | （并入状态查询？见 open） | **修缺陷：统一支持手机号**（现仅 email） |
-| **account ban/unban（禁用/恢复）** | — | — | — | ✅ **全新**，4 环境 |
+| subscription | ✅ 已有 `grant-subscription` | ❌ 不做 | ✅ 并入 `account status` | billing 无 admin 撤销端点 |
+| entitlement | ✅ 已有 | ✅ 已有 `refund-entitlement` | ✅ 已有 `admin/entitlements` | |
+| credits | ✅ 已有 `grant-balance` | ❌ 无端点 | ✅ 并入 `account status` | **修缺陷：支持手机号** |
+| account ban/unban | — | — | ✅ `account status` 显示 is_active/banned | ✅ 全新，4 环境 |
 
-全部覆盖 4 环境：`stage` / `prod` / `cn-stage` / `cn-prod`。标识符：cn 环境支持 `phone/email/userId`，AWS 环境 `email` only（受 SSH 隧道 + M2M scope 限制，见 §3）。
+4 环境：`stage`/`prod`/`cn-stage`/`cn-prod`。标识符：cn 支持 `phone/email/userId`，AWS `email` only（SSH 隧道 + M2M scope 限制）。
+不在范围：subscription 撤销、credits 撤销、AWS 手机号解析。
 
-**明确不在范围**：subscription 撤销、credits 撤销、AWS 环境的手机号解析。
+## 2. 命令面（已定）
 
-## 2. 命令面（提案 — 待 review）
+- `optima-grant-subscription <email|phone|userId> --plan --months --env` —— 授予会员（已支持 4 环境，本次仅随 `resolveTargetUser` 抽取而调整）。
+- `optima-grant-balance <email|phone|userId> --amount --env` —— 授予 credits。**改**：接 `resolveTargetUser`（支持手机号），位置参数 identifier，`--email` 兼容别名。
+- `optima-entitlement grant|revoke|list <email|phone|userId> --env` —— **改**：cn-prod + cn-stage（基于 main 抽取的 resolver）。
+- `optima-account status|ban|unban <email|phone|userId> --env` —— **新 bin**：
+  - `status`（只读，聚合）：订阅(membership-status) + 权益(admin/entitlements) + 账号状态(is_active/banned) + **credits 余额**。
+  - `ban --reason "..."`：user-auth `is_active=false`。prod/cn-prod confirm。**AWS 与 cn 都须在执行前打印解析到的目标账号（email/phone+userId）做反查回显**（见 R1）。
+  - `unban`。
 
-保留并扩展现有 bin；新增 account 域。
+## 3. 每环境 鉴权 + 解析 矩阵
 
-- `optima-grant-subscription <email|phone|userId> --plan --months --env` —— 授予会员。**改动**：`resolveTargetUser` 补 cn-stage。
-- `optima-grant-balance <email|phone|userId> --amount --env` —— 授予 credits。**改动**：接 `resolveTargetUser`（真正支持手机号），位置参数从 `email` 改为通用 identifier（`--email` 兼容别名）。
-- `optima-entitlement grant|revoke|list <email|phone|userId> --env` —— **改动**：PR #33 基础上补 cn-stage。
-- `optima-account status|ban|unban <email|phone|userId> --env` —— **新增 bin**。
-  - `status`：聚合视图 = 订阅(membership-status) + 权益(admin/entitlements) + 账号状态(is_active/banned)。只读。
-  - `ban --reason "..."`：禁用账号（user-auth `is_active=false` + 记录原因）。prod/cn-prod 需 confirm。
-  - `unban`：恢复账号。
+| 环境 | 身份 | userId 解析 | 解析 token | billing 写 | ban 写 |
+|---|---|---|---|---|---|
+| stage/prod (AWS) | email | RDS SSH 隧道 `resolveUserId(email)` | AWS Infisical | M2M client_credentials | **admin-用户 token（新）** |
+| cn-prod/cn-stage (阿里云) | 手机号为主 | HTTP `/internal/users/lookup`(phone/email)+`getUserById`反查+`assertPhoneMatch` | M2M(cn, scope `internal:users:write`) | 同 M2M | **admin-用户 token（新）** |
 
-> 备选：ban/unban/status 是否该并进 `optima-grant-subscription` 或独立 `optima-ban`/`optima-unban`？提案用 `optima-account` 子命令聚合「以用户为中心的运营 admin 操作」，与「按域授予」的 grant-*/entitlement 区分。**待 review 定。**
-
-## 3. 每环境 鉴权 + 解析 矩阵（核心）
-
-| 环境 | 用户身份 | userId 解析 | 解析用 token | 写操作 token |
-|---|---|---|---|---|
-| stage / prod (AWS) | email | RDS SSH 隧道 `resolveUserId(email)` | Infisical（AWS）| billing: M2M client_credentials（已有）；ban: **admin-用户 token（新）** |
-| cn-prod / cn-stage (阿里云) | 手机号为主 | HTTP `/api/v1/internal/users/lookup`（phone/email）+ `getUserById` 反查 + `assertPhoneMatch` | M2M（cn，scope `internal:users:write`，已有）| billing: 同 M2M；ban: **admin-用户 token（新）** |
-
-**`resolveTargetUser(env, identifier)`**（PR #33 已抽出，**必须补 cn-stage**）：
-```
-kind = classify(identifier)          # email / phone / userId
-assertAwsEmailOnly(env, kind)        # stage/prod 拒非 email
-if env in {cn-prod, cn-stage}:       # ← PR #33 只写了 cn-prod，BUG
-    resolve via HTTP lookup → getUserById 反查打印 → phone 输入则 assertPhoneMatch
-else (stage/prod):
-    resolve via SSH 隧道 email-only
-```
-
-**端点（已在源码核实，impl 阶段须按 CLAUDE.md 用真实请求复核每环境）**：
-- 解析：user-auth `POST /api/v1/internal/users/lookup` `{email|phone}`（精确匹配，scalar_one_or_none）；`GET /api/v1/internal/users/{id}`（反查）。
-- subscription 授予：billing `POST /api/billing/admin/grant-subscription`（requireAdminService / M2M）。
-- subscription 状态：billing `GET /api/internal/users/{userId}/membership-status`（任意 Service Client JWT / M2M）→ `{active, planId, status}`。
-- entitlement 授予/撤销/列表：billing `POST /api/billing/admin/grant-entitlement`、`POST /api/billing/admin/refund-entitlement`、`GET /api/billing/admin/entitlements?userId=`。
+**端点（已源码核实；impl T0 须逐环境真实请求复核，CLAUDE.md）**：
+- 解析：user-auth `POST /api/v1/internal/users/lookup`、`GET /api/v1/internal/users/{id}`（M2M, verify_internal_service_token）。
+- subscription 授予：billing `POST /api/billing/admin/grant-subscription`（requireAdminService/M2M）。
+- subscription 状态：billing `GET /api/internal/users/{userId}/membership-status`（extractAnyServiceAuth/M2M）→ `{active, planId, status}`。**注意路径前缀 `/api/internal`，非 `/api/billing/admin`；用 callBilling(billing baseURL) 调（见 OPEN-4）**。
+- entitlement：billing `POST /api/billing/admin/{grant,refund}-entitlement`、`GET /api/billing/admin/entitlements?userId=`。
 - credits 授予：billing `POST /api/billing/admin/grant-credits`。
-- **ban/unban：user-auth `POST /api/v1/admin/users/{id}/ban`（body `{reason}`）、`/unban`。鉴权 `get_current_admin_user`（role=ADMIN 的用户 token）——非 M2M。**
+- credits 余额读取：**待 T0 确认 M2M 可读端点**（候选 billing internal/admin；若无则 status 的 credits 部分降级为"不可读"提示，不阻塞）。
+- ban/unban：user-auth `POST /api/v1/admin/users/{id}/ban`(body `{reason}`)、`/unban`。鉴权 `get_current_admin_user`（role=ADMIN **用户** token，非 M2M）。
 
-## 4. ban/unban 鉴权设计（最大新增点）
+## 4. resolveTargetUser：从 main 抽取（**修正 r1-HIGH-1**）
 
-- M2M client_credentials token **无 user_id** → 调 ban 会 404（`get_current_admin_user` 取 token.user_id 查 user）。
-- 必须用 **admin 用户**（role=ADMIN）走 **password grant** 拿 token（dev-skills 已有此模式：`generate-test-token` 的 `getToken`）。
-- userId 解析仍用 §3 的 `resolveTargetUser`（M2M lookup）；**仅最后的 ban/unban 调用换 admin-用户 token**。
-- 新增 token 获取函数（类比 `getServiceToken`）：`getAdminUserToken(env)` —— 从凭证源读 admin email/password + password-grant client_id，curl `oauth/token`，process 内缓存。
+**基线认知（已核实）**：当前 **main(0.8.0) 已完整支持 cn-stage**——`grant-subscription.ts` 的 cn 分支是 `if (env === 'cn-prod' || env === 'cn-stage')`（main grant-subscription.ts:127），billing-http 有 cn-stage URL/token 分支。**PR #33 是更旧、更窄的产物**：它抽出的 `resolveTargetUser` 只判 `env === 'cn-prod'`（#33 grant-subscription.ts:85），**会回归 cn-stage**。
 
-### OPEN-1（阻塞 ban，需用户/发现）：admin 用户凭证位置
-| 环境 | admin email | 凭证位置 | password-grant client_id |
-|---|---|---|---|
-| cn-prod | admin@optima.chat | 1P `okshqmbbtu4oes6jhjiz6byojm`（runbook 已知） | `agent-portal-bc0osnsd` |
-| cn-stage | ? | ?（cn Infisical staging?） | ? |
-| stage | ? | ?（AWS Infisical staging?） | ? |
-| prod | ? | ? | ? |
-> 倾向：与 dev-skills 现有凭证模式一致——把 4 环境 admin 凭证统一放 Infisical（AWS 三环境放 AWS Infisical 对应 env；cn-stage 放 cn Infisical staging），CLI 按 env 读。**待用户确认凭证落点 / 是否新建 admin 账号。**
+**做法**：不要"移植 #33 的 resolver"。而是**从 main 现有的 inline cn-prod||cn-stage 逻辑抽出** `resolveTargetUser(env, identifier)`，保留 cn-stage；丢弃 #33 的 cn-prod-only 版本，只取它的 entitlement 接线思路。动代码前先 `diff` main 与 #33 的 cn 分支确认无遗漏。
 
-## 5. PR #33 复用与修正
+```
+kind = classifyIdentifier(identifier)        # email/phone/userId
+assertAwsEmailOnly(env, kind)
+if env in {cn-prod, cn-stage}:               # ← 必须含 cn-stage
+    userId = resolveByPhone|Email|userId
+    acct = getUserById(env, userId); 打印 🎯 目标账号
+    if kind == phone: assertPhoneMatch(...)
+else (stage/prod):
+    userId = resolveUserId(email) via SSH 隧道
+    打印 🎯 目标账号(email + userId)            # ← R1：AWS 也要回显
+```
+T2/T3/T5 全部依赖此函数（T1 先行）。
 
-PR #33（`feat/entitlement-cn-prod-phone-userId`）是好基础（entitlement 接 cn-prod + 抽 `resolveTargetUser`），但：
-1. 从 0.8.0 前分支拉出 → CONFLICTING；`resolveTargetUser` 只判 cn-prod 漏 cn-stage。
-2. PR 描述谎称 grant-balance 已支持手机号（实测 email-only）。
+## 5. ban/unban 鉴权设计
 
-**处理**：本分支 `feat/admin-cli-4env` 从 main(0.8.0) 起，重新落地 #33 的 entitlement 改动 + `resolveTargetUser`（含 cn-stage）+ grant-balance 接入 + 新增 account 命令。完成后关闭 #33 或将其重定向到本分支，并改正描述。
+- M2M token 无 user_id → 调 ban 404。须 **admin 用户**(role=ADMIN) **password grant**。
+- **复用 generate-test-token 已验证的 per-env public ROPC client**（修正 r1-HIGH-2，原 spec 的 `agent-portal-bc0osnsd` 作废）：
+  - stage `commerce-cli-stage-ihbbwplz` / prod `commerce-cli-ecs-pro-i2r5of1h` / cn-prod `dev-skill-cli-cn-pro-acvkmcuq` / cn-stage `dev-skill-cli-cn-sta-3dvsxzdo`。
+- userId 解析仍走 §4 `resolveTargetUser`（M2M lookup）；**仅最后 ban/unban 调用换 admin-用户 token**（无 chicken-and-egg，r1 已确认）。
+- 新增 `getAdminUserToken(env)`：读 admin email/password → password-grant → curl `oauth/token`。**独立缓存**，不复用 `billing-http.tokenCache`（M2M 缓存），避免冲突（R2）。
+- 新增 `callUserAuthAsAdmin(env, method, path, body)`：base=`USER_AUTH_URLS[env]` + admin-用户 bearer。当前仅有 `callBilling`/`callSkills`，无 user-auth helper（R4）。
+
+### admin 账号凭证（OPEN-1，部分解决）
+- **cn-prod 已确认可取**：1P item `okshqmbbtu4oes6jhjiz6byojm`（"user-auth cn-prod admin (seed password)"）→ username `admin@optima.chat` + password，经 `op.exe`（已登录）。
+- **分发性问题**：1P/op.exe 是个人凭证源，CLI 是团队共享工具 → 运行时应从 **Infisical** 读 admin password（与 M2M secret 同模式）：AWS 三环境 → AWS Infisical 对应 env；cn-stage → cn Infisical staging（访问路径已通，见 R3）；cn-prod 值可从上述 1P 灌入 Infisical。
+- **剩余 OPEN-1**：stage/prod/cn-stage 是否已有 role=ADMIN 账号？只有 cn-prod 确认存在。需用户确认 / 发现 / 创建 + 定 Infisical key 落点。
 
 ## 6. 验收标准
+- `npm run build`（tsc）绿；repo 既有 lint/test 通过。
+- 单测：classify/assertPhoneMatch/assertAwsEmailOnly 保持；新增 `resolveTargetUser` 的 cn-stage 路由用例、`getAdminUserToken` 缓存隔离用例（mock）。
+- 各命令 ×4 环境 `--help` 正确。
+- T0 真实只读复核 6 类端点 ×相关环境（非 404/200）。
+- `account status <真实用户>` 4 环境各跑一次（只读）；ban/unban 在 stage/cn-stage 用测试账号实跑闭环；prod/cn-prod 仅用户授权下。
+- 向后兼容 `--email`。
 
-- `npm run build`（tsc）+ black/ruff 不适用（TS 项目，按 repo 既有 lint）。
-- 单测：classify/assertPhoneMatch/assertAwsEmailOnly 保持通过；新增 resolveTargetUser cn-stage 路由测试、ban token 路径测试（mock）。
-- 每命令 × 4 环境的 `--help` 正确显示 identifier 形态与 env 列表。
-- 真实只读验证（impl 阶段）：4 环境各跑一次 `account status <真实用户>`，确认解析+读取正确；ban/unban 在 stage/cn-stage 用测试账号实跑闭环（prod/cn-prod 仅在用户授权下）。
-- 向后兼容：`--email` 别名仍可用。
+## 7. 任务分解
+- **T0**：逐环境真实请求复核 6 类端点（含 membership-status on AWS、credits 余额读取候选）。
+- **T1**：从 main 抽 `resolveTargetUser`（含 cn-stage）+ 单测。（被 T2/T3/T5 依赖）
+- **T2**：grant-balance 接 `resolveTargetUser`（identifier + 手机号）。依赖 T1。
+- **T3**：entitlement grant/list/revoke 落地（cn-prod+cn-stage，基于 main 抽取）。依赖 T1。
+- **T4**：`optima-account status`（membership-status + entitlements + 账号状态 + credits 余额聚合，只读）。依赖 T1。
+- **T5**：`getAdminUserToken` + `callUserAuthAsAdmin` + `optima-account ban/unban`（含 AWS 反查回显）。依赖 T1 + OPEN-1。
+- **T6**：SKILL.md/README/bin 注册/help 同步 4 环境。
+- **T7**：final review + 真实环境验证 + 处理 PR #33（关闭或重定向并改正描述）。
 
-## 7. 任务分解（plan 阶段细化）
-
-- T1：`resolveTargetUser` 补 cn-stage（修 #33 走偏）+ 单测。
-- T2：grant-balance 接 `resolveTargetUser`（位置 identifier + 手机号）。
-- T3：entitlement grant/list/revoke 落地（#33 的改动，基于 0.8.0）。
-- T4：`optima-account status`（membership-status + entitlements 聚合，只读）。
-- T5：`getAdminUserToken` + `optima-account ban/unban`（依赖 OPEN-1）。
-- T6：skill SKILL.md / README / bin 注册 / help 文案同步 4 环境。
-- T7：final review + 真实环境验证。
-
-## OPEN ITEMS 汇总
-- **OPEN-1**：stage/prod/cn-stage 的 admin 用户凭证位置（阻塞 T5）。
-- **OPEN-2**：命令面——account 子命令聚合 vs 独立 bin（§2 备选）。
-- **OPEN-3**：credits 是否纳入 `account status` 余额展示（grant-balance 只授予，状态查询要不要顺带显示 credits 余额）。
+## OPEN ITEMS
+- **OPEN-1（部分）**：stage/prod/cn-stage 的 admin 账号是否存在 + admin password 落 Infisical 的 key 名。阻塞 T5。
+- **OPEN-4（验证项）**：membership-status 经 callBilling+M2M 在 AWS 是否可读；credits 余额的 M2M 读取端点（T0 解决）。
+- ~~OPEN-2~~ 已定：`optima-account` 聚合。
+- ~~OPEN-3~~ 已定：status 含 credits 余额。
