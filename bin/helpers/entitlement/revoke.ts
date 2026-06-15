@@ -1,9 +1,9 @@
-import { callBilling, validateEnv } from '../billing-http';
+import { callBilling, validateEnvCnProd } from '../billing-http';
 import { confirmIfProd } from '../confirm-prompt';
-import { getInfisicalConfig, getInfisicalToken, resolveUserId } from '../db-utils';
+import { resolveTargetUser } from '../grant-subscription';
 
 interface RevokeArgs {
-  email: string;
+  identifier: string;
   productKey: string;
   reason: string;
   yes: boolean;
@@ -19,16 +19,16 @@ interface EntitlementRow {
 
 function parseArgs(argv: string[]): RevokeArgs {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    console.log(`Usage: optima-entitlement revoke --email <user> --product-key <slug> --reason "..." [options]
+    console.log(`Usage: optima-entitlement revoke <email|phone|userId> --product-key <slug> --reason "..." [options]
 
 Required:
-  --email <user-email>             Resolved to userId via user-auth DB
+  <email|phone|userId>             Target user. phone/userId only on cn-prod (AWS resolves email only).
   --product-key <productKey>
   --reason "..."                   Required by billing (400 otherwise); stored on entitlement.refundReason
 
 Optional:
-  --yes                            Skip prod confirmation prompt (no-op on stage)
-  --env stage|prod                 (default: stage)
+  --yes                            Skip prod confirmation prompt (no-op on stage / cn-prod)
+  --env stage|prod|cn-prod         (default: stage)
 
 Refuses non-ADMIN_GRANT sources (PAYMENT, PARTNER) with source-specific
 error pointing to the right reversal flow.`);
@@ -39,15 +39,18 @@ error pointing to the right reversal flow.`);
     const a = argv[i];
     const next = argv[i + 1];
     switch (a) {
-      case '--email': out.email = next; i++; break;
+      case '--email': out.identifier = next; i++; break; // back-compat alias for the positional identifier
       case '--product-key': out.productKey = next; i++; break;
       case '--reason': out.reason = next; i++; break;
       case '--yes': out.yes = true; break;
       case '--env': out.env = next; i++; break;
-      default: throw new Error(`Unknown arg: ${a}`);
+      default:
+        if (a.startsWith('--')) throw new Error(`Unknown arg: ${a}`);
+        if (out.identifier) throw new Error(`Unexpected positional arg: ${a} (identifier already set to ${out.identifier})`);
+        out.identifier = a;
     }
   }
-  if (!out.email) throw new Error('--email required');
+  if (!out.identifier) throw new Error('target user required (<email|phone|userId> positional, or --email)');
   if (!out.productKey) throw new Error('--product-key required');
   if (!out.reason) throw new Error('--reason required (billing returns 400 otherwise)');
   return out as RevokeArgs;
@@ -59,11 +62,9 @@ const PARTNER_REFUSAL = `refusing to revoke a PARTNER-source entitlement via CLI
 
 export async function runRevoke(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
-  validateEnv(args.env);
+  validateEnvCnProd(args.env);
 
-  const cfg = getInfisicalConfig();
-  const token = getInfisicalToken(cfg);
-  const userId = await resolveUserId(args.email, args.env, cfg, token);
+  const { userId } = await resolveTargetUser(args.env, args.identifier);
 
   // Step 1: Fetch user's entitlements
   const listRes = await callBilling<{ entitlements: EntitlementRow[] }>(
@@ -78,10 +79,10 @@ export async function runRevoke(argv: string[]): Promise<void> {
 
   // Step 3: Validate count (partial unique index enforces ≤1 ACTIVE)
   if (matches.length === 0) {
-    throw new Error(`no active entitlement for (user=${args.email}, product=${args.productKey}) on ${args.env}`);
+    throw new Error(`no active entitlement for (user=${args.identifier}, product=${args.productKey}) on ${args.env}`);
   }
   if (matches.length > 1) {
-    throw new Error(`unexpected: ${matches.length} ACTIVE entitlements for (user, product) — partial unique constraint should prevent this. Inspect with: optima-entitlement list --email ${args.email}`);
+    throw new Error(`unexpected: ${matches.length} ACTIVE entitlements for (user, product) — partial unique constraint should prevent this. Inspect with: optima-entitlement list ${args.identifier}`);
   }
   const target = matches[0];
 
@@ -92,7 +93,7 @@ export async function runRevoke(argv: string[]): Promise<void> {
 
   await confirmIfProd(
     args.env,
-    `Action: REVOKE entitlement ${target.id} (productKey=${target.productKey}) for user ${args.email} (userId=${userId}) on ${args.env.toUpperCase()}\nReason: ${args.reason}`,
+    `Action: REVOKE entitlement ${target.id} (productKey=${target.productKey}) for ${args.identifier} (userId=${userId}) on ${args.env.toUpperCase()}\nReason: ${args.reason}`,
     args.yes,
   );
 
@@ -105,7 +106,7 @@ export async function runRevoke(argv: string[]): Promise<void> {
   // this branch only ever runs for ADMIN_GRANT (priceCents=0) — Stripe
   // refund path in billing (admin-products.ts:296-307) is gated on
   // source=PAYMENT and won't trigger here.
-  console.log(`\n♻️  Revoking entitlement ${target.id} for ${args.email}...`);
+  console.log(`\n♻️  Revoking entitlement ${target.id} for ${args.identifier}...`);
   const res = await callBilling(args.env, 'POST', '/api/billing/admin/refund-entitlement', {
     entitlementId: target.id,
     refundReason: args.reason,
