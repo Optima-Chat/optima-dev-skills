@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 import { fetchInfisicalSecret } from './infisical-secrets';
-import { getInfisicalConfig, getInfisicalToken, getCnInfisicalToken, getCnSecrets } from './db-utils';
+import { getInfisicalConfig, getInfisicalToken, getCnInfisicalToken, getCnSecrets, resolveUserId } from './db-utils';
 
 const USER_AUTH_URLS: Record<string, string> = {
   stage: 'https://auth.stage.optima.onl',

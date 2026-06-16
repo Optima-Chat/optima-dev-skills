@@ -1,9 +1,10 @@
 import * as readline from 'readline';
 
 /**
- * On a production env (prod / cn-prod — both serve real users), print the
- * resolved action and require typing "yes" to proceed. No-op on stage /
- * cn-stage or when --yes was passed. Exits 1 if user declines.
+ * On a production env, print the resolved action and require typing "yes" to
+ * proceed. Both AWS `prod` and Aliyun `cn-prod` are production — cn-prod must
+ * gate identically or the cn rollout silently loses the prod safety prompt.
+ * No-op on stage / cn-stage or when --yes was passed. Exits 1 if user declines.
  */
 const PROD_ENVS = new Set(['prod', 'cn-prod']);
 

@@ -1,4 +1,4 @@
-import { callBilling, validateEnv } from '../billing-http';
+import { callBilling, validateEnvCnProd } from '../billing-http';
 import { confirmIfProd } from '../confirm-prompt';
 
 interface DisableArgs {
@@ -15,7 +15,7 @@ Required:
   --code <CODE>
 
 Optional:
-  --env stage|prod         (default: stage)
+  --env stage|prod|cn-prod|cn-stage  (default: stage)
   --yes                    Skip prod confirmation`);
     process.exit(0);
   }
@@ -36,7 +36,7 @@ Optional:
 
 export async function runDisable(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
-  validateEnv(args.env);
+  validateEnvCnProd(args.env);
   await confirmIfProd(args.env, `Disable discount code ${args.code.toUpperCase()}`, args.yes);
   const res = await callBilling(args.env, 'PATCH', `/api/billing/admin/discount-codes/${encodeURIComponent(args.code)}`, { status: 'DISABLED' });
   console.log(`✓ Disabled (HTTP ${res.status}):`);

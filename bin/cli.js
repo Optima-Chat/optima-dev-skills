@@ -36,7 +36,7 @@ switch (command) {
     log('  optima-generate-test-token [--env production]        Generate test token', 'cyan');
     log('  optima-grant-balance <email> --amount <usd> [--env]  Grant USD wallet balance', 'cyan');
     log('  optima-grant-subscription <email|phone|userId> --plan <p> [--env] Grant subscription', 'cyan');
-    log('  /logs <service> [lines] [env]                        View service logs (skill)', 'cyan');
+    log('  optima-logs <service> [--env] [--since] [--grep] [-n]  View logs (cn=SLS 直连/aws=CloudWatch)', 'cyan');
     log('  /restart-ecs <service> [env]                         Restart ECS service (skill)', 'cyan');
 
     log('\nSupported Services:', 'yellow');

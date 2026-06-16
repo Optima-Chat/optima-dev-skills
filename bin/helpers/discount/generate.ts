@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { callBilling, validateEnv } from '../billing-http';
+import { callBilling, validateEnvCnProd } from '../billing-http';
 import { confirmIfProd } from '../confirm-prompt';
 
 interface GenArgs {
@@ -35,7 +35,7 @@ Optional:
   --products <a,b,...>     Limit to these productKeys
   --starts <date>          Valid-from (YYYY-MM-DD or ISO)
   --ends <date>            Valid-until
-  --env stage|prod         (default: stage)
+  --env stage|prod|cn-prod|cn-stage  (default: stage)
   --yes                    Skip prod confirmation`);
     process.exit(0);
   }
@@ -63,7 +63,7 @@ Optional:
 
 export async function runGenerate(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
-  validateEnv(args.env);
+  validateEnvCnProd(args.env);
   await confirmIfProd(args.env, `Generate ${args.count} unique discount codes (${args.percentOff}% off, campaign ${args.campaign})`, args.yes);
 
   const body: Record<string, unknown> = { count: args.count, percentOff: args.percentOff, campaign: args.campaign };
