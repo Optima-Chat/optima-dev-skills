@@ -1,6 +1,6 @@
 # SPEC — dev-skills 运营 admin CLI 4-环境统一 + 账号禁用
 
-> 状态：DRAFT v2（已过 fresh-agent review r1 + 用户 open 答复；待 review r2）
+> 状态：FINAL（r1+r2 fresh-agent review 已过；OPEN-1/2/3/5 闭环，OPEN-4 留 T0 验证）
 > 作者：本次 session · 日期：2026-06-16
 > 目标来源（用户原话，2026-06-15）："4个环境（stage, prod, cn-stage, cn-prod）的 grant 和 entitlement 的授予和撤销，以及状态查询。另外加一个账号禁用和恢复。同时支持手机号和邮箱。"
 > 用户锁定：subscription=授予+查询(无撤销)；entitlement=授予+撤销+查询；credits=授予(修手机号)；ban/unban=4环境(admin-用户凭证)。命令面=`optima-account status|ban|unban` 聚合。status 含 credits 余额。
