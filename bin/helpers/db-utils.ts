@@ -81,18 +81,27 @@ export function getInfisicalConfig(): InfisicalConfig {
 }
 
 export function getInfisicalToken(config: InfisicalConfig): string {
-  const response = execSync(
-    `curl -s -X POST "${config.url}/api/v1/auth/universal-auth/login" -H "Content-Type: application/json" -d '{"clientId": "${config.clientId}", "clientSecret": "${config.clientSecret}"}'`,
-    { encoding: 'utf-8' }
-  );
+  // execFileSync (no shell): on Windows cmd.exe single quotes are literal, so a
+  // shell-built `-d '{...}'` body splits on spaces and curl sends garbage — and the
+  // failing command (with the client secret) gets echoed into the error. Array args
+  // bypass the shell entirely.
+  const response = execFileSync('curl', [
+    '-s', '-X', 'POST',
+    `${config.url}/api/v1/auth/universal-auth/login`,
+    '-H', 'Content-Type: application/json',
+    '-d', JSON.stringify({ clientId: config.clientId, clientSecret: config.clientSecret }),
+  ], { encoding: 'utf-8' });
   return JSON.parse(response).accessToken;
 }
 
 export function getInfisicalSecrets(config: InfisicalConfig, token: string, environment: string, secretPath: string): Record<string, string> {
-  const response = execSync(
-    `curl -s "${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${secretPath}" -H "Authorization: Bearer ${token}"`,
-    { encoding: 'utf-8' }
-  );
+  // execFileSync (no shell): the '&' between query params is a command separator
+  // under cmd.exe and would truncate the URL.
+  const response = execFileSync('curl', [
+    '-s',
+    `${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${secretPath}`,
+    '-H', `Authorization: Bearer ${token}`,
+  ], { encoding: 'utf-8' });
   const data = JSON.parse(response);
   const secrets: Record<string, string> = {};
   for (const secret of data.secrets || []) {
@@ -271,11 +280,14 @@ function sleepSync(ms: number): void {
 }
 
 function assertSSMPrereqs(): void {
+  // `command -v` is a POSIX shell builtin and doesn't exist under cmd.exe, so on
+  // Windows it false-negatives even when the binary is installed. Use `where` there.
+  const probe = process.platform === 'win32' ? 'where' : 'command -v';
   for (const [bin, hint] of [
     ['session-manager-plugin', 'https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html'],
     ['aws', 'AWS CLI v2: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html'],
   ] as const) {
-    try { execSync(`command -v ${bin}`, { stdio: 'ignore' }); }
+    try { execSync(`${probe} ${bin}`, { stdio: 'ignore' }); }
     catch { throw new Error(`${bin} not found — required for the SSM DB tunnel. Install: ${hint}\n(or set OPTIMA_DB_TUNNEL=ssh to fall back to the legacy SSH tunnel)`); }
   }
 }
