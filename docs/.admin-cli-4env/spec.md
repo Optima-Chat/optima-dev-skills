@@ -80,7 +80,7 @@ T2/T3/T5 全部依赖此函数（T1 先行）。
 ### admin 账号凭证（OPEN-1，已实测解决）
 - **4 环境统一一套凭证**：`admin@optima.chat` + **同一个 seed 密码**（1P item `okshqmbbtu4oes6jhjiz6byojm` "user-auth cn-prod admin (seed password)"；亦见 1P "Optima-admin" item，URL=三个 admin portal）。**已实测**：该密码在 stage / prod / cn-prod / cn-stage 的 `oauth/token` password grant 全部返回 `role=admin` token（配对应 ROPC client，见上）。所有 4 环境 user-auth 均存在 `admin@optima.chat`（role=ADMIN, has_pw=true）。
 - 说明：admin 账号日常虽走邮箱登录，但 DB seed 时种了密码（故可 ROPC）；1P item 里的 `auth-cn.optima.chat` URL 已废（迁 yzsgo.com），仅 item 元数据陈旧，凭证本身有效；`auth.yzsgo.com/` 返回的 `{"service":"user-auth",...}` 是根路径 banner，非异常。
-- **分发性（OPEN-1 已定）**：CLI 共享工具运行时从 **Infisical** 读该密码——落点 **`/shared-secrets/ops-credentials`**（新建的泛化运营凭证桶，区别于装 M2M 的 `oauth-clients`），键 `USER_AUTH_ADMIN_EMAIL` / `USER_AUTH_ADMIN_PASSWORD`。AWS Infisical 存一份（覆 stage/prod），cn Infisical 存一份（覆 cn-prod/cn-stage）；账密 4 环境相同，值从 1P 灌入。`getAdminUserToken(env)` 用 `fetchInfisicalSecret`(AWS) / cn Infisical(cn) 读，配各环境 ROPC client password-grant。
+- **分发性（OPEN-1 已定）**：CLI 共享工具运行时从 **Infisical** 读该密码——落点 **`/shared-secrets/credentials`**（泛化凭证桶，区别于装 M2M 的 `oauth-clients`；已配好 stage/prod，键 USER_AUTH_ADMIN_EMAIL=admin@optima.chat / USER_AUTH_ADMIN_PASSWORD），键 `USER_AUTH_ADMIN_EMAIL` / `USER_AUTH_ADMIN_PASSWORD`。AWS Infisical 存一份（覆 stage/prod），cn Infisical 存一份（覆 cn-prod/cn-stage）；账密 4 环境相同，值从 1P 灌入。`getAdminUserToken(env)` 用 `fetchInfisicalSecret`(AWS) / cn Infisical(cn) 读，配各环境 ROPC client password-grant。
 
 ## 6. 验收标准
 - `npm run build`（tsc）绿；repo 既有 lint/test 通过。
@@ -96,7 +96,7 @@ T2/T3/T5 全部依赖此函数（T1 先行）。
 - **T2**：grant-balance 接 `resolveTargetUser`（identifier + 手机号）。依赖 T1。
 - **T3**：entitlement grant/list/revoke 落地（cn-prod+cn-stage，基于 main 抽取）。依赖 T1。
 - **T4**：`optima-account status`（membership-status + entitlements + 账号状态 + credits 余额聚合，只读）。依赖 T1。
-- **T5**：`getAdminUserToken`（读 `/shared-secrets/ops-credentials`，独立缓存）+ `callUserAuthAsAdmin` + `optima-account ban/unban`（B1：仅 is_active；含 AWS 反查回显；help 注明非即时踢会话）。依赖 T1 + Infisical 灌值。
+- **T5**：`getAdminUserToken`（读 `/shared-secrets/credentials`，独立缓存）+ `callUserAuthAsAdmin` + `optima-account ban/unban`（B1：仅 is_active；含 AWS 反查回显；help 注明非即时踢会话）。依赖 T1 + Infisical 灌值。
 - **T6**：SKILL.md/README/bin 注册/help 同步 4 环境。
 - **T7**：final review + 真实环境验证 + **处理 PR #33（关闭并改正描述）**。
 
@@ -104,6 +104,6 @@ T2/T3/T5 全部依赖此函数（T1 先行）。
 
 ## OPEN ITEMS
 - **OPEN-4（验证项，T0 解决）**：membership-status 经 callBilling+M2M 在 AWS 是否可读；credits 余额的 M2M 读取端点（r2 已初验：无 M2M 读他人余额端点 → status 的 credits 部分大概率降级为"不可读"提示，不阻塞）。
-- ~~OPEN-1~~ 已定：admin 凭证 `/shared-secrets/ops-credentials`（USER_AUTH_ADMIN_EMAIL/PASSWORD），4 环境统一 admin@optima.chat+seed pw（实测可用）。
+- ~~OPEN-1~~ 已定：admin 凭证 `/shared-secrets/credentials`（USER_AUTH_ADMIN_EMAIL/PASSWORD），4 环境统一 admin@optima.chat+seed pw（实测可用）。
 - ~~OPEN-2~~ 已定：`optima-account` 聚合。 ~~OPEN-3~~ 已定：status 含 credits 余额。
 - ~~OPEN-5~~ 已定：B1——ban 仅 is_active，不链 revoke-user（桩无效）；即时踢列 user-auth 后续。
