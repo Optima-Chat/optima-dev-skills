@@ -427,6 +427,20 @@ export function ensureTunnel(dbHost: string, via: 'aws' | 'cn-buildbox' = 'aws')
 
 // ─── psql ───────────────────────────────────────────────────────────────────
 function findPsqlPath(): string {
+  if (process.platform === 'win32') {
+    // `which psql` returns an MSYS path (/c/Program Files/...) under Git Bash, which
+    // cmd.exe (where Node spawns) can't resolve. Probe the Windows install dir, then `where`.
+    for (const v of ['18', '17', '16', '15', '14']) {
+      const p = `C:\\Program Files\\PostgreSQL\\${v}\\bin\\psql.exe`;
+      if (fs.existsSync(p)) return p;
+    }
+    try {
+      const result = execSync('where psql', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
+      const first = result.split(/\r?\n/).map((l) => l.trim()).find(Boolean);
+      if (first) return first;
+    } catch { /* fall through to error */ }
+    throw new Error('PostgreSQL client (psql.exe) not found. Install PostgreSQL or add its bin to PATH.');
+  }
   try {
     const result = execSync('which psql', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
     if (result.trim()) return result.trim();
@@ -438,10 +452,13 @@ function findPsqlPath(): string {
 
 export function queryDB(conn: DBConnection, sql: string): string {
   const psql = findPsqlPath();
-  return execSync(`"${psql}" -h ${conn.host} -p ${conn.port} -U ${conn.user} -d ${conn.database} -t -A --quiet -c "${sql.replace(/"/g, '\\"')}"`, {
-    encoding: 'utf-8',
-    env: { ...process.env, PGPASSWORD: conn.password },
-  }).trim();
+  // execFileSync (no shell): cmd.exe can't run the quoted psql path reliably and a
+  // `-c "<sql>"` shell string truncates multi-line SQL on Windows. Array args bypass
+  // the shell — the full (possibly multi-statement) SQL reaches psql intact.
+  return execFileSync(psql, [
+    '-h', conn.host, '-p', String(conn.port), '-U', conn.user, '-d', conn.database,
+    '-t', '-A', '--quiet', '-c', sql,
+  ], { encoding: 'utf-8', env: { ...process.env, PGPASSWORD: conn.password } }).trim();
 }
 
 // ─── High-level connection helpers ──────────────────────────────────────────

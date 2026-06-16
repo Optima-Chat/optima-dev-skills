@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import { fetchInfisicalSecret } from './infisical-secrets';
 import { getInfisicalConfig, getInfisicalToken, getCnInfisicalToken, getCnSecrets, resolveUserId } from './db-utils';
 
@@ -137,10 +137,15 @@ export function getServiceToken(env: string): string {
 
   const scopeParam = isCn ? `&scope=${encodeURIComponent(CN_PROD_TOKEN_SCOPE)}` : '';
   const body = `grant_type=client_credentials&client_id=${encodeURIComponent(clientId)}&client_secret=${encodeURIComponent(clientSecret)}${scopeParam}`;
-  const response = execSync(
-    `curl -s -X POST '${authUrl}/api/v1/oauth/token' -H 'Content-Type: application/x-www-form-urlencoded' -d '${body}'`,
-    { encoding: 'utf-8' },
-  );
+  // execFileSync (no shell): the body's '&' separators are command separators under
+  // cmd.exe and single quotes are literal there — a shell string both breaks the
+  // request and echoes the client_secret into the error. Array args bypass the shell.
+  const response = execFileSync('curl', [
+    '-s', '-X', 'POST',
+    `${authUrl}/api/v1/oauth/token`,
+    '-H', 'Content-Type: application/x-www-form-urlencoded',
+    '-d', body,
+  ], { encoding: 'utf-8' });
 
   let parsed: { access_token?: string; error?: string };
   try {
