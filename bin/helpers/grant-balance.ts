@@ -5,16 +5,19 @@
 // 改调 billing 服务态端点（grantCredits → bonus 积分）。
 // ⚠️ 语义变化：旧 wallet granted 无期限；积分 bonus 桶标准 30 天有效期。
 import { randomUUID } from 'crypto';
-import { getInfisicalConfig, getInfisicalToken, resolveUserId } from './db-utils';
-import { callBilling, resolveUserIdByEmail, validateEnvCnProd } from './billing-http';
+import { callBilling, validateEnvCnProd } from './billing-http';
+import { resolveTargetUser } from './grant-subscription';
 
-function parseArgs(args: string[]): { email: string; amountUsd: number; description: string | null; env: string } {
+function parseArgs(args: string[]): { identifier: string; amountUsd: number; description: string | null; env: string } {
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
-    console.log(`Usage: optima-grant-balance <email> --amount <usd> [options]
+    console.log(`Usage: optima-grant-balance <email|phone|userId> --amount <usd> [options]
 
 Grant credits to a user (bonus bucket, expires in 30 days).
 Used for promotional grants, compensation, referral rewards, etc.
 $1 = 700 credits (P15 unified ledger; the USD wallet is retired).
+
+Target user: <email|phone|userId> (positional). phone/userId only on
+cn-prod / cn-stage; AWS stage/prod resolve email only.
 
 Options:
   --amount <usd>        USD amount to grant (required, e.g. 5 for $5.00 = 3500 credits)
@@ -24,13 +27,12 @@ Options:
 
 Examples:
   optima-grant-balance user@example.com --amount 5 --env prod
-  optima-grant-balance user@example.com --amount 10 --description "Service outage compensation"
-  optima-grant-balance user@example.com --amount 1 --env cn-prod   # ¥-priced env, still USD input ($1 = 700 credits)
+  optima-grant-balance 18898654855 --amount 1 --env cn-prod   # 手机号（cn 用户多为手机号注册）
   optima-grant-balance user@example.com --amount 1 --env cn-stage  # 阿里云预发`);
     process.exit(0);
   }
 
-  const email = args[0];
+  const identifier = args[0];
   let amountUsd = 0;
   let description: string | null = null;
   let env = 'stage';
@@ -47,25 +49,19 @@ Examples:
   }
   validateEnvCnProd(env);
 
-  return { email, amountUsd, description, env };
+  return { identifier, amountUsd, description, env };
 }
 
 async function main() {
-  const { email, amountUsd, description, env } = parseArgs(process.argv.slice(2));
+  const { identifier, amountUsd, description, env } = parseArgs(process.argv.slice(2));
 
-  console.log(`\n🎁 Granting $${amountUsd.toFixed(2)} (${Math.round(amountUsd * 700)} credits) to ${email} [${env.toUpperCase()}]\n`);
+  console.log(`\n🎁 Granting $${amountUsd.toFixed(2)} (${Math.round(amountUsd * 700)} credits) to ${identifier} [${env.toUpperCase()}]\n`);
   if (description) console.log(`   Reason: ${description}`);
 
-  // cn-prod / cn-stage have no SSH tunnel into the Aliyun RDS — resolve via
-  // user-auth's internal lookup API instead of the direct SQL path.
-  let userId: string;
-  if (env === 'cn-prod' || env === 'cn-stage') {
-    userId = await resolveUserIdByEmail(env, email);
-  } else {
-    const infisicalConfig = getInfisicalConfig();
-    const token = getInfisicalToken(infisicalConfig);
-    userId = await resolveUserId(email, env, infisicalConfig, token);
-  }
+  // Shared resolver: classify→resolve→reverse-verify echo→phone-assert on cn
+  // (so phone/userId works for cn's phone-registered users, gateway#923);
+  // email-only via the RDS SSH tunnel on AWS.
+  const { userId } = await resolveTargetUser(env, identifier);
 
   // 幂等键 per-invocation 生成、callBilling 的 5xx retry 复用同 body —— 「已
   // commit 但响应 5xx」场景重试不双发（billing spec R2-M3）。
@@ -80,7 +76,7 @@ async function main() {
   );
 
   console.log(`✓ Granted ${body.credits} credits (lot ${body.lotId})`);
-  console.log(`\n✅ Done! ${email} received ${body.credits} bonus credits (expires in 30 days)\n`);
+  console.log(`\n✅ Done! ${identifier} received ${body.credits} bonus credits (expires in 30 days)\n`);
 }
 
 main().catch(error => {

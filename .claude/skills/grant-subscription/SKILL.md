@@ -13,11 +13,11 @@ allowed-tools: ["Bash"]
 **重要**：无论用户使用 `/grant-subscription` 命令还是直接请求开通会员，都应该使用 `optima-grant-subscription` CLI 工具：
 
 ```bash
-optima-grant-subscription <email> [options]
+optima-grant-subscription <email|phone|userId> [options]
 ```
 
 **为什么使用 CLI 工具**：
-- 自动通过 email 查找 userId（跨 user-auth 数据库）
+- 自动通过 email/手机号/userId 查找 userId（cn 用户多为手机号；执行前打印 🎯 目标账号反查）
 - 自动处理 SSH 隧道和数据库连接
 - 自动取消旧订阅、经 billing API supersede 旧授予（void 旧 subscription lot + 发新）
 - 自动按 plan 配置发放 subscription 积分（期末过期）和 token quota
@@ -60,10 +60,10 @@ optima-grant-subscription user@example.com --plan pro-cn --env cn-stage
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `<email>` | 用户邮箱（必填） | - |
+| `<email|phone|userId>` | 用户标识（必填；cn 支持手机号/userId） | - |
 | `--plan <id>` | 计划：trial, starter, pro, enterprise | pro |
 | `--months <n>` | 时长（月） | 1 |
-| `--env <env>` | 环境：stage, prod, cn-prod | stage |
+| `--env <env>` | 环境：stage, prod, cn-prod, cn-stage | stage |
 
 > **cn-prod（国内环境）**：plan 用 CNY 定价的 `-cn` 档（trial / starter-cn / pro-cn / enterprise-cn，默认 pro-cn）；裸 USD 档 id 会被客户端拒绝（防止给 CN 用户误赠 USD 档积分量）。email 查找走 user-auth internal lookup API（无 SSH 隧道）。
 
