@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 import { fetchInfisicalSecret } from './infisical-secrets';
-import { getInfisicalConfig, getInfisicalToken, getCnInfisicalToken, getCnSecrets } from './db-utils';
+import { getInfisicalConfig, getInfisicalToken, getCnInfisicalToken, getCnSecrets, resolveUserId } from './db-utils';
 
 const USER_AUTH_URLS: Record<string, string> = {
   stage: 'https://auth.stage.optima.onl',
@@ -290,6 +290,25 @@ export async function resolveUserIdByEmail(env: string, email: string): Promise<
   }
   console.log(`✓ Found user: ${parsed.user_id}`);
   return parsed.user_id;
+}
+
+/**
+ * Resolve email → userId across all envs, picking the path that exists for
+ * each cloud. AWS (stage/prod) reaches the database over the RDS SSH tunnel
+ * (db-utils.resolveUserId). cn-prod / cn-stage have no tunnel into the Aliyun
+ * VPC-internal RDS, so they resolve via user-auth's internal HTTP lookup
+ * (resolveUserIdByEmail) — the cn dev-skills token carries the
+ * internal:users:write scope that endpoint requires. Lets the entitlement
+ * subcommands support cn the same way grant-subscription already does, without
+ * each call site re-implementing the branch.
+ */
+export async function resolveUserIdByEmailAnyEnv(env: string, email: string): Promise<string> {
+  if (env === 'cn-prod' || env === 'cn-stage') {
+    return resolveUserIdByEmail(env, email);
+  }
+  const cfg = getInfisicalConfig();
+  const token = getInfisicalToken(cfg);
+  return resolveUserId(email, env, cfg, token);
 }
 
 /**

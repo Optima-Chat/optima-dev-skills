@@ -1,4 +1,4 @@
-import { callBilling, validateEnv } from '../billing-http';
+import { callBilling, validateEnvCnProd } from '../billing-http';
 import { confirmIfProd } from '../confirm-prompt';
 
 interface CreateArgs {
@@ -34,7 +34,7 @@ Optional:
   --ends <date>            Valid-until
   --max <N>                Max total redemptions (default: unlimited; 1 = single-use)
   --campaign <label>       Grouping label
-  --env stage|prod         (default: stage)
+  --env stage|prod|cn-prod|cn-stage  (default: stage)
   --yes                    Skip prod confirmation`);
     process.exit(0);
   }
@@ -62,7 +62,7 @@ Optional:
 
 export async function runCreate(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
-  validateEnv(args.env);
+  validateEnvCnProd(args.env);
   await confirmIfProd(args.env, `Create discount code ${args.code.toUpperCase()} (${args.percentOff}% off)`, args.yes);
 
   const body: Record<string, unknown> = { code: args.code, percentOff: args.percentOff };
