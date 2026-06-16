@@ -1,4 +1,4 @@
-import { callBilling, validateEnv } from '../billing-http';
+import { callBilling, validateEnvCnProd } from '../billing-http';
 
 interface ListArgs {
   campaign?: string;
@@ -15,7 +15,7 @@ Optional:
   --campaign <label>       Filter by campaign
   --code <CODE>            Filter by exact code
   --limit <N>              Max rows (default 500, max 1000)
-  --env stage|prod         (default: stage)`);
+  --env stage|prod|cn-prod|cn-stage  (default: stage)`);
     process.exit(0);
   }
   const out: Partial<ListArgs> = { env: 'stage' };
@@ -35,7 +35,7 @@ Optional:
 
 export async function runList(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
-  validateEnv(args.env);
+  validateEnvCnProd(args.env);
   const qs = new URLSearchParams();
   if (args.campaign) qs.set('campaign', args.campaign);
   if (args.code) qs.set('code', args.code);

@@ -1,5 +1,4 @@
-import { callBilling, validateEnv } from '../billing-http';
-import { getInfisicalConfig, getInfisicalToken, resolveUserId } from '../db-utils';
+import { callBilling, validateEnvCnProd, resolveUserIdByEmailAnyEnv } from '../billing-http';
 
 interface ListArgs {
   email: string;
@@ -14,7 +13,7 @@ Required:
   --email <user-email>             Resolved to userId via user-auth DB
 
 Optional:
-  --env stage|prod                 (default: stage)`);
+  --env stage|prod|cn-prod|cn-stage  (default: stage)`);
     process.exit(0);
   }
   const out: Partial<ListArgs> = { env: 'stage' };
@@ -42,11 +41,9 @@ interface EntitlementRow {
 
 export async function runList(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
-  validateEnv(args.env);
+  validateEnvCnProd(args.env);
 
-  const cfg = getInfisicalConfig();
-  const token = getInfisicalToken(cfg);
-  const userId = await resolveUserId(args.email, args.env, cfg, token);
+  const userId = await resolveUserIdByEmailAnyEnv(args.env, args.email);
 
   const res = await callBilling<{ entitlements: EntitlementRow[] }>(
     args.env,

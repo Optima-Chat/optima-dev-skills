@@ -1,6 +1,5 @@
-import { callBilling, validateEnv } from '../billing-http';
+import { callBilling, validateEnvCnProd, resolveUserIdByEmailAnyEnv } from '../billing-http';
 import { confirmIfProd } from '../confirm-prompt';
-import { getInfisicalConfig, getInfisicalToken, resolveUserId } from '../db-utils';
 
 interface RevokeArgs {
   email: string;
@@ -28,7 +27,7 @@ Required:
 
 Optional:
   --yes                            Skip prod confirmation prompt (no-op on stage)
-  --env stage|prod                 (default: stage)
+  --env stage|prod|cn-prod|cn-stage  (default: stage)
 
 Refuses non-ADMIN_GRANT sources (PAYMENT, PARTNER) with source-specific
 error pointing to the right reversal flow.`);
@@ -59,11 +58,9 @@ const PARTNER_REFUSAL = `refusing to revoke a PARTNER-source entitlement via CLI
 
 export async function runRevoke(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
-  validateEnv(args.env);
+  validateEnvCnProd(args.env);
 
-  const cfg = getInfisicalConfig();
-  const token = getInfisicalToken(cfg);
-  const userId = await resolveUserId(args.email, args.env, cfg, token);
+  const userId = await resolveUserIdByEmailAnyEnv(args.env, args.email);
 
   // Step 1: Fetch user's entitlements
   const listRes = await callBilling<{ entitlements: EntitlementRow[] }>(

@@ -106,6 +106,38 @@ test('restart-ecs skill documents current restartable ECS services', () => {
   }
 });
 
+test('entitlement + discount subcommands accept cn-prod / cn-stage (validateEnvCnProd)', () => {
+  // These commands reach billing/user-auth over HTTPS only — no AWS-RDS-tunnel
+  // dependency that would block cn — so they must validate with the cn-aware
+  // guard. A regression to the AWS-only validateEnv would silently drop cn
+  // support, the exact gap this alignment closes (cn-prod ↔ AWS stage/prod).
+  const cnCapableCommands = [
+    'bin/helpers/entitlement/grant.ts',
+    'bin/helpers/entitlement/list.ts',
+    'bin/helpers/entitlement/revoke.ts',
+    'bin/helpers/discount/create.ts',
+    'bin/helpers/discount/generate.ts',
+    'bin/helpers/discount/list.ts',
+    'bin/helpers/discount/disable.ts',
+  ];
+  for (const rel of cnCapableCommands) {
+    const source = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
+    assert.match(source, /validateEnvCnProd\(/, `${rel} must call validateEnvCnProd`);
+    assert.doesNotMatch(source, /\bvalidateEnv\(/, `${rel} must not use AWS-only validateEnv`);
+  }
+});
+
+test('confirmIfProd gates cn-prod as a production env', () => {
+  // cn-prod is production: it must trigger the same type-"yes" prompt as AWS
+  // prod, or the cn rollout silently loses the destructive-action safety gate.
+  const source = fs.readFileSync(path.join(repoRoot, 'bin/helpers/confirm-prompt.ts'), 'utf8');
+  const match = source.match(/const PROD_ENVS = new Set\(\[(.*?)\]\)/s);
+  assert.ok(match, 'Could not find PROD_ENVS set');
+  const prodEnvs = [...match[1].matchAll(/'([^']+)'/g)].map((item) => item[1]);
+  assert.ok(prodEnvs.includes('prod'), 'confirmIfProd must gate prod');
+  assert.ok(prodEnvs.includes('cn-prod'), 'confirmIfProd must gate cn-prod');
+});
+
 function parseObjectKeys(source, variableName) {
   const escapedName = variableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = source.match(new RegExp(`const ${escapedName} = \\{(.*?)\\n\\};`, 's'));
