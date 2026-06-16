@@ -5,6 +5,7 @@
   "main": "index.js",
   "bin": {
     "optima-dev-skills": "bin/cli.js",
+    "optima-account": "dist/bin/helpers/account.js",
     "optima-entitlement": "dist/bin/helpers/entitlement.js",
     "optima-generate-test-token": "dist/bin/helpers/generate-test-token.js",
     "optima-grant-balance": "dist/bin/helpers/grant-balance.js",

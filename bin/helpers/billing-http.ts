@@ -255,6 +255,111 @@ export async function callSkills<T = unknown>(
   return callService<T>(getSkillsUrl(env), env, method, path, body);
 }
 
+// ───── Admin-USER token (ROPC password grant) ───────────────────────────────
+// Distinct from getServiceToken (M2M client_credentials): user-auth's /admin/*
+// endpoints gate on get_current_admin_user — a real role=ADMIN *user* — which an
+// M2M token (no user_id) can't satisfy. So ban/unban mint a password-grant token
+// for the seeded admin account. Per-env ROPC client = the same public client
+// generate-test-token uses; admin email/password live in Infisical
+// /shared-secrets/credentials. Cached separately from the M2M tokenCache.
+const adminTokenCache: Record<string, string> = {};
+
+const ADMIN_ROPC_CLIENT: Record<string, string> = {
+  stage: 'commerce-cli-stage-ihbbwplz',
+  prod: 'commerce-cli-ecs-pro-i2r5of1h',
+  'cn-prod': 'dev-skill-cli-cn-pro-acvkmcuq',
+  'cn-stage': 'dev-skill-cli-cn-sta-3dvsxzdo',
+};
+
+const ADMIN_CREDS_PATH = '/shared-secrets/credentials';
+
+export async function getAdminUserToken(env: string): Promise<string> {
+  if (adminTokenCache[env]) return adminTokenCache[env];
+
+  let email: string;
+  let password: string;
+  if (env === 'cn-prod' || env === 'cn-stage') {
+    // cn Infisical (separate instance; needs INFISICAL_CN_EMAIL/PASSWORD at runtime).
+    const cnTok = getCnInfisicalToken();
+    const creds = getCnSecrets(cnTok, ADMIN_CREDS_PATH, false, env === 'cn-stage' ? 'staging' : 'prod');
+    email = creds['USER_AUTH_ADMIN_EMAIL'];
+    password = creds['USER_AUTH_ADMIN_PASSWORD'];
+  } else {
+    const cfg = getInfisicalConfig();
+    const tok = getInfisicalToken(cfg);
+    email = fetchInfisicalSecret(env, ADMIN_CREDS_PATH, 'USER_AUTH_ADMIN_EMAIL', cfg, tok);
+    password = fetchInfisicalSecret(env, ADMIN_CREDS_PATH, 'USER_AUTH_ADMIN_PASSWORD', cfg, tok);
+  }
+  if (!email || !password) {
+    throw new Error(`admin 凭证缺失（Infisical ${ADMIN_CREDS_PATH} 的 USER_AUTH_ADMIN_EMAIL/PASSWORD，env=${env}）`);
+  }
+
+  const clientId = ADMIN_ROPC_CLIENT[env];
+  const authUrl = USER_AUTH_URLS[env];
+  if (!clientId || !authUrl) throw new Error(`Unknown env: ${env}`);
+
+  // fetch (not execSync curl) so the password never lands in a shell command line.
+  const form = new URLSearchParams({
+    grant_type: 'password',
+    username: email,
+    password,
+    client_id: clientId,
+  });
+  const res = await fetch(`${authUrl}/api/v1/oauth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form,
+  });
+  const text = await res.text();
+  let parsed: { access_token?: string };
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`user-auth admin token endpoint returned non-JSON (${env}): ${text.slice(0, 200)}`);
+  }
+  if (!parsed.access_token) {
+    throw new Error(`admin-user token mint failed (${env}): ${text.slice(0, 200)}`);
+  }
+  adminTokenCache[env] = parsed.access_token;
+  return parsed.access_token;
+}
+
+/**
+ * Authenticated call to user-auth as the admin USER (role=ADMIN), for the
+ * /api/v1/admin/* endpoints that getServiceToken's M2M token can't reach
+ * (ban/unban). Mirrors callService's shape; single retry on 5xx.
+ */
+export async function callUserAuthAsAdmin<T = unknown>(
+  env: string,
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+  path: string,
+  body?: object,
+): Promise<ServiceResponse<T>> {
+  const authUrl = USER_AUTH_URLS[env];
+  if (!authUrl) throw new Error(`Unknown env: ${env}`);
+  const token = await getAdminUserToken(env);
+
+  const doFetch = async () => fetch(`${authUrl}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  let res = await doFetch();
+  if (res.status >= 500) res = await doFetch();
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(formatServiceError(res.status, res.statusText, text));
+  }
+  let parsed: T;
+  try {
+    parsed = text ? (JSON.parse(text) as T) : (undefined as unknown as T);
+  } catch {
+    throw new Error(`user-auth admin returned non-JSON 2xx body: ${text.slice(0, 200)}`);
+  }
+  return { status: res.status, body: parsed };
+}
+
 /**
  * Resolve a user's id by email via user-auth's internal lookup endpoint
  * (POST /api/v1/internal/users/lookup). cn-prod only: AWS envs resolve via
