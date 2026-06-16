@@ -64,15 +64,16 @@ export function assertAwsEmailOnly(env: string, kind: 'email' | 'phone' | 'userI
   }
 }
 
-// cn-prod sells the CNY-priced -cn plans (P12); the bare USD plan ids also
-// exist in the cn DB, so a per-env whitelist (not billing-side validation)
-// is what prevents accidentally granting a USD-priced plan to a CN user.
+// All envs use canonical plan ids (no market suffix). billing canonicalized
+// plan ids — dropped the `-cn` suffix; market is now carried by deployment-level
+// BILLING_MARKET + the plan's `currency` column, not the id (optima-billing#181).
+// cn envs additionally have the CN-only `free` tier. Per-env whitelist guards
+// against granting a plan absent in that env.
 const PLANS_BY_ENV: Record<string, string[]> = {
   stage: ['trial', 'starter', 'pro', 'enterprise'],
   prod: ['trial', 'starter', 'pro', 'enterprise'],
-  'cn-prod': ['trial', 'starter-cn', 'pro-cn', 'enterprise-cn'],
-  // cn-stage 卖同一套 CNY -cn plan（billing plan 目录与 cn-prod 一致）
-  'cn-stage': ['trial', 'starter-cn', 'pro-cn', 'enterprise-cn'],
+  'cn-prod': ['trial', 'starter', 'pro', 'enterprise', 'free'],
+  'cn-stage': ['trial', 'starter', 'pro', 'enterprise', 'free'],
 };
 
 function parseArgs(args: string[]): { identifier: string; plan: string; months: number; env: string } {
@@ -81,7 +82,8 @@ function parseArgs(args: string[]): { identifier: string; plan: string; months: 
 
 Options:
   --plan <id>       Plan: trial, starter, pro, enterprise (default: pro)
-                    cn-prod/cn-stage plans: trial, starter-cn, pro-cn, enterprise-cn (default: pro-cn)
+                    cn-prod/cn-stage additionally allow: free
+                    (legacy *-cn ids are accepted and normalized to canonical)
   --months <n>      Duration in months (default: 1)
   --env <env>       Environment: stage, prod, cn-prod, cn-stage (default: stage)
   -h, --help        Show this help`);
@@ -100,7 +102,10 @@ Options:
   }
 
   validateEnvCnProd(env);
-  plan = plan ?? (env === 'cn-prod' || env === 'cn-stage' ? 'pro-cn' : 'pro');
+  // billing canonicalized plan ids (dropped the -cn suffix, optima-billing#181).
+  // Default to canonical `pro`; accept legacy `*-cn` input (operator muscle
+  // memory) and normalize so it still resolves after the -cn rows are deleted.
+  plan = (plan ?? 'pro').replace(/-cn$/, '');
   const allowed = PLANS_BY_ENV[env];
   if (!allowed.includes(plan)) {
     console.error(`Unknown plan for ${env}: ${plan}. Available: ${allowed.join(', ')}`);
