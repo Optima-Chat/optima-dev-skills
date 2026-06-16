@@ -1,20 +1,20 @@
-import { callBilling, validateEnv } from '../billing-http';
-import { getInfisicalConfig, getInfisicalToken, resolveUserId } from '../db-utils';
+import { callBilling, validateEnvCnProd } from '../billing-http';
+import { resolveTargetUser } from '../grant-subscription';
 
 interface ListArgs {
-  email: string;
+  identifier: string;
   env: string;
 }
 
 function parseArgs(argv: string[]): ListArgs {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    console.log(`Usage: optima-entitlement list --email <user-email> [options]
+    console.log(`Usage: optima-entitlement list <email|phone|userId> [options]
 
 Required:
-  --email <user-email>             Resolved to userId via user-auth DB
+  <email|phone|userId>             Target user. phone/userId only on cn-prod / cn-stage (AWS resolves email only).
 
 Optional:
-  --env stage|prod                 (default: stage)`);
+  --env stage|prod|cn-prod|cn-stage   (default: stage)`);
     process.exit(0);
   }
   const out: Partial<ListArgs> = { env: 'stage' };
@@ -22,12 +22,15 @@ Optional:
     const a = argv[i];
     const next = argv[i + 1];
     switch (a) {
-      case '--email': out.email = next; i++; break;
+      case '--email': out.identifier = next; i++; break; // back-compat alias for the positional identifier
       case '--env': out.env = next; i++; break;
-      default: throw new Error(`Unknown arg: ${a}`);
+      default:
+        if (a.startsWith('--')) throw new Error(`Unknown arg: ${a}`);
+        if (out.identifier) throw new Error(`Unexpected positional arg: ${a} (identifier already set to ${out.identifier})`);
+        out.identifier = a;
     }
   }
-  if (!out.email) throw new Error('--email required');
+  if (!out.identifier) throw new Error('target user required (<email|phone|userId> positional, or --email)');
   return out as ListArgs;
 }
 
@@ -42,11 +45,9 @@ interface EntitlementRow {
 
 export async function runList(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
-  validateEnv(args.env);
+  validateEnvCnProd(args.env);
 
-  const cfg = getInfisicalConfig();
-  const token = getInfisicalToken(cfg);
-  const userId = await resolveUserId(args.email, args.env, cfg, token);
+  const { userId } = await resolveTargetUser(args.env, args.identifier);
 
   const res = await callBilling<{ entitlements: EntitlementRow[] }>(
     args.env,
@@ -56,12 +57,12 @@ export async function runList(argv: string[]): Promise<void> {
 
   const rows = res.body.entitlements ?? [];
   if (rows.length === 0) {
-    console.log(`(no entitlements for ${args.email} on ${args.env})`);
+    console.log(`(no entitlements for ${args.identifier} on ${args.env})`);
     return;
   }
   // Newest first per spec
   rows.sort((a, b) => b.purchasedAt.localeCompare(a.purchasedAt));
-  console.log(`${rows.length} entitlement(s) for ${args.email}:\n`);
+  console.log(`${rows.length} entitlement(s) for ${args.identifier}:\n`);
   console.log('id'.padEnd(38) + ' | ' + 'productKey'.padEnd(32) + ' | ' + 'status'.padEnd(9) + ' | ' + 'source'.padEnd(12) + ' | purchasedAt              | refundedAt');
   console.log('-'.repeat(140));
   for (const r of rows) {
