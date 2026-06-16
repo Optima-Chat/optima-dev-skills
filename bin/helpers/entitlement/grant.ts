@@ -20,7 +20,7 @@ Required:
   --justification "..."            Required by billing (400 otherwise); stored on entitlement.justification
 
 Optional:
-  --yes                            Skip prod confirmation prompt (no-op on stage / cn-prod / cn-stage)
+  --yes                            Skip prod/cn-prod confirmation prompt (no-op on stage / cn-stage)
   --env stage|prod|cn-prod|cn-stage   (default: stage)
 
 Hardcoded server-side: source=ADMIN_GRANT, priceCents=0, currency=USD, grantedBy=<clientId>.`);

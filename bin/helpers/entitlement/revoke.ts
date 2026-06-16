@@ -27,7 +27,7 @@ Required:
   --reason "..."                   Required by billing (400 otherwise); stored on entitlement.refundReason
 
 Optional:
-  --yes                            Skip prod confirmation prompt (no-op on stage / cn-prod / cn-stage)
+  --yes                            Skip prod/cn-prod confirmation prompt (no-op on stage / cn-stage)
   --env stage|prod|cn-prod|cn-stage   (default: stage)
 
 Refuses non-ADMIN_GRANT sources (PAYMENT, PARTNER) with source-specific

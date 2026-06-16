@@ -63,7 +63,7 @@ optima-grant-subscription user@example.com --plan pro-cn --env cn-stage
 | `<email|phone|userId>` | 用户标识（必填；cn 支持手机号/userId） | - |
 | `--plan <id>` | 计划：trial, starter, pro, enterprise | pro |
 | `--months <n>` | 时长（月） | 1 |
-| `--env <env>` | 环境：stage, prod, cn-prod | stage |
+| `--env <env>` | 环境：stage, prod, cn-prod, cn-stage | stage |
 
 > **cn-prod（国内环境）**：plan 用 CNY 定价的 `-cn` 档（trial / starter-cn / pro-cn / enterprise-cn，默认 pro-cn）；裸 USD 档 id 会被客户端拒绝（防止给 CN 用户误赠 USD 档积分量）。email 查找走 user-auth internal lookup API（无 SSH 隧道）。
 
