@@ -138,6 +138,26 @@ test('confirmIfProd gates cn-prod as a production env', () => {
   assert.ok(prodEnvs.includes('cn-prod'), 'confirmIfProd must gate cn-prod');
 });
 
+test('optima-logs is wired as a bin and routes cn envs to SLS, aws envs to CloudWatch', () => {
+  // The cn log pain point was the buildbox SSH hop + DescribeInstanceLog buffer.
+  // optima-logs welds the direct path in: cn-prod/cn-stage → SLS GetLogs (no
+  // buildbox), stage/prod → CloudWatch. Guard the contract so a refactor can't
+  // silently drop an env class or re-introduce the buildbox dependency.
+  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  assert.equal(pkg.bin['optima-logs'], 'dist/bin/helpers/logs.js', 'optima-logs must be a registered bin');
+
+  const source = fs.readFileSync(path.join(repoRoot, 'bin/helpers/logs.ts'), 'utf8');
+  for (const env of ['stage', 'prod', 'cn-prod', 'cn-stage']) {
+    assert.match(source, new RegExp(`'${env}'`), `logs.ts must handle ${env}`);
+  }
+  assert.match(source, /aliyun.*sls.*GetLogs|'sls',\s*'GetLogs'/s, 'cn path must call aliyun sls GetLogs');
+  assert.match(source, /'logs',\s*'tail'/, 'aws path must call aws logs tail');
+  // The doc comment legitimately names what this replaces; what must not return
+  // is an actual sshpass invocation or a DescribeInstanceLog command arg.
+  assert.doesNotMatch(source, /sshpass/, 'must not shell out via sshpass (the buildbox hop)');
+  assert.doesNotMatch(source, /'DescribeInstanceLog'/, 'must not call DescribeInstanceLog (buffer-only)');
+});
+
 function parseObjectKeys(source, variableName) {
   const escapedName = variableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = source.match(new RegExp(`const ${escapedName} = \\{(.*?)\\n\\};`, 's'));
