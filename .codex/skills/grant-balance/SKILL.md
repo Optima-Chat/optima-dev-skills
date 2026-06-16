@@ -10,11 +10,11 @@ description: "Use when the user wants to grant credits (bonus, 30-day expiry) to
 ## 执行方式：使用 CLI 工具
 
 ```bash
-optima-grant-balance <email> --amount <usd> [options]
+optima-grant-balance <email|phone|userId> --amount <usd> [options]
 ```
 
 **为什么使用 CLI 工具**：
-- 自动通过 email 查找 userId（跨 user-auth 数据库）
+- 自动通过 email/手机号/userId 查找 userId（cn 用户多为手机号；执行前打印 🎯 目标账号反查）
 - 自动处理 SSH 隧道和数据库连接
 - 不会影响现有订阅和已有余额（发放 bonus 积分（30 天有效期，重复执行会叠加发放））
 - 自动留审计痕迹（credit_lot 行，幂等键前缀 `dev-skills-grant:`）
@@ -46,7 +46,7 @@ optima-grant-balance user@example.com --amount 20 --description "服务中断补
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `<email>` | 用户邮箱（必填） | - |
+| `<email|phone|userId>` | 用户标识（必填；cn 支持手机号/userId） | - |
 | `--amount <usd>` | USD 金额（必填，> 0） | - |
 | `--description <text>` | 描述/原因（仅 console 输出） | - |
 | `--env <env>` | 环境：stage, prod, cn-prod, cn-stage | stage |

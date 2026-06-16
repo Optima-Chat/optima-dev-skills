@@ -10,7 +10,7 @@ Use this skill when the user asks to open or change a subscription plan.
 ## Preferred Command
 
 ```bash
-optima-grant-subscription <email> [options]
+optima-grant-subscription <email|phone|userId> [options]
 ```
 
 ## Examples
