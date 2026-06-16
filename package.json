@@ -9,6 +9,7 @@
     "optima-generate-test-token": "dist/bin/helpers/generate-test-token.js",
     "optima-grant-balance": "dist/bin/helpers/grant-balance.js",
     "optima-grant-subscription": "dist/bin/helpers/grant-subscription.js",
+    "optima-logs": "dist/bin/helpers/logs.js",
     "optima-plugin": "dist/bin/helpers/plugin.js",
     "optima-discount": "dist/bin/helpers/discount.js",
     "optima-product": "dist/bin/helpers/product.js",
