@@ -111,22 +111,37 @@ Options:
   return { identifier, plan, months, env };
 }
 
-async function main() {
-  const { identifier, plan, months, env } = parseArgs(process.argv.slice(2));
-
+/**
+ * Resolve a CLI identifier (`<email|phone|userId>`) to a userId + verified
+ * account identity, handling the AWS-vs-cn split. Shared by grant-subscription,
+ * grant-balance, the optima-entitlement subcommands, and optima-account so all
+ * four accept the same identifier forms (gateway#923: phone/userId on cn).
+ *
+ * - AWS (stage/prod): email-only via the RDS SSH tunnel; no internal HTTP
+ *   reverse-verify (the AWS dev-skills token lacks internal:users:write).
+ * - cn-prod / cn-stage: no tunnel into the Aliyun RDS — classify → resolve via
+ *   user-auth internal endpoints → getUserById reverse-verify → phone-assert.
+ *   cn-stage shares cn-prod's HTTP path (same internal endpoints, cn-stage M2M
+ *   token); the split is AWS-vs-cn, NOT prod-vs-stage.
+ *
+ * Prints a `🎯 目标账号` line in BOTH branches before returning, so a wrong
+ * userId is caught by eye before any destructive call (ban/grant/revoke).
+ */
+export async function resolveTargetUser(
+  env: string,
+  identifier: string,
+): Promise<{
+  userId: string;
+  kind: 'email' | 'phone' | 'userId';
+  identity: { phone: string | null; email: string | null };
+}> {
   const kind = classifyIdentifier(identifier);
   assertAwsEmailOnly(env, kind);
-  console.log(`\n🎁 Granting ${plan} subscription to ${identifier} (${kind}) for ${months} month(s) [${env.toUpperCase()}]\n`);
-
-  // identity is the verified target account to print on success. AWS keeps the
-  // pre-change behavior (email-only, no internal HTTP reverse-verify); only
-  // cn-prod / cn-stage run the full classify→resolve→getUserById→phone-assert防呆 path.
-  let userId: string;
-  let identity: { phone: string | null; email: string | null };
 
   if (env === 'cn-prod' || env === 'cn-stage') {
     // cn-prod / cn-stage have no SSH tunnel into the Aliyun RDS — resolve via
     // user-auth, and the dev-skills token carries internal:users:write for lookups.
+    let userId: string;
     if (kind === 'userId') {
       userId = identifier;
     } else if (kind === 'phone') {
@@ -136,27 +151,38 @@ async function main() {
     }
 
     // Reverse-verify: fetch and loudly print the target account identity
-    // before granting, so a wrong userId is caught by eye (gateway#923).
+    // before any mutation, so a wrong userId is caught by eye (gateway#923).
     const acct = await getUserById(env, userId);
     console.log(
       `🎯 目标账号: userId=${userId} 手机=${acct.phone || '(无)'} email=${acct.email || '(无)'} 当前plan=${acct.current_plan || '?'}`,
     );
 
     // Hard assertion: a phone-input grant must land on an account whose phone
-    // matches. Runs BEFORE callBilling — a mismatch aborts without granting.
+    // matches. Runs BEFORE the caller's mutation — a mismatch aborts.
     if (kind === 'phone') {
       assertPhoneMatch(identifier, acct.phone);
     }
-    identity = { phone: acct.phone, email: acct.email };
-  } else {
-    // AWS (stage/prod): email-only, resolved via the RDS SSH tunnel. No
-    // internal HTTP reverse-verify (token lacks internal:users:write → 403).
-    const infisicalConfig = getInfisicalConfig();
-    const token = getInfisicalToken(infisicalConfig);
-    userId = await resolveUserId(identifier, env, infisicalConfig, token);
-    console.log(`🎯 目标账号: userId=${userId} email=${identifier}`);
-    identity = { phone: null, email: identifier };
+    return { userId, kind, identity: { phone: acct.phone, email: acct.email } };
   }
+
+  // AWS (stage/prod): email-only, resolved via the RDS SSH tunnel. No internal
+  // HTTP reverse-verify (token lacks internal:users:write → 403), but still
+  // echo the resolved account so destructive ops have a confirmation line (R1).
+  const infisicalConfig = getInfisicalConfig();
+  const token = getInfisicalToken(infisicalConfig);
+  const userId = await resolveUserId(identifier, env, infisicalConfig, token);
+  console.log(`🎯 目标账号: userId=${userId} email=${identifier}`);
+  return { userId, kind, identity: { phone: null, email: identifier } };
+}
+
+async function main() {
+  const { identifier, plan, months, env } = parseArgs(process.argv.slice(2));
+
+  console.log(`\n🎁 Granting ${plan} subscription to ${identifier} (${classifyIdentifier(identifier)}) for ${months} month(s) [${env.toUpperCase()}]\n`);
+
+  // Shared resolver: classify → resolve → reverse-verify echo → phone-assert
+  // (cn-prod/cn-stage), or email-only via SSH tunnel (AWS). See resolveTargetUser.
+  const { userId, identity } = await resolveTargetUser(env, identifier);
 
   const { body } = await callBilling<{
     success: boolean;

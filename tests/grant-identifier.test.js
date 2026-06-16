@@ -39,10 +39,23 @@ test('assertAwsEmailOnly rejects non-email on stage/prod (no internal HTTP scope
   assert.throws(() => assertAwsEmailOnly('prod', 'userId'), /仅支持 email/);
 });
 
-test('assertAwsEmailOnly allows email on AWS and anything on cn-prod', () => {
+test('assertAwsEmailOnly allows email on AWS and anything on cn-prod / cn-stage', () => {
   assert.doesNotThrow(() => assertAwsEmailOnly('stage', 'email'));
   assert.doesNotThrow(() => assertAwsEmailOnly('prod', 'email'));
   assert.doesNotThrow(() => assertAwsEmailOnly('cn-prod', 'phone'));
   assert.doesNotThrow(() => assertAwsEmailOnly('cn-prod', 'userId'));
   assert.doesNotThrow(() => assertAwsEmailOnly('cn-prod', 'email'));
+  // cn-stage shares cn-prod's HTTP resolution path — phone/userId must NOT be
+  // gated out (the split is AWS-vs-cn, not prod-vs-stage). Guards the cn-stage
+  // regression PR #33's cn-prod-only resolver would have introduced.
+  assert.doesNotThrow(() => assertAwsEmailOnly('cn-stage', 'phone'));
+  assert.doesNotThrow(() => assertAwsEmailOnly('cn-stage', 'userId'));
+  assert.doesNotThrow(() => assertAwsEmailOnly('cn-stage', 'email'));
+});
+
+test('resolveTargetUser is exported (shared by grant-*/entitlement/account)', () => {
+  const mod = require(
+    require('node:path').resolve(__dirname, '..', 'dist', 'bin', 'helpers', 'grant-subscription.js'),
+  );
+  assert.equal(typeof mod.resolveTargetUser, 'function');
 });
