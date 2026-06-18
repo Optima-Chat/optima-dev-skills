@@ -1,6 +1,6 @@
 ---
 name: "logs"
-description: "当用户请求查看日志、查看服务日志、排查问题、看看日志、检查日志、商品服务日志、后端日志、API日志、正式环境日志、生产环境日志、CI环境日志、开发环境日志、阿里云日志、cn-prod 日志、SAE 日志时，使用此技能。支持 CI、Stage、Prod（AWS ECS/CloudWatch）以及 cn-prod（阿里云 SAE，经 buildbox）四个环境的 commerce-backend、user-auth、agentic-chat、gateway-core、optima-scout、optima-skills 等服务。"
+description: "当用户请求查看日志、查看服务日志、排查问题、看看日志、检查日志、商品服务日志、后端日志、API日志、正式环境日志、生产环境日志、CI环境日志、开发环境日志、阿里云日志、cn-prod 日志、SAE 日志时，使用此技能。支持 CI、Stage、Prod（AWS ECS/CloudWatch）以及 cn-prod（阿里云 SAE/SLS）四个环境的 commerce-backend、user-auth、agentic-chat、gateway-core、optima-scout、optima-skills 等服务。"
 allowed-tools: ["Bash", "SlashCommand"]
 ---
 
