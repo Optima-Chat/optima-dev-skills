@@ -1,4 +1,4 @@
-import { callSkills, validateEnv } from '../billing-http';
+import { callSkills, validateEnvCnProd } from '../billing-http';
 import { confirmIfProd } from '../confirm-prompt';
 
 interface SetPaidArgs {
@@ -18,7 +18,7 @@ Required:
 
 Optional:
   --yes                Skip prod confirmation prompt (no-op on stage)
-  --env stage|prod     (default: stage)
+  --env <env>          stage|prod|cn-prod|cn-stage (default: stage)
 
 Note: salesUrl is NOT settable here (skills PATCH is strict; salesUrl is
 publish-time-only via plugin.json metadata). When isPaid=true and salesUrl is
@@ -46,7 +46,7 @@ null, the 402 falls back to sales.optima.onl.`);
 
 export async function runSetPaid(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
-  validateEnv(args.env);
+  validateEnvCnProd(args.env);
 
   await confirmIfProd(
     args.env,

@@ -1,4 +1,4 @@
-import { callSkills, validateEnv } from '../billing-http';
+import { callSkills, validateEnvCnProd } from '../billing-http';
 import { confirmIfProd } from '../confirm-prompt';
 
 interface SetDefaultArgs {
@@ -18,7 +18,7 @@ Required:
 
 Optional:
   --yes                  Skip prod confirmation prompt (no-op on stage)
-  --env stage|prod       (default: stage)
+  --env <env>          stage|prod|cn-prod|cn-stage (default: stage)
 
 Note: no skill-sync broadcast — changes what NEW user syncs receive; does not
 retroactively add/remove the plugin for existing users until their next sync.`);
@@ -45,7 +45,7 @@ retroactively add/remove the plugin for existing users until their next sync.`);
 
 export async function runSetDefault(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
-  validateEnv(args.env);
+  validateEnvCnProd(args.env);
 
   await confirmIfProd(
     args.env,

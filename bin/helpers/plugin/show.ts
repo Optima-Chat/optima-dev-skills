@@ -1,4 +1,4 @@
-import { callSkills, validateEnv } from '../billing-http';
+import { callSkills, validateEnvCnProd } from '../billing-http';
 
 interface ShowArgs {
   slug: string;
@@ -13,7 +13,7 @@ Required:
   --slug <slug>
 
 Optional:
-  --env stage|prod   (default: stage)
+  --env <env>        stage|prod|cn-prod|cn-stage (default: stage)
 
 Note: reads the public GET /api/plugins/:slug — shows isPaid, salesUrl, and
 descriptive fields, but NOT defaultForUser / status / trustLevel (public
@@ -36,7 +36,7 @@ endpoint omits them). Returns 404 for non-ACTIVE plugins.`);
 
 export async function runShow(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
-  validateEnv(args.env);
+  validateEnvCnProd(args.env);
   const res = await callSkills(args.env, 'GET', `/api/plugins/${encodeURIComponent(args.slug)}`);
   console.log(JSON.stringify(res.body, null, 2));
 }
