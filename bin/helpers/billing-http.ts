@@ -17,6 +17,9 @@ const USER_AUTH_URLS: Record<string, string> = {
 // #201: yzsgo.com 全量迁移 (2026-06-12), 旧 billing-cn.optima.chat 路由已下线
 const CN_PROD_BILLING_URL = 'https://billing-api.yzsgo.com';
 const CN_STAGE_BILLING_URL = 'https://billing-api.stage.optima.chat';
+// cn skills (marketplace) registry — same hardcoded-cn-URL rationale as billing.
+const CN_PROD_SKILLS_URL = 'https://skills.yzsgo.com';
+const CN_STAGE_SKILLS_URL = 'https://skills.stage.optima.chat';
 
 /**
  * Validate the --env flag value at command entry, before any I/O.
@@ -36,11 +39,12 @@ export function validateEnv(env: string): 'stage' | 'prod' {
 }
 
 /**
- * Variant for commands that also support cn-prod — currently grant-balance /
- * grant-subscription, which reach billing + user-auth over HTTPS only.
- * Other commands resolve users via the AWS RDS SSH tunnel, which does not
- * exist for cn-prod (Aliyun VPC-internal RDS) — keep them on validateEnv so a
- * cn-prod typo fails fast instead of dying inside the tunnel setup.
+ * Variant for commands that support all four envs (stage/prod/cn-prod/cn-stage)
+ * because they reach billing / skills / user-auth over HTTPS only — e.g.
+ * grant-balance, grant-subscription, entitlement, account, and optima-plugin
+ * (set-paid/set-default/show). Commands that resolve users via the AWS RDS SSH
+ * tunnel (which does not exist for cn — Aliyun VPC-internal RDS) stay on
+ * validateEnv so a cn typo fails fast instead of dying inside tunnel setup.
  */
 export function validateEnvCnProd(env: string): 'stage' | 'prod' | 'cn-prod' | 'cn-stage' {
   if (env !== 'stage' && env !== 'prod' && env !== 'cn-prod' && env !== 'cn-stage') {
@@ -95,6 +99,8 @@ function getBillingUrl(env: string): string {
 }
 
 function getSkillsUrl(env: string): string {
+  if (env === 'cn-prod') return CN_PROD_SKILLS_URL;
+  if (env === 'cn-stage') return CN_STAGE_SKILLS_URL;
   if (skillsUrlCache[env]) return skillsUrlCache[env];
   const url = fetchInfisicalSecret(env, '/shared-secrets/domain-urls', 'SKILLS_REGISTRY_URL');
   skillsUrlCache[env] = url;
