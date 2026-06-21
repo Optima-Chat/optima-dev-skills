@@ -39,11 +39,12 @@ export function validateEnv(env: string): 'stage' | 'prod' {
 }
 
 /**
- * Variant for commands that also support cn-prod — currently grant-balance /
- * grant-subscription, which reach billing + user-auth over HTTPS only.
- * Other commands resolve users via the AWS RDS SSH tunnel, which does not
- * exist for cn-prod (Aliyun VPC-internal RDS) — keep them on validateEnv so a
- * cn-prod typo fails fast instead of dying inside the tunnel setup.
+ * Variant for commands that support all four envs (stage/prod/cn-prod/cn-stage)
+ * because they reach billing / skills / user-auth over HTTPS only — e.g.
+ * grant-balance, grant-subscription, entitlement, account, and optima-plugin
+ * (set-paid/set-default/show). Commands that resolve users via the AWS RDS SSH
+ * tunnel (which does not exist for cn — Aliyun VPC-internal RDS) stay on
+ * validateEnv so a cn typo fails fast instead of dying inside tunnel setup.
  */
 export function validateEnvCnProd(env: string): 'stage' | 'prod' | 'cn-prod' | 'cn-stage' {
   if (env !== 'stage' && env !== 'prod' && env !== 'cn-prod' && env !== 'cn-stage') {

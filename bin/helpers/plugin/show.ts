@@ -13,7 +13,7 @@ Required:
   --slug <slug>
 
 Optional:
-  --env <env>        stage|prod|cn-prod|cn-stage (default: stage)
+  --env <env>          stage|prod|cn-prod|cn-stage (default: stage)
 
 Note: reads the public GET /api/plugins/:slug — shows isPaid, salesUrl, and
 descriptive fields, but NOT defaultForUser / status / trustLevel (public
