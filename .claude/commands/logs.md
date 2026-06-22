@@ -218,7 +218,7 @@ aws logs get-log-events --log-group-name /ecs/commerce-backend-prod --log-stream
 **访问方式**: ✅ **用 `optima-logs` CLI 直连阿里云 SLS**，不再经 buildbox。
 
 > ✅ 现状更新（2026-06-16）：cn-prod / cn-stage 全部服务**已接 SLS**（含 ECI 的 `agent-runtime`）。
-> SLS `GetLogs` 是公网控制面 API，本机 `aliyun-optima` profile 直连即可，支持**历史检索 + 时间窗 + 关键词**——
+> SLS `GetLogs` 是公网控制面 API，本机 aliyun CLI 凭证直连即可（默认当前 profile，或设 `OPTIMA_ALIYUN_PROFILE` 指定），支持**历史检索 + 时间窗 + 关键词**——
 > 旧的「SSH buildbox → SAE `DescribeInstanceLog` 取当前缓冲」流程已弃用（缓冲式、重启即丢、不能检索）。
 
 **推荐用法（首选）**:
@@ -232,7 +232,8 @@ optima-logs gateway-core --since 30m --json | jq .   # 机器可读
 
 参数：`--env stage|prod|cn-prod|cn-stage`、`--since 30m|2h|1d`、`--grep <kw>`、`--lines/-n <N>`、`--json`。
 `service` == SLS logstore 名（同名）。列全部 logstore：
-`aliyun sls ListLogStores --project optima-cn-prod-1911493506120573 --region cn-beijing --profile aliyun-optima`
+`aliyun sls ListLogStores --project optima-cn-prod-1911493506120573 --region cn-beijing`
+（默认用本机当前 aliyun profile；要指定别的 profile 加 `--profile <名>` 或设 `OPTIMA_ALIYUN_PROFILE`）
 
 **底层（仅参考，正常用 `optima-logs` 即可）**:
 - SLS project：`optima-cn-prod-1911493506120573` / `optima-cn-stage-1911493506120573`（`optima-<env>-<accountId>`）。
@@ -241,7 +242,7 @@ optima-logs gateway-core --since 30m --json | jq .   # 机器可读
 NOW=$(date +%s); FROM=$((NOW-3600))
 aliyun sls GetLogs --project optima-cn-prod-1911493506120573 --logstore gateway-core \
   --from $FROM --to $NOW --line 100 --reverse true --query error \
-  --region cn-beijing --profile aliyun-optima
+  --region cn-beijing   # 默认用当前 profile;指定 profile 加 --profile <名>
 ```
 
 ## 完整示例脚本

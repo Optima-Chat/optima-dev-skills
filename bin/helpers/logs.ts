@@ -7,13 +7,14 @@
  *
  * cn 的关键改进:旧流程要 SSH 进 buildbox 再调 SAE `DescribeInstanceLog`,
  * 只能看实例**当前缓冲**(重启即丢、不能检索)。现在 cn-prod/cn-stage 全部
- * 服务已接 SLS,GetLogs 是公网控制面 API,本机 `aliyun-optima` profile 直连即可:
+ * 服务已接 SLS,GetLogs 是公网控制面 API,本机 aliyun CLI 凭证直连即可:
  *   - 免 buildbox 跳板
  *   - 支持时间窗(--since)+ 关键词检索(--grep)+ 历史(重启不丢)
  *
  * 前置:
  *   AWS  → 已配 aws CLI 凭证(ap-southeast-1)
- *   cn   → 已配 aliyun CLI profile `aliyun-optima`(cn-beijing)
+ *   cn   → 已配 aliyun CLI 凭证(cn-beijing)。默认用本机当前 profile(与 AWS 侧
+ *          不指定 profile 对称);要指定别的 profile 设 OPTIMA_ALIYUN_PROFILE=<名>。
  *
  * 用法:
  *   optima-logs gateway-core                       # 默认 cn-prod,最近 1h,100 行
@@ -27,7 +28,9 @@
 import { execFileSync } from 'child_process';
 
 const ALIYUN_ACCOUNT = '1911493506120573';
-const ALIYUN_PROFILE = 'aliyun-optima';
+// 不硬编码 profile 名:默认空 → 不传 --profile,用本机 aliyun CLI 当前 profile
+// (与 AWS 侧 fetchAws 不指定 profile 对称)。设 OPTIMA_ALIYUN_PROFILE 可显式指定。
+const ALIYUN_PROFILE = process.env.OPTIMA_ALIYUN_PROFILE ?? '';
 const ALIYUN_REGION = 'cn-beijing';
 const AWS_REGION = 'ap-southeast-1';
 
@@ -147,8 +150,8 @@ function fetchCn(args: Args): void {
     '--line', String(args.lines),
     '--reverse', 'true', // 先拿最新 N 条
     '--region', ALIYUN_REGION,
-    '--profile', ALIYUN_PROFILE,
   ];
+  if (ALIYUN_PROFILE) cmd.push('--profile', ALIYUN_PROFILE); // 未设则用本机当前 profile
   if (args.grep) { cmd.push('--query', args.grep); }
   process.stderr.write(`${C.d}# 阿里云 SLS ${project}/${args.service} (since ${args.since}${args.grep ? `, query "${args.grep}"` : ''})${C.n}\n`);
 
@@ -157,8 +160,12 @@ function fetchCn(args: Args): void {
     raw = run('aliyun', cmd);
   } catch (e: any) {
     const msg = e.stderr || e.message || '';
+    const profileFlag = ALIYUN_PROFILE ? ` --profile ${ALIYUN_PROFILE}` : '';
+    if (/unknown profile|Configuration failed|InvalidAccessKeyId|Forbidden|Unauthorized|Signature/i.test(msg)) {
+      throw new Error(`aliyun 凭证不可用: ${msg.split('\n')[0]}\n  cn 日志需本机配好 cn-beijing 的 aliyun CLI 凭证(账号需有 SLS 读权限)。\n  默认用当前 profile;或设 OPTIMA_ALIYUN_PROFILE=<你的profile>。`);
+    }
     if (/LogStoreNotExist|ProjectNotExist/.test(msg)) {
-      throw new Error(`SLS logstore 不存在: ${project}/${args.service}\n  确认服务名对,或该服务未接 SLS。列全部:\n  aliyun sls ListLogStores --project ${project} --region ${ALIYUN_REGION} --profile ${ALIYUN_PROFILE}`);
+      throw new Error(`SLS logstore 不存在: ${project}/${args.service}\n  确认服务名对,或该服务未接 SLS。列全部:\n  aliyun sls ListLogStores --project ${project} --region ${ALIYUN_REGION}${profileFlag}`);
     }
     throw new Error(msg);
   }
