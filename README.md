@@ -106,11 +106,11 @@ Claude:
 | `optima-generate-test-token` | 生成测试 token | `optima-generate-test-token --business-name "测试店铺"` |
 | `optima-discount` | 优惠码管理 | `optima-discount create --code LAUNCH20 --percent 20 --env stage` |
 | `optima-grant-subscription` | 开通/切换订阅 | `optima-grant-subscription 18898654855 --plan pro-cn --env cn-prod` |
-| `optima-grant-balance` | 赠送 credits | `optima-grant-balance user@example.com --amount 5 --env prod` |
+| `optima-grant-credits` | 赠送积分 | `optima-grant-credits user@example.com --credits 10000 --env prod`（`optima-grant-balance` 为废弃别名）|
 | `optima-entitlement` | 产品权益 grant/revoke/list | `optima-entitlement grant 18898654855 --product-key scout-gift --justification "..." --env cn-prod` |
 | `optima-account` | 账号 status/ban/unban | `optima-account ban user@example.com --reason "abuse" --env prod` |
 
-> **4 环境 + 标识符**：`grant-subscription` / `grant-balance` / `entitlement` / `account` 均支持 `stage` / `prod` / `cn-prod` / `cn-stage`。标识符 `<email\|phone\|userId>`——**cn-prod / cn-stage 用户多为手机号注册**，三种均可；AWS stage/prod 仅 email。`ban`/`unban` 及 `account status` 的禁用态读取需 admin-用户凭证（Infisical `/shared-secrets/credentials`；cn 另需 `INFISICAL_CN_EMAIL/PASSWORD`）。
+> **4 环境 + 标识符**：`grant-subscription` / `grant-credits` / `entitlement` / `account` 均支持 `stage` / `prod` / `cn-prod` / `cn-stage`。标识符 `<email\|phone\|userId>`——**cn-prod / cn-stage 用户多为手机号注册**，三种均可；AWS stage/prod 仅 email。`ban`/`unban` 及 `account status` 的禁用态读取需 admin-用户凭证（Infisical `/shared-secrets/credentials`；cn 另需 `INFISICAL_CN_EMAIL/PASSWORD`）。
 
 **特点**：
 - ✅ 支持 CI、Stage、Prod 三个环境（query-db）

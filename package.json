@@ -1,6 +1,6 @@
 {
   "name": "@optima-chat/dev-skills",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "description": "Claude Code Skills for Optima development team - cross-environment collaboration tools",
   "main": "index.js",
   "bin": {
@@ -8,7 +8,8 @@
     "optima-account": "dist/bin/helpers/account.js",
     "optima-entitlement": "dist/bin/helpers/entitlement.js",
     "optima-generate-test-token": "dist/bin/helpers/generate-test-token.js",
-    "optima-grant-balance": "dist/bin/helpers/grant-balance.js",
+    "optima-grant-credits": "dist/bin/helpers/grant-credits.js",
+    "optima-grant-balance": "dist/bin/helpers/grant-credits.js",
     "optima-grant-subscription": "dist/bin/helpers/grant-subscription.js",
     "optima-logs": "dist/bin/helpers/logs.js",
     "optima-plugin": "dist/bin/helpers/plugin.js",
