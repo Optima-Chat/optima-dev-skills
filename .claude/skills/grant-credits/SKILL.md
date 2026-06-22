@@ -25,7 +25,7 @@ optima-grant-credits <email|phone|userId> --credits <n> [options]
 | `<email\|phone\|userId>` | 用户标识（必填；cn 支持手机号/userId） | - |
 | `--credits <n>` | **赠送积分数（整数 ≥1，主单位）** | - |
 | `--amount <usd>` | 备选：按 USD 赠送（$1 = 700 积分）。`--credits` / `--amount` **二选一** | - |
-| `--description <text>` | 描述/原因（仅 console 输出，不存 DB） | - |
+| `--description <text>` | 描述/原因（存入 credit lot（审计痕迹）） | - |
 | `--env <env>` | stage, prod, cn-prod, cn-stage | stage |
 
 ## 快速操作

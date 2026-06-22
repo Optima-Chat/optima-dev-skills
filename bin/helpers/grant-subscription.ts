@@ -119,7 +119,7 @@ Options:
 /**
  * Resolve a CLI identifier (`<email|phone|userId>`) to a userId + verified
  * account identity, handling the AWS-vs-cn split. Shared by grant-subscription,
- * grant-balance, the optima-entitlement subcommands, and optima-account so all
+ * grant-credits, the optima-entitlement subcommands, and optima-account so all
  * four accept the same identifier forms (gateway#923: phone/userId on cn).
  *
  * - AWS (stage/prod): email-only via the RDS SSH tunnel; no internal HTTP
