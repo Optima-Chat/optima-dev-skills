@@ -10,7 +10,7 @@ Prefer the installed CLI tools over reimplementing long shell workflows:
 - `optima-show-env <service> <stage|prod> [options]`
 - `optima-generate-test-token [options]`
 - `optima-grant-subscription <email> [options]`
-- `optima-grant-balance <email> --amount <usd> [options]`
+- `optima-grant-credits <email|phone|userId> --credits <n> [options]`
 - `optima-product <create|update|add-channel|toggle-channel|show> [options]` — manage paid-plugin marketplace Products + Stripe channels (Wave 1.5 admin endpoints; stage default)
 - `optima-entitlement <grant|revoke|list> [options]` — admin-grant / revoke / list paid-plugin entitlements (refuses revoke of PAYMENT / PARTNER source)
 - `optima-plugin <show|set-paid|set-default> [options]` — flip a plugin's skills-side paid/free state (isPaid) + defaultForUser (the user-facing gate; pairs with optima-product for the billing side)
@@ -27,7 +27,7 @@ After `npm install -g @optima-chat/dev-skills`, this package installs skills und
 - `generate-test-token`
 - `read-code`
 - `grant-subscription`
-- `grant-balance`
+- `grant-credits`
 - `restart-ecs`
 - `use-commerce-cli`
 

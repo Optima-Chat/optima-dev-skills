@@ -56,6 +56,6 @@ optima-account unban 18898654855 --env cn-prod
 
 ## 相关命令
 
-- `optima-grant-subscription` / `optima-grant-balance` - 开通会员 / 赠送 credits
+- `optima-grant-subscription` / `optima-grant-credits` - 开通会员 / 赠送积分
 - `optima-entitlement` - 产品权益授予/撤销/查询
 - `optima-query-db` - 直查数据库核对（如 `is_active` / `banned_at`）
