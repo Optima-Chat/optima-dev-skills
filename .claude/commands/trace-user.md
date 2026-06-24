@@ -2,8 +2,9 @@
 
 按账号把一个用户在 agentic-chat → gateway-core → agent-runtime 全链路的行为**从结构化日志**拼成一条时间线：每次 LLM 调用（模型 / token / 延迟 / 缓存命中 / stop reason）、每个工具执行、子代理 spawn、报错，按 `userId → session → conversation → turn` 聚合。
 
-**版本**: v0.3.0
+**版本**: v0.4.0
 
+> **v0.4 新增（最高频需求）**：**错误视图**——①给一个用户查他出过哪些错；②一段时间内每个用户出了哪些错（面上视图）。`--grep` 服务端过滤全窗 error/warn + benign 噪声降噪 + 按 userId 聚合。并补**日志↔message 缝合**（§4 B2，conversationId 这根线把"内部事件"和"对话内容"串成一条龙）。cn-prod 实测挖出 `LLM stream interrupted` 命中多用户。
 > **v0.3 新增**：**反向追踪**（一段内容 → 是谁 → 手机号，§6），cn-prod 真实账号双向实测通过。
 >
 > **v0.2 做了什么**（相对 v0.1）：
@@ -217,6 +218,30 @@ session ses_azwDo9estPhg17Axb8q7q  (conv cmqrg6dua…)
    └ 06:34:47  LLM deepseek-v4-pro  in150/out147   2257ms  cache99.9%  →stop
 ```
 
+### B2. 缝合 message + 日志（同一根线 conversationId/turnId）
+
+message 给「说了什么 / 哪个模型 / 多少 token」，日志给「内部调了什么、缓存/历史恢复、工具、耗时、报错」。用 `conversationId` 把两边缝成一条龙：
+```bash
+# 1) 从 messages 拿这个用户最近的 conversation_id
+CONV=$(optima-query-db gateway-core "SELECT conversation_id FROM messages WHERE user_id='$U' ORDER BY created_at DESC LIMIT 1" cn-prod | grep -oE 'cm[a-z0-9]{20,}' | head -1)
+# 2) 用 conversationId grep 日志 → 这段对话的全部内部事件（建session/缓存/历史恢复/LLM/工具/错/销毁）
+optima-logs agent-runtime --env cn-prod --since 24h --grep "$CONV" -n 100 --json \
+| jq -r '[.[]|(.content|fromjson?)] | sort_by(.timestamp) | .[]
+    | "\(.timestamp[11:19]) [\(.service)] \(.message)\(if .model then "  ("+.model+" in"+(.inputTokens|tostring)+"/out"+(.outputTokens|tostring)+" "+(.elapsedMs|tostring)+"ms)" else "" end)"'
+# 3) 同一个 conversation 的 message 内容
+optima-query-db gateway-core "SELECT to_char(created_at,'HH24:MI:SS') t, role, left(content,60) c FROM messages WHERE conversation_id='$CONV' ORDER BY created_at" cn-prod
+```
+缝出来的样子（内部事件 + 内容并排）：
+```
+03:50:38 [ws-bridge]      Creating agent session
+03:50:44 [conv-cache]     Multi-source cache all-miss → 从 gateway 恢复历史
+03:50:44 user             "hi"
+03:50:44 [openai-provider] LLM request sending (deepseek-v4-pro)
+03:50:50 [openai-provider] LLM stream completed (in17696/out244 5307ms)
+03:50:50 assistant        "你好！我是 鸭嘴兽 AI…"
+04:11:28 [optima-runtime]  Destroying Optima session
+```
+
 ### C. 耗时 / token 统计
 ```
 本窗口合计:  LLM 调用 51 次 ｜ 平均延迟 2.6s ｜ P95 6.8s ｜ 慢调用(>5s) 4 次
@@ -243,6 +268,43 @@ token:  输入 12,840  输出 4,210  缓存命中率 99.3%
 | "连不上" | gateway-core 的 WS 连接 + OIDC 日志 |
 | "token 烧太快/账单" | 按 turn 汇总 `inputTokens`/`outputTokens`，看 `cacheHitRate` 是否异常低 |
 | "子代理炸了" | grep `spawn.lifecycle`，看 `success:false` / `durationMs` |
+
+---
+
+## ⭐ 错误视图（最高频需求）
+
+> **核心技术**：`optima-logs --grep <kw>` 是 **SLS 服务端过滤**，覆盖整个 `--since` 窗口（不受"无过滤时只回最近 ~100 条"的截断）。日志正文是 `"level":"error"` 这样的 JSON，所以 `--grep error` / `--grep warn` 正好命中 level 字段 → **全窗 error/warn 全抓得到**。
+> **降噪**：以下属基础设施噪声，默认过滤掉（除非排查它们）：`CLI binary name collision`、`Multi-source cache all-miss`、`Runtime other than "optima" is deprecated`、`cache.load miss: ENOENT`。
+
+### 查询 A：给一个用户 → 他出过哪些错
+```bash
+U=<userId>   # 手机先换 userId（见 §6）
+optima-logs agent-runtime --env cn-prod --since 24h --grep "$U" -n 300 --json \
+| jq -r '[.[]|(.content|fromjson?)]
+    | map(select((.level=="error" or .level=="warn" or (.status//200)>=400 or .success==false)
+        and ((.message|test("CLI binary name collision|Multi-source cache all-miss|deprecated|cache.load miss"))|not)))
+    | sort_by(.timestamp) | .[]
+    | "\(.timestamp[11:19]) [\(.level//"-")] \(.service)  \(.message)\(if .error then "  err="+(.error|tostring) else "" end)\(if .turnId then "  turn="+(.turnId[-8:]) else "" end)"'
+```
+
+### 查询 B：一段时间 → 每个用户出了哪些错（面上视图）
+```bash
+# grep "error"/"warn" 服务端抓全窗 error/warn；+ 语义错关键词；按 userId 聚合
+for kw in error warn fail timeout 429 500 ECONN abort; do
+  optima-logs agent-runtime --env cn-prod --since 24h --grep "$kw" -n 300 --json 2>/dev/null \
+  | jq -c '[.[]|(.content|fromjson?)] | .[]
+      | select((.level=="error" or .level=="warn" or (.status//200)>=400 or .success==false)
+          and ((.message|test("CLI binary name collision|Multi-source cache all-miss|deprecated|cache.load miss"))|not))
+      | {uid:((.userId//"-")[0:8]), lvl:(.level//"-"), msg:.message}'
+done | jq -s 'unique | group_by(.uid)
+    | map({user:.[0].uid, n:length, detail:(group_by(.msg)|map("\(.[0].lvl):\(.[0].msg) ×\(length)"))})
+    | sort_by(-.n) | .[] | "用户 \(.user)…  \(.n)类:\n    " + (.detail|join("\n    "))' -r
+```
+> 重点看 `error:` 级（如 `LLM stream interrupted` / `LLM fetch error`）——若同一个错命中**多个用户**，多半是面上问题不是个例。多服务都要查时，把 `agent-runtime` 换成 `gateway-core` 等再跑一遍合并。
+> AWS（stage/prod）同需求用 CloudWatch Logs Insights 原生聚合：`filter level in ["error","warn"] | stats count() by userId, message`，更省事。
+
+### 串到具体一条对话（错 + 上下文）
+拿到出错的 `turnId`/`conversationId`，用它 grep 把那一刻**前后的内部事件 + 这条对话的 message**都拉出来（见 §4 缝合），就知道错发生在"调哪个工具 / 哪次 LLM / 说了什么"的什么位置。
 
 ---
 
