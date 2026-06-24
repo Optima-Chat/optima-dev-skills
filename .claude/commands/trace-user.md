@@ -1,14 +1,17 @@
-# /trace-user - 用户链路追踪
+# /trace-user - 用户链路追踪（一条龙）
 
-查看指定用户在 agentic-chat -> optima-gateway -> agent-runtime 全链路的日志，分析耗时、成功/失败、返回值等。
+按账号把一个用户在 agentic-chat → gateway-core → agent-runtime 全链路的行为**从结构化日志**拼成一条时间线：每次 LLM 调用（模型 / token / 延迟 / 缓存命中 / stop reason）、每个工具执行、子代理 spawn、报错，按 `userId → session → conversation → turn` 聚合。
 
-**版本**: v0.1.0
+**版本**: v0.2.0
 
-## 使用场景
-
-**前端开发者**: 用户反馈 "聊天没反应"，快速定位是前端、网关还是 Agent 的问题
-**后端开发者**: 追踪特定用户的请求链路，分析 LLM 调用耗时和工具执行
-**DevOps**: 排查线上用户问题，查看完整的跨服务日志关联
+> **v0.2 做了什么**（相对 v0.1）：
+> - **数据源 = 结构化日志**（不是 OTel trace）。一条龙所需的全部字段（model / inputTokens / outputTokens / cacheHitRate / stopReason / toolCount / durationMs / 子代理 spawn / 报错）本就逐条落在 agent-runtime 的结构化日志里，并可靠流入日志后端；按关联键拼装即可。
+> - **新增 cn-stage / cn-prod 分支**（阿里云 SLS，`optima-logs` 直连），与 AWS（CloudWatch）并列。
+> - **关联键标准化**：`userId`(=enduser) → `sessionId`(`ses_*`) → `conversationId` → `turnId`。
+>
+> **不在本工具范围（已知、刻意不做）**：
+> - OTel **原生跨服务 trace 树**（browser→gateway→agent 一个 traceId 的可视化）—— 那条线在 cn 仍有未通的缺陷（业务 span 采样/context 抑制 + SLS ingest 限流），单独跟踪，不阻塞本工具。本工具用日志关联键做"逻辑一条龙"，覆盖同样的信息维度。
+> - 对话**正文内容检索**（按关键词反查是谁）—— 单独的内容索引方向，未实现。
 
 ## 用法
 
@@ -19,275 +22,230 @@
 ## 参数
 
 - `user-id-or-email` (必需): 用户标识
-  - 包含 `@` → email（用 `userEmail` 字段过滤）
-  - UUID 格式 → userId（用 `userId` 字段过滤）
-- `environment` (可选): `stage` 或 `prod`，默认 `stage`
-- `time-range` (可选): 如 `10m`, `30m`, `1h`, `2h`, `1d`，默认 `30m`
+  - 包含 `@` → email（AWS 用 `userEmail` 字段；cn 多数日志只带 `userId`，email 需先换 userId）
+  - UUID 格式 → `userId`（= span 里的 enduser.id）
+- `environment` (可选): `stage` | `prod` | `cn-stage` | `cn-prod`，默认 `stage`
+- `time-range` (可选): `10m` `30m` `1h` `2h` `1d`，默认 `30m`
 - 选项:
   - `--errors` — 只看 error/warn 级别
-  - `--session SESSION_ID` — 限定某个 session
-  - `--trace TRACE_ID` — 限定某个 traceId
-  - `--raw` — 显示原始 JSON
+  - `--session SESSION_ID` — 限定某个 session（`ses_*`）
+  - `--turn TURN_ID` — 限定某个 turn
+  - `--raw` — 显示原始 JSON 日志行
+  - `--summary` — 只输出统计聚合（不逐条打时间线）
 
 ## 示例
 
 ```bash
-/trace-user alice@example.com                    # Stage，最近 30 分钟
-/trace-user 37c03a9f-0b47-409c-81a3-5634eaab1a6c prod 2h  # Prod，最近 2 小时
-/trace-user alice@example.com --errors           # 只看错误
-/trace-user alice@example.com --session sess-xxx # 指定 session
+/trace-user 9781cf19-3d9a-451f-af5b-0a4f8b3397d9 cn-stage 1h   # cn-stage，最近 1 小时
+/trace-user alice@example.com prod 2h                          # AWS prod
+/trace-user 9781cf19-... cn-prod --session ses_azwDo9estPhg17Axb8q7q
+/trace-user 9781cf19-... cn-stage --errors                     # 只看错误
 ```
 
 如果用户输入 `/trace-user` 或 `/trace-user --help`，显示此帮助文档，不执行查询。
 
 ARGUMENTS: $ARGUMENTS
 
-## Claude Code 执行步骤
+---
 
-### 1. 解析参数
+## 核心概念：关联键 + 数据源
 
-从 `$ARGUMENTS` 中解析用户标识、环境、时间范围和选项。
+**一条龙不依赖 OTel trace，靠日志里的关联键自然串起来：**
 
-**用户标识判断**:
-- 包含 `@` → email → 使用 `userEmail` 字段
-- UUID 格式（`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`）→ 使用 `userId` 字段
-- 其他 → 当作 userId 尝试
+```
+userId (账号 UUID, = enduser.id)
+  └─ sessionId         ses_xxxxxxxxxxxx       一次 WS 会话 / 一个 agent 容器生命周期
+       └─ conversationId  cmqxxxx / <sess>-conv  一段对话
+            └─ turnId       turn-xxxx-xxxx        一个 agentic turn（= 一轮用户消息触发的
+                                                  LLM↔tool 循环，通常含多次 LLM 调用）
+```
 
-### 2. 日志组映射
+每条结构化日志都带 `userId / sessionId / conversationId / turnId`，所以按这些键 group 即可重建任意层级的时间线。
 
-三层服务对应的 CloudWatch Log Group：
+**各服务承载的信息（哪层查哪个 logstore）：**
 
-| 层 | 服务 | Stage 日志组 | Prod 日志组 |
-|----|------|-------------|------------|
-| L1 | agentic-chat | `/ecs/agentic-chat-stage` | `/ecs/agentic-chat-prod` |
-| L2 | gateway-core | `/ecs/gateway-core-stage` | `/ecs/gateway-core-prod` |
-| L3 | agent-runtime | `/ecs/gw-agent-runtime-stage` | `/ecs/gw-agent-runtime-prod` |
+| 层 | 服务 (logstore/log group) | 这条龙里给什么 |
+|----|--------------------------|---------------|
+| L1 | agentic-chat | 前端/BFF（SSR）。聊天链路主要走浏览器 WS 直连 gateway，前端日志辅助看连接/报错 |
+| L2 | gateway-core | WS 连接、鉴权(OIDC)、session 创建、消息转发、`traceId`、`duration_ms` |
+| L3 | **agent-runtime** | **一条龙核心**：每次 LLM 调用(model/token/延迟/cache/stopReason)、工具执行、子代理 spawn、turn 生命周期 |
 
-**AWS 区域**: `ap-southeast-1`
+> 经验：L3 (agent-runtime) 承载一条龙 90% 的价值。L2 补会话/连接/鉴权上下文。
 
-### 3. 搜索策略
+---
 
-#### 第一步：在 gateway-core 找到用户的 session
+## 执行步骤
+
+### A. 选择执行方式（按 environment）
+
+| environment | 部署 | 取日志方式 |
+|---|---|---|
+| `stage` / `prod` | AWS ECS Fargate | AWS CloudWatch Logs（第 1 节） |
+| `cn-stage` / `cn-prod` | 阿里云 SAE / ECI | `optima-logs` 直连阿里云 SLS（第 2 节，**首选**） |
+
+### 1. AWS（environment = stage / prod）
+
+日志组：`/ecs/<service>-<env>`（区域 `ap-southeast-1`，prod 必须带 `--region ap-southeast-1`）。
 
 ```bash
-# 按 email 搜索
+# 第一步：在 agent-runtime 找该用户的所有 turn（一条龙核心数据都在这）
 aws logs filter-log-events \
-  --log-group-name /ecs/gateway-core-{ENV} \
-  --filter-pattern '{ $.userEmail = "USER_EMAIL" }' \
-  --start-time $(date -d 'TIME_RANGE ago' +%s)000 \
-  --region ap-southeast-1 \
-  --output json | head -100
-
-# 按 userId 搜索
-aws logs filter-log-events \
-  --log-group-name /ecs/gateway-core-{ENV} \
+  --log-group-name /ecs/gw-agent-runtime-{ENV} \
   --filter-pattern '{ $.userId = "USER_ID" }' \
   --start-time $(date -d 'TIME_RANGE ago' +%s)000 \
-  --region ap-southeast-1 \
-  --output json | head -100
-```
+  --region ap-southeast-1 --output json | jq -r '.events[].message'
 
-从结果中提取 `sessionId` 和 `traceId`。
-
-#### 第二步：跨服务关联查询（Logs Insights）
-
-优先使用 CloudWatch Logs Insights 跨多个 log group 查询：
-
-```bash
-# 按 userId/email 跨服务查询
+# 第二步：跨服务关联（Logs Insights，gateway-core + agent-runtime）
 aws logs start-query \
-  --log-group-names \
-    /ecs/gateway-core-{ENV} \
-    /ecs/gw-agent-runtime-{ENV} \
-  --start-time $(date -d 'TIME_RANGE ago' +%s) \
-  --end-time $(date +%s) \
-  --query-string '
-    fields @timestamp, @logStream, @message
+  --log-group-names /ecs/gateway-core-{ENV} /ecs/gw-agent-runtime-{ENV} \
+  --start-time $(date -d 'TIME_RANGE ago' +%s) --end-time $(date +%s) \
+  --query-string 'fields @timestamp, @logStream, message, userId, sessionId, conversationId, turnId, model, inputTokens, outputTokens, elapsedMs, stopReason, duration_ms
     | filter userId = "USER_ID" or userEmail = "USER_EMAIL"
-    | sort @timestamp asc
-    | limit 500
-  ' \
+    | sort @timestamp asc | limit 1000' \
   --region ap-southeast-1
-
-# 等几秒后获取结果
-aws logs get-query-results --query-id QUERY_ID --region ap-southeast-1
+# 等几秒：aws logs get-query-results --query-id QUERY_ID --region ap-southeast-1
 ```
 
-如果已知 sessionId：
+服务映射（AWS）：`agentic-chat`→`/ecs/agentic-chat-<env>`，`gateway-core`→`/ecs/gateway-core-<env>`，`agent-runtime`→`/ecs/gw-agent-runtime-<env>`。
+
+### 2. cn-stage / cn-prod（阿里云 SLS，首选 `optima-logs`）
+
+> SLS `GetLogs` 是公网控制面 API，本机 `aliyun-optima` profile 直连即可，支持历史检索+时间窗+关键词。
+> SLS project：`optima-cn-stage-1911493506120573` / `optima-cn-prod-1911493506120573`；logstore == service 名；正文在 `content`。
 
 ```bash
-aws logs start-query \
-  --log-group-names \
-    /ecs/gateway-core-{ENV} \
-    /ecs/gw-agent-runtime-{ENV} \
-  --start-time $(date -d 'TIME_RANGE ago' +%s) \
-  --end-time $(date +%s) \
-  --query-string '
-    fields @timestamp, @logStream, level, message, sessionId, traceId, duration_ms
-    | filter sessionId = "SESSION_ID"
-    | sort @timestamp asc
-    | limit 500
-  ' \
-  --region ap-southeast-1
+# 第一步（核心）：agent-runtime —— 拉该用户全部 LLM/tool/turn 结构化日志
+optima-logs agent-runtime --env {cn-stage|cn-prod} --since {TIME_RANGE} --grep "USER_ID" -n 500 --json
+
+# 第二步：gateway-core —— 会话/连接/鉴权上下文
+optima-logs gateway-core --env {cn-stage|cn-prod} --since {TIME_RANGE} --grep "USER_ID" -n 200 --json
+
+# 限定某个 session / turn（缩小范围）
+optima-logs agent-runtime --env cn-stage --since 1h --grep "ses_xxxxx" -n 500 --json
+optima-logs agent-runtime --env cn-stage --since 1h --grep "turn-xxxx-xxxx" -n 200 --json
+
+# 只看错误
+optima-logs agent-runtime --env cn-stage --since 1h --grep "USER_ID" -n 500 --json \
+  | jq '.[] | (.content|fromjson?) | select(.level=="error" or .level=="warn")'
+
+# 底层（一般不用）：aliyun sls GetLogs --project optima-cn-stage-1911493506120573 \
+#   --logstore agent-runtime --from $FROM --to $NOW --line 500 --query "USER_ID" \
+#   --region cn-beijing --profile aliyun-optima
 ```
 
-#### 第三步：agentic-chat 日志（补充）
+> **解析 `--json` 输出（重要）**：`optima-logs ... --json` 返回**一个 JSON 数组**，每个元素是 SLS 记录（带 `__source__`/`eci_id`/`_image_name_` 等元字段），**结构化日志正文是 `.content` 字段里的 JSON 字符串**。所以解析模式固定是 `.[] | (.content|fromjson?)`，再 select 业务字段。元字段 `_image_name_` 还能顺带看是哪个镜像 digest 的容器在服务。
 
-agentic-chat 前端日志可能不含 userId/sessionId 字段，用时间窗口 + 关键词辅助：
-
+**一条龙拼装 + 统计的 canonical 配方（已实测可用）：**
 ```bash
-aws logs tail /ecs/agentic-chat-{ENV} --since {TIME_RANGE} \
-  --region ap-southeast-1 | grep -i "USER_EMAIL_OR_ID"
+U=<USER_ID>
+# 时间线：每次 LLM 调用一行（model / token / 延迟 / cache / stopReason），按 turn
+optima-logs agent-runtime --env cn-stage --since 1h --grep "$U" -n 1200 --json \
+| jq -r '[.[] | (.content|fromjson?)] | map(select(.message=="LLM stream completed"))
+    | sort_by(.timestamp) | .[]
+    | "\(.timestamp[11:19])  sess=\(.sessionId[-6:]) turn=\(.turnId[-8:])  \(.model)  in\(.inputTokens)/out\(.outputTokens)  \(.elapsedMs)ms  cache\((.cacheHitRate*1000|floor)/10)%  →\(.stopReason)"'
+
+# 统计：调用次数 / token 合计 / 延迟 / stop 分布 / 子代理 spawn
+optima-logs agent-runtime --env cn-stage --since 1h --grep "$U" -n 2000 --json \
+| jq '[.[] | (.content|fromjson?)] as $all | ($all|map(select(.message=="LLM stream completed"))) as $llm
+  | { "LLM调用次数":($llm|length), "不同session":([$llm[].sessionId]|unique|length), "不同turn":([$llm[].turnId]|unique|length),
+      "输入token":($llm|map(.inputTokens)|add), "输出token":($llm|map(.outputTokens)|add),
+      "平均延迟ms":(($llm|map(.elapsedMs)|add)/($llm|length)|floor), "最慢ms":($llm|map(.elapsedMs)|max),
+      "慢调用>5s":($llm|map(select(.elapsedMs>5000))|length),
+      "stop分布":($llm|group_by(.stopReason)|map({(.[0].stopReason//"?"):length})|add),
+      "子代理spawn":($all|map(select(.event_key=="spawn.lifecycle" and .phase=="completed"))|length),
+      "模型":([$llm[].model]|unique) }'
 ```
 
-#### 第四步：只看错误（--errors）
+> ⚠️ cn 多数 agent-runtime 日志只带 `userId` 不带 `userEmail`。若输入 email，先去 user-auth 换 userId（见 query-db / account 技能），再用 userId 查。
+> ⚠️ `--grep` 是 SLS 全文检索；userId/sessionId/turnId 都是高区分度 token，直接 grep 即可精确命中。
 
-```bash
-aws logs start-query \
-  --log-group-names \
-    /ecs/gateway-core-{ENV} \
-    /ecs/gw-agent-runtime-{ENV} \
-  --start-time $(date -d 'TIME_RANGE ago' +%s) \
-  --end-time $(date +%s) \
-  --query-string '
-    fields @timestamp, @logStream, level, message, sessionId, error
-    | filter (userId = "USER_ID" or userEmail = "USER_EMAIL")
-      and (level = "error" or level = "warn")
-    | sort @timestamp asc
-    | limit 200
-  ' \
-  --region ap-southeast-1
-```
+---
 
-### 4. 结构化日志字段参考
+## 3. 结构化日志字段参考（真实 schema）
 
-optima-gateway 的日志通过 AsyncLocalStorage 自动注入：
+**LLM 调用**（`service` = `openai-compat-provider` 或具体 provider，message = `LLM request sending` / `LLM response headers received` / `LLM first chunk received` / `LLM stream completed`）：
 
 ```json
-{
-  "timestamp": "2026-04-16T10:30:00.000Z",
-  "level": "info",
-  "service": "gateway-core",
-  "userId": "37c03a9f-...",
-  "userEmail": "alice@example.com",
-  "sessionId": "sess-xxx",
-  "traceId": "gw-abc123",
-  "message": "Session created",
-  "duration_ms": 123
-}
+{ "userId","sessionId","conversationId","turnId",
+  "model":"deepseek-v4-pro", "baseUrl":"https://api.deepseek.com/v1",
+  "messageCount":320, "toolCount":14, "status":200,
+  "ttfbMs":408, "firstChunkMs":8, "chunksReceived":384, "elapsedMs":6753,
+  "inputTokens":653, "outputTokens":422, "cacheReadTokens":105344, "cacheHitRate":0.994,
+  "stopReason":"tool_use" }
+```
+> 一个 `turnId` 下通常有**多次** `LLM stream completed`（agentic 循环：LLM→tool_use→LLM→…）。把它们按时间排好就是这个 turn 的"思考过程"。
+
+**子代理 spawn**（`service` = `agent-runtime:spawn`，`event_key` = `spawn.lifecycle`）：
+```json
+{ "message":"spawn completed", "agentId":"subagent-3-9cni", "agentType":"general-purpose",
+  "phase":"completed", "durationMs":4883, "tokensIn":338, "tokensOut":398,
+  "success":true, "runInBackground":false }
 ```
 
-**关键字段**:
-- `userId` / `userEmail` — 用户标识
-- `sessionId` — 会话 ID
-- `traceId` — 跨服务链路 ID
-- `duration_ms` — 操作耗时
-- `level` — 日志级别（info/warn/error）
+**turn / session 生命周期**（`service` = `agent-runtime:optima-runtime`）：`sendMessage handleMessage done` / `Destroying Optima session`。
 
-### 5. 输出格式
+**工具执行**：grep `tool` / `execute` / tool 名；tool 相关行带同样的 `turnId` 关联键。
 
-#### A. 概览信息
+**gateway-core**：`userId / userEmail / sessionId / traceId / duration_ms / message`（WS 连接、OIDC、session 状态）。
 
+**关键关联字段**：`userId`(账号) · `sessionId`(`ses_*`) · `conversationId` · `turnId` · `model` · `inputTokens`/`outputTokens` · `elapsedMs`/`ttfbMs` · `stopReason` · `duration_ms` · `level`。
+
+---
+
+## 4. 输出格式（一条龙）
+
+### A. 概览
 ```
-用户: alice@example.com (37c03a9f-...)
-环境: Stage
-时间范围: 最近 30 分钟
-找到 session 数: 3
-```
-
-#### B. Session 列表
-
-| Session ID | 创建时间 | 状态 | 持续时间 | 消息数 | 错误数 |
-|-----------|---------|------|---------|-------|-------|
-| sess-001 | 10:30:00 | running | 5m | 12 | 0 |
-| sess-002 | 10:20:00 | terminated | 8m | 24 | 1 |
-
-#### C. 请求链路时间线
-
-```
-Session: sess-001
-TraceId: gw-abc123
-
-时间线：
-┌──────────────────────────────────────────────────────────────────────┐
-│ 10:30:00.000 [gateway-core]   WS connected, authenticating...       │
-│ 10:30:00.150 [gateway-core]   OIDC verified, userId=37c03a9f       │ +150ms
-│ 10:30:00.200 [gateway-core]   Session creating                      │ +50ms
-│ 10:30:00.800 [gateway-core]   Agent task started (ECS RunTask)      │ +600ms
-│ 10:30:03.200 [agent-runtime]  Container ready, WS connected         │ +2400ms
-│ 10:30:03.250 [gateway-core]   Session running                       │ +50ms
-│ 10:30:05.000 [gateway-core]   Client message received               │
-│ 10:30:05.100 [agent-runtime]  LLM request started (openai)          │ +100ms
-│ 10:30:08.500 [agent-runtime]  LLM response complete                 │ +3400ms
-│ 10:30:08.600 [agent-runtime]  Tool call: read_file                  │
-│ 10:30:08.800 [agent-runtime]  Tool result returned                  │ +200ms
-│ 10:30:09.000 [gateway-core]   Message forwarded to client           │
-└──────────────────────────────────────────────────────────────────────┘
+用户: 9781cf19-3d9a-451f-af5b-0a4f8b3397d9   环境: cn-stage   时间范围: 最近 1h
+找到 session: 2 ｜ conversation: 3 ｜ turn: 14 ｜ LLM 调用: 51 ｜ 工具: 23 ｜ 错误: 1
 ```
 
-#### D. 耗时分析
-
+### B. 一条龙时间线（按 session → conversation → turn）
 ```
-关键耗时:
-  OIDC 认证:         150ms
-  Session 创建:       50ms
-  ECS 容器启动:     2400ms  (>2s 时标记 warning)
-  WS 回连:            50ms
-  首次 LLM 调用:    3400ms
-  工具执行:          200ms
-
-统计:
-  总消息数: 12 (user: 5, assistant: 7)
-  LLM 调用次数: 7
-  平均 LLM 延迟: 2800ms
-  工具调用次数: 3
+session ses_azwDo9estPhg17Axb8q7q  (conv cmqrg6dua…)
+└ turn …o0b78la3   06:34:33 → 06:34:50  (17s, 5 LLM calls, 4 tools)
+   ├ 06:34:33  LLM deepseek-v4-pro  in195/out125   1915ms  cache99.8%  →tool_use
+   ├ 06:34:35  LLM deepseek-v4-pro  in653/out422   6753ms  cache99.4%  →tool_use   (14 tools avail)
+   ├ 06:34:42  LLM deepseek-v4-pro  in116/out78    1727ms  cache99.9%  →tool_use
+   ├ 06:34:44  LLM deepseek-v4-pro  in126/out92    1930ms  cache99.9%  →tool_use
+   └ 06:34:47  LLM deepseek-v4-pro  in150/out147   2257ms  cache99.9%  →stop
 ```
 
-#### E. 错误/告警
-
+### C. 耗时 / token 统计
 ```
-发现 1 个错误:
-  10:35:12 [agent-runtime] ERROR: LLM request failed
-    provider: openai
-    error: "rate_limit_exceeded"
-    sessionId: sess-002
-    → 已自动重试（CircuitBreaker half-open）
+本窗口合计:  LLM 调用 51 次 ｜ 平均延迟 2.6s ｜ P95 6.8s ｜ 慢调用(>5s) 4 次
+token:  输入 12,840  输出 4,210  缓存命中率 99.3%
+工具:   bash×9  read×6  web_search×3 …
+子代理: spawn 2 (general-purpose, 平均 4.9s, 全 success)
 ```
 
-### 6. 常用诊断场景
-
-| 用户报告 | 推荐策略 |
-|---------|---------|
-| "连不上" / "打不开" | 查 gateway-core 连接日志 + OIDC 认证 |
-| "没反应" / "卡住了" | 查 agent-runtime 是否收到消息 + LLM 是否响应 |
-| "回复慢" | 查 duration_ms 字段，分析 ECS 启动 + LLM 延迟 |
-| "出错了" / "报错" | `--errors` 模式，重点看 error 级别 |
-| "用了一半断了" | 查 WS 断连事件 + session 状态变化 |
-| "总是失败" | 查 CircuitBreaker 状态 + provider 切换日志 |
-
-### 7. 快捷跟进命令
-
-```bash
-# 查看服务健康状态
-curl -s https://gw.stage.optima.onl/health | jq .
-curl -s https://ai.stage.optima.onl/api/health | jq .
-
-# 查看服务 debug 信息
-curl -s -H "X-Debug-Key: 7eede5747b6c50f1c8f2358b98462f74696cdef9bfeab85eaf7ea41166788b5c" \
-  https://gw.stage.optima.onl/debug/info | jq .
-
-# 查看 ECS 服务状态
-aws ecs describe-services --cluster optima-stage-cluster \
-  --services gateway-core-stage --region ap-southeast-1 \
-  --query 'services[0].{status:status,running:runningCount,desired:desiredCount}'
+### D. 错误 / 告警（`--errors`）
 ```
+06:41:12 [openai-compat-provider] WARN LLM request retry  turnId=turn-… reason=429
+  → CircuitBreaker half-open，已重试
+```
+
+---
+
+## 5. 常用诊断场景
+
+| 用户报告 | 策略 |
+|---------|------|
+| "没反应/卡住" | agent-runtime 查该 turn 是否有 `LLM request sending` 却无 `stream completed`（卡在 LLM）；或有 `tool_use` 却无后续工具完成 |
+| "回复慢" | 看 `elapsedMs`/`ttfbMs`/`firstChunkMs`；`slow:true` 标记；P95 |
+| "出错" | `--errors`，看 LLM `status!=200` / retry / CircuitBreaker |
+| "连不上" | gateway-core 的 WS 连接 + OIDC 日志 |
+| "token 烧太快/账单" | 按 turn 汇总 `inputTokens`/`outputTokens`，看 `cacheHitRate` 是否异常低 |
+| "子代理炸了" | grep `spawn.lifecycle`，看 `success:false` / `durationMs` |
+
+---
 
 ## 注意事项
 
-1. **CloudWatch 延迟**: 最新日志可能需要等 10-30 秒才出现
-2. **速率限制**: `filter-log-events` 有限流，大范围查询优先用 `start-query` (Logs Insights)
-3. **日志保留**: CloudWatch 保留 14 天
-4. **结构化日志**: JSON 日志输出到 stderr，在 CloudWatch 中显示为普通文本行
-5. **Insights 限制**: 最多返回 10000 条，一般够用
-6. **权限要求**: 需要 AWS CLI 配置了正确的凭证（`ap-southeast-1` 区域）
-7. 如果用户没有任何日志，可能是该用户在指定时间范围内没有活动、标识输入有误、或服务未部署
+1. **数据源是结构化日志**，不是 OTel trace。一条龙的准确性取决于这些字段，已验证 cn-stage/cn-prod + AWS 均稳定输出。
+2. **cn 日志走 stdout→SLS**，不受 OTel traces logstore 的 ingest 限流影响。
+3. **关联键优先 userId/sessionId/turnId**（高区分度，全文 grep 精确命中）。email 在 cn 需先换 userId。
+4. **日志延迟**：CloudWatch 1-2s；SLS 数秒。最新几秒的可能要等。
+5. **保留期**：CloudWatch 7-14d；cn SLS 各 logstore 按配置（agent-runtime stdout 通常数天起）。
+6. 如果查不到：时间窗内无活动 / 标识写错 / 用了 email 但 cn 日志只认 userId / 该容器已回收（warm 池轮换后旧容器日志仍在 SLS，按时间窗能查到）。
+7. **OTel 原生 trace 树**是独立增强项（见顶部说明），不在本工具；需要 span 级火焰图时另走 trace 后端，且 cn 侧待修复后才有业务 span。
