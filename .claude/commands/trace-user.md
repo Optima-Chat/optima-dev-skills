@@ -2,16 +2,22 @@
 
 按账号把一个用户在 agentic-chat → gateway-core → agent-runtime 全链路的行为**从结构化日志**拼成一条时间线：每次 LLM 调用（模型 / token / 延迟 / 缓存命中 / stop reason）、每个工具执行、子代理 spawn、报错，按 `userId → session → conversation → turn` 聚合。
 
-**版本**: v0.2.0
+**版本**: v0.3.0
 
+> **v0.3 新增**：**反向追踪**（一段内容 → 是谁 → 手机号，§6），cn-prod 真实账号双向实测通过。
+>
 > **v0.2 做了什么**（相对 v0.1）：
 > - **数据源 = 结构化日志**（不是 OTel trace）。一条龙所需的全部字段（model / inputTokens / outputTokens / cacheHitRate / stopReason / toolCount / durationMs / 子代理 spawn / 报错）本就逐条落在 agent-runtime 的结构化日志里，并可靠流入日志后端；按关联键拼装即可。
 > - **新增 cn-stage / cn-prod 分支**（阿里云 SLS，`optima-logs` 直连），与 AWS（CloudWatch）并列。
 > - **关联键标准化**：`userId`(=enduser) → `sessionId`(`ses_*`) → `conversationId` → `turnId`。
 >
+> **双向**：
+> - **正向**（手机/userId → 一条龙时间线）—— §1–§5，结构化日志 + messages 表。
+> - **反向**（一段内容 → 是谁 → 手机号）—— §6，`messages` 表 `content ILIKE` 检索 → user_id → user-auth 解手机号。**已实测可用**（cn-prod 真实账号双向验证）。
+>
 > **不在本工具范围（已知、刻意不做）**：
-> - OTel **原生跨服务 trace 树**（browser→gateway→agent 一个 traceId 的可视化）—— 那条线在 cn 仍有未通的缺陷（业务 span 采样/context 抑制 + SLS ingest 限流），单独跟踪，不阻塞本工具。本工具用日志关联键做"逻辑一条龙"，覆盖同样的信息维度。
-> - 对话**正文内容检索**（按关键词反查是谁）—— 单独的内容索引方向，未实现。
+> - OTel **原生跨服务 trace 树**（browser→gateway→agent 一个 traceId 的可视化）—— 那条线在 cn 仍有未通的缺陷（业务 span 采样/context 抑制 + SLS ingest 限流），单独跟踪（gateway#1219），不阻塞本工具。本工具用日志/DB 关联键做"逻辑一条龙"，覆盖同样的信息维度。
+> - **可扩展的中文全文索引**（zhparser/分词，给高 QPS 内容搜索用）—— cn RDS 装不了扩展，单独排（#1201）。一次性反查用 `ILIKE` 已够，不依赖它。
 
 ## 用法
 
@@ -237,6 +243,42 @@ token:  输入 12,840  输出 4,210  缓存命中率 99.3%
 | "连不上" | gateway-core 的 WS 连接 + OIDC 日志 |
 | "token 烧太快/账单" | 按 turn 汇总 `inputTokens`/`outputTokens`，看 `cacheHitRate` 是否异常低 |
 | "子代理炸了" | grep `spawn.lifecycle`，看 `success:false` / `durationMs` |
+
+---
+
+## 6. 反向追踪：一段内容 → 是谁 → 手机号（content → person）
+
+与正向（手机→一条龙）对称的另一方向：拿到一段聊天内容/截图文字，反查是哪个用户、解出手机号。**对话正文存在 gateway-core 的 `messages` 表（Postgres），直接 `content ILIKE` 检索即可——不需要中文分词**（分词只为大规模高效索引，一次性查找用不上）。
+
+**前置：cn DB 访问凭证（query-db 走 buildbox 隧道）**
+```bash
+# cn Infisical admin（本地缓存）
+CREDS=~/.config/optima/cn-infisical-creds.json
+export INFISICAL_CN_EMAIL="$(python3 -c "import json;print(json.load(open('$CREDS'))['email'])")"
+export INFISICAL_CN_PASSWORD="$(python3 -c "import json;print(json.load(open('$CREDS'))['password'])")"
+# buildbox root 密码（1P "Aliyun cn-prod buildbox ECS (root)"）
+OP='/mnt/c/Users/xbfoo/AppData/Local/Microsoft/WinGet/Links/op.exe'
+export OPTIMA_CN_BUILDBOX_PASSWORD="$("$OP" item get gdmixcizjci5bvuu3nuvgg4ooe --reveal --field password)"
+```
+
+**步骤 1：内容 → user_id（messages 表，role='user' 只看用户发言）**
+```bash
+optima-query-db gateway-core "SELECT user_id, conversation_id, to_char(created_at,'MM-DD HH24:MI') t, left(content,80) c
+  FROM messages WHERE role='user' AND content ILIKE '%你那句话%' ORDER BY created_at DESC LIMIT 20" cn-prod
+```
+- 命中唯一 user_id → 直接定位到人。
+- 命中多个（如 `hi` 这种 194 人都说过的高频词）→ 不唯一；用「说得最多」排名缩小：
+  `... GROUP BY user_id ORDER BY count(*) DESC`，或要求更有特征的片段。
+
+**步骤 2：user_id → 手机号（user-auth 表）**
+```bash
+optima-query-db user-auth "SELECT id, phone, email, created_at FROM users WHERE id='<USER_ID>'" cn-prod
+```
+
+**反过来 手机→userId（正向第一跳）也在这张表**：`WHERE phone='<手机号>'`。
+
+> `messages` 表关键列：`id / conversation_id / user_id / role / content / content_parts(jsonb) / tool_calls(jsonb) / model / input_tokens / output_tokens / created_at`。
+> ⚠️ 反查到人后只用于运营/排障，遵守数据合规；正文含用户隐私，别外泄。
 
 ---
 
