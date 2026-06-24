@@ -185,7 +185,7 @@ INFO - Database query took 3200ms: SELECT * FROM products WHERE...
 **特点**：
 - 阿里云 **SLS**（日志服务，cn-beijing），不是 AWS CloudWatch
 - ✅ 用 `optima-logs <svc> --env cn-prod` **直连 SLS**（`aliyun sls GetLogs`，公网控制面 API）——免 buildbox 跳板，支持历史检索 + 时间窗（`--since`）+ 关键词（`--grep`）
-- 前置：本机需装 `aliyun` CLI + `aliyun-optima` profile（cn-beijing）
+- 前置：本机需装 `aliyun` CLI 并配好 cn-beijing 凭证（默认用当前 profile；要指定别的 profile 设 `OPTIMA_ALIYUN_PROFILE=<名>`）
 - 旧的「buildbox → SAE `DescribeInstanceLog` 取当前缓冲」已弃用（缓冲式、重启即丢、不能检索）；技术细节见 `/logs --help`（第 3 节）
 
 ## 支持的服务列表
