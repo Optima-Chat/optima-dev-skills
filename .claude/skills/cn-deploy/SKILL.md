@@ -28,6 +28,19 @@ optima-cn-deploy --list                       # 列出全部可发服务
 5. 失败排查：命令输出的 flow.aliyun.com 链接里看具体 step 日志；常见原因是该分支/仓的 Codeup mirror 凭证问题（命令会在 mirror 步就报错并中止，不会构建旧代码）。
 6. 成功标准：最后一行 `✓ SAE ImageUrl tag=<sha>` —— 流水线绿且 SAE 真的钉到了目标 commit。只看流水线绿不算完成。
 
+
+## cn-prod vtag 发版（⚠️ 待 svenyang 首次验证通过后再日常使用）
+
+```bash
+optima-cn-deploy <service> --vtag cn-v1.2.3               # 先 stage 同 tag 验证
+optima-cn-deploy <service> --env prod --vtag cn-v1.2.3    # prod 发版
+```
+
+- prod 是 vtag 制：必须先 `git tag cn-vX.Y.Z && git push`，工具拒绝无 vtag / 裸 v* / 带 --branch 的 prod 请求
+- prod 流水线构建后**停在人工卡点**（xbfool/svenyang 在云效控制台审批），之后 DB 迁移 + digest 钉死部署自动走完
+- 成功标准：prod SAE ImageUrl 为 `@sha256:` digest 寻址（工具最后一行校验）
+- 用户请求发 cn-prod 时：确认已有 stage 验证过的 cn-v tag；没有则先引导走 stage
+
 ## 前置依赖
 
 - `aliyun` CLI 已配置（profile 默认 `aliyun-optima`，可用环境变量 `OPTIMA_ALIYUN_PROFILE` 覆盖为自己的 RAM 用户 profile）
@@ -35,5 +48,5 @@ optima-cn-deploy --list                       # 列出全部可发服务
 
 ## 边界
 
-- 只发 **cn-stage**，不发 cn-prod（cn-prod 发布另走人工卡点流程）。
+- cn-prod 仅走 vtag 制（见上），且有人工卡点闸门；日常无 vtag 的构建只发 cn-stage。
 - 服务注册表是 optima-terraform `alicloud/stacks/cn-prod-buildbox/yunxiao/` 的快照；新增服务先在那边 gen-pipelines 建好流水线，再同步本工具的 SERVICES 表。
