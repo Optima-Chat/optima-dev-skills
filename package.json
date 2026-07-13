@@ -1,6 +1,6 @@
 {
   "name": "@optima-chat/dev-skills",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Claude Code Skills for Optima development team - cross-environment collaboration tools",
   "main": "index.js",
   "bin": {
@@ -17,7 +17,8 @@
     "optima-product": "dist/bin/helpers/product.js",
     "optima-query-db": "dist/bin/helpers/query-db.js",
     "optima-show-env": "dist/bin/helpers/show-env.js",
-    "optima-verify-health": "dist/bin/helpers/verify-health.js"
+    "optima-verify-health": "dist/bin/helpers/verify-health.js",
+    "optima-cn-deploy": "dist/bin/helpers/cn-deploy.js"
   },
   "scripts": {
     "postinstall": "node scripts/install.js",

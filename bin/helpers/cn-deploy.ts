@@ -1,0 +1,148 @@
+#!/usr/bin/env node
+/**
+ * optima-cn-deploy —— 云效 Flow cn-stage 流水线一条龙触发器(团队版)。
+ *
+ * 对应 optima-terraform alicloud/stacks/cn-prod-buildbox/yunxiao/ 的 cn-run.py,
+ * 去掉 buildbox SSH 依赖(凭证由云效变量组 41970 供给,2026-07-13 起控制台/API 裸跑均可)。
+ *
+ * 做四件事(每件都是踩过的坑):
+ *   1. 触发服务仓 Codeup mirror 同步并等目标分支追平 GitHub —— mirror 不新鲜=构建旧代码。
+ *      GitHub token 用 `gh auth token`(需本机 gh 已登录)。
+ *   2. StartPipelineRun;--branch 时带 runningBranchs 覆盖服务仓 source 分支。
+ *   3. 轮询到终态,给出云效 run 链接。
+ *   4. SUCCESS 后校验 SAE ImageUrl tag == 目标分支 HEAD short-sha(防"流水线绿但没部上");
+ *      aliyun API 偶发空返回,带重试守卫。
+ *
+ * 用法:
+ *   optima-cn-deploy billing                      # main 全链(构建→迁移→SAE 发布)
+ *   optima-cn-deploy user-auth --branch feat/xxx  # 非 main 分支构建+部署到 cn-stage
+ *   optima-cn-deploy gateway-core --no-wait       # 只触发不等待
+ *   optima-cn-deploy --list                       # 列出全部可发服务
+ *
+ * 前置: aliyun CLI(profile 默认 aliyun-optima,可用 OPTIMA_ALIYUN_PROFILE 覆盖)+ gh 已登录。
+ * 流水线定义的单一信源在 optima-terraform yunxiao/(gen-pipelines.py);本表为其快照,
+ * 新增服务后同步(pipelineId 稳定,不常变)。
+ */
+import { execFileSync } from 'node:child_process';
+
+const ORG = '6a17b6282bf8b1184fc0e0c6';
+const ENDPOINT = 'devops.cn-hangzhou.aliyuncs.com';
+const PROFILE = process.env.OPTIMA_ALIYUN_PROFILE || 'aliyun-optima';
+const CODEUP_BASE = `https://codeup.aliyun.com/${ORG}`;
+
+// 服务注册表(快照自 optima-terraform services.stage.env + gen-pipelines.py,2026-07-13)
+interface Svc { pipelineId: number; repo: string; saeAppId?: string; }
+const SERVICES: Record<string, Svc> = {
+  'agent-portal':             { pipelineId: 5118519, repo: 'optima-portals',     saeAppId: 'fe757f78-d18d-4480-9402-fe59d4721055' },
+  'agentic-chat':             { pipelineId: 5118520, repo: 'agentic-chat',       saeAppId: '6aea1ce1-f813-4e1c-8e97-d1ecb5398e37' },
+  'billing':                  { pipelineId: 5118521, repo: 'optima-billing',     saeAppId: '09d8e292-dc64-4af8-bce5-0a56cb666921' },
+  'browser-backend':          { pipelineId: 5118522, repo: 'optima-browser-use', saeAppId: '1fced3f6-a80a-41a4-8f23-e4d5a467f8eb' },
+  'commerce-backend':         { pipelineId: 5107005, repo: 'commerce-backend',   saeAppId: '49d09808-508c-471a-9560-553c49a67f72' },
+  'commerce-rq-scheduler':    { pipelineId: 5118523, repo: 'commerce-backend',   saeAppId: '1d2810ef-889e-4675-b6e6-a299e4722e68' },
+  'commerce-rq-worker':       { pipelineId: 5118524, repo: 'commerce-backend',   saeAppId: 'd661da87-6d24-40b8-93ed-e1c967d8abe2' },
+  'gateway-core':             { pipelineId: 5118525, repo: 'optima-gateway',     saeAppId: '9326b7ff-da52-48d6-86db-9c4a884be108' },
+  'gw-admin':                 { pipelineId: 5118526, repo: 'optima-gateway',     saeAppId: '90e0daf7-7910-46b8-b5bf-a0b8bcc60859' },
+  'kb-backend':               { pipelineId: 5118527, repo: 'kb-skills',          saeAppId: 'c7f65160-9d9e-416e-9e36-5439010d2b2d' },
+  'ops-portal':               { pipelineId: 5118529, repo: 'optima-portals',     saeAppId: '41d0ee66-8402-4e72-bfda-8eba75d1270c' },
+  'optima-generation':        { pipelineId: 5118530, repo: 'optima-gen',         saeAppId: '327856d5-8b18-4e15-bfd8-b8bd3b807ffa' },
+  'optima-generation-worker': { pipelineId: 5118531, repo: 'optima-gen',         saeAppId: 'ad75b3b0-9ff4-443d-b0ef-81886bc7aa60' },
+  'optima-scout':             { pipelineId: 5117336, repo: 'optima-scout',       saeAppId: 'bac2c3a4-90ce-49a6-81d5-caa38cb5c807' },
+  'optima-sentinel':          { pipelineId: 5118532, repo: 'optima-sentinel',    saeAppId: '3759db7b-4640-4a04-8436-4f241f0ec9d9' },
+  'optima-sentinel-worker':   { pipelineId: 5118533, repo: 'optima-sentinel',    saeAppId: '7c975caf-ebfb-4bb3-91c4-2a8c83d1d2e5' },
+  'optima-skills':            { pipelineId: 5118534, repo: 'optima-skills',      saeAppId: '90457be3-5eb3-4efc-a362-1788dcc51921' },
+  'user-auth':                { pipelineId: 5118510, repo: 'user-auth',          saeAppId: '36efc3a6-5b42-49fa-8db2-0865aa0c25d2' },
+  'user-auth-admin':          { pipelineId: 5118535, repo: 'user-auth',          saeAppId: '7feb9cc3-4731-4ea8-964c-4870a9e63afb' },
+  'yzsgo-api':                { pipelineId: 5118536, repo: 'yzsgo',              saeAppId: 'd0af7f66-ef66-4587-9e93-250d01ee3cf6' },
+};
+
+function sh(cmd: string, args: string[]): string {
+  try {
+    return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  } catch (e: any) {
+    return '';
+  }
+}
+
+function devops(action: string, kv: Record<string, string>, retries = 3): any {
+  const args = ['devops', action, '--organizationId', ORG, '--endpoint', ENDPOINT, '--profile', PROFILE];
+  for (const [k, v] of Object.entries(kv)) args.push(`--${k}`, v);
+  for (let i = 0; i < retries; i++) {
+    const out = sh('aliyun', args);
+    try { return JSON.parse(out); } catch { /* aliyun 偶发空返回/超时,重试 */ }
+  }
+  return {};
+}
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+async function main() {
+  const argv = process.argv.slice(2);
+  if (argv.includes('--list') || argv.length === 0) {
+    console.log('可发服务(cn-stage):\n  ' + Object.keys(SERVICES).sort().join('\n  '));
+    console.log('\n用法: optima-cn-deploy <service> [--branch feat/xxx] [--no-wait]');
+    process.exit(argv.includes('--list') ? 0 : 1);
+  }
+  const svcName = argv[0];
+  const svc = SERVICES[svcName];
+  if (!svc) { console.error(`✗ 未知服务 ${svcName}(--list 看全量)`); process.exit(1); }
+  const bIdx = argv.indexOf('--branch');
+  const branch = bIdx >= 0 ? argv[bIdx + 1] : 'main';
+  const noWait = argv.includes('--no-wait');
+
+  // 1. GitHub HEAD + mirror 同步
+  const ghSha = sh('gh', ['api', `repos/Optima-Chat/${svc.repo}/commits/${branch}`, '--jq', '.sha']);
+  if (!ghSha) { console.error(`✗ GitHub 上无 ${svc.repo}@${branch}(或 gh 未登录)`); process.exit(1); }
+  const repos = devops('ListRepositories', { perPage: '100' });
+  const repoId = (repos.result || []).find((r: any) => r.name === svc.repo)?.Id;
+  if (!repoId) { console.error(`✗ Codeup 无 mirror 仓 ${svc.repo}`); process.exit(1); }
+  const ghTok = sh('gh', ['auth', 'token']);
+  devops('TriggerRepositoryMirrorSync', { repositoryId: String(repoId), account: 'xbfool', token: ghTok });
+  let synced = false;
+  for (let i = 0; i < 30; i++) {
+    const b = devops('GetBranchInfo', { repositoryId: String(repoId), branchName: branch });
+    if (b?.result?.commit?.id === ghSha) { synced = true; break; }
+    await sleep(10000);
+  }
+  if (!synced) { console.error('✗ 300s 内 Codeup mirror 未追平 GitHub,中止(检查 mirror 凭证)'); process.exit(1); }
+  console.log(`✓ mirror 已追平 ${svc.repo}@${branch} = ${ghSha.slice(0, 10)}`);
+
+  // 2. 触发(凭证由云效变量组 41970 供给,无需注入)
+  const kv: Record<string, string> = { pipelineId: String(svc.pipelineId) };
+  if (branch !== 'main') {
+    kv.params = JSON.stringify({ runningBranchs: { [`${CODEUP_BASE}/${svc.repo}.git`]: branch } });
+  }
+  const start = devops('StartPipelineRun', kv);
+  const runId = start.pipelineRunId;
+  if (!runId) { console.error(`✗ 启动失败: ${JSON.stringify(start).slice(0, 150)}`); process.exit(1); }
+  console.log(`▶ ${svcName} run#${runId} 已启动 (branch=${branch})`);
+  console.log(`  https://flow.aliyun.com/pipelines/${svc.pipelineId}/current`);
+  if (noWait) return;
+
+  // 3. 轮询
+  let status = '';
+  for (;;) {
+    const d = devops('GetPipelineRun', { pipelineId: String(svc.pipelineId), pipelineRunId: String(runId) });
+    status = d?.pipelineRun?.status || status;
+    if (['SUCCESS', 'FAIL', 'CANCELED', 'ERROR'].includes(status)) break;
+    await sleep(45000);
+  }
+  console.log(`${status === 'SUCCESS' ? '✅' : '❌'} ${svcName} run#${runId}: ${status}`);
+  if (status !== 'SUCCESS') process.exit(1);
+
+  // 4. SAE ImageUrl 校验(空返回重试守卫)
+  if (svc.saeAppId) {
+    let img = '';
+    for (let i = 0; i < 3; i++) {
+      const raw = sh('aliyun', ['sae', '--profile', PROFILE, '--region', 'cn-beijing',
+        'DescribeApplicationConfig', '--AppId', svc.saeAppId]);
+      try { img = JSON.parse(raw)?.Data?.ImageUrl || ''; break; } catch { await sleep(3000); }
+    }
+    if (!img) { console.log('⚠️ SAE 配置查询连续空返回,跳过 ImageUrl 校验(流水线本身已 SUCCESS)'); return; }
+    const tag = img.split(':').pop() || '';
+    const ok = ghSha.startsWith(tag);
+    console.log(`${ok ? '✓' : '✗'} SAE ImageUrl tag=${tag} vs 目标 ${ghSha.slice(0, 10)}`);
+    if (!ok) process.exit(1);
+  }
+}
+
+main().catch(e => { console.error('✗', e?.message || e); process.exit(1); });
