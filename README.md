@@ -88,6 +88,7 @@ Claude:
 | `/query-db` | 查询数据库 | `/query-db user-auth "SELECT COUNT(*) FROM users"` | ✅ |
 | `/generate-test-token` | 生成测试 token | `/generate-test-token` | 🔧 Development |
 | `/read-code` | 阅读代码 | `/read-code commerce-backend app/main.py` | - |
+| `/cn-deploy` | 发布服务到 cn-stage（云效流水线一条龙） | 「把 billing 发到 cn-stage」 | cn-stage |
 
 **说明**：
 - 命令支持 CI、Stage、Prod 三个环境
@@ -109,6 +110,7 @@ Claude:
 | `optima-grant-credits` | 赠送积分 | `optima-grant-credits user@example.com --credits 10000 --env prod`（`optima-grant-balance` 为废弃别名）|
 | `optima-entitlement` | 产品权益 grant/revoke/list | `optima-entitlement grant 18898654855 --product-key scout-gift --justification "..." --env cn-prod` |
 | `optima-account` | 账号 status/ban/unban | `optima-account ban user@example.com --reason "abuse" --env prod` |
+| `optima-cn-deploy` | 云效 Flow 发布到 cn-stage（构建→DB迁移→SAE 发布→sha 校验，20 服务） | `optima-cn-deploy billing` / `optima-cn-deploy user-auth --branch feat/xxx` |
 
 > **4 环境 + 标识符**：`grant-subscription` / `grant-credits` / `entitlement` / `account` 均支持 `stage` / `prod` / `cn-prod` / `cn-stage`。标识符 `<email\|phone\|userId>`——**cn-prod / cn-stage 用户多为手机号注册**，三种均可；AWS stage/prod 仅 email。`ban`/`unban` 及 `account status` 的禁用态读取需 admin-用户凭证（Infisical `/shared-secrets/credentials`；cn 另需 `INFISICAL_CN_EMAIL/PASSWORD`）。
 

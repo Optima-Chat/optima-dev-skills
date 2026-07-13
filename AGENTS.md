@@ -13,6 +13,7 @@ Prefer the installed CLI tools over reimplementing long shell workflows:
 - `optima-grant-credits <email|phone|userId> --credits <n> [options]`
 - `optima-product <create|update|add-channel|toggle-channel|show> [options]` — manage paid-plugin marketplace Products + Stripe channels (Wave 1.5 admin endpoints; stage default)
 - `optima-entitlement <grant|revoke|list> [options]` — admin-grant / revoke / list paid-plugin entitlements (refuses revoke of PAYMENT / PARTNER source)
+- `optima-cn-deploy <service> [--branch feat/xxx] [--no-wait]` — 云效 Flow 发布到 cn-stage(mirror 同步→构建→DB 迁移→SAE 发布→sha 校验;20 服务,凭证由云效变量组供给零配置)
 - `optima-plugin <show|set-paid|set-default> [options]` — flip a plugin's skills-side paid/free state (isPaid) + defaultForUser (the user-facing gate; pairs with optima-product for the billing side)
 
 For code-reading tasks across Optima repositories, use `gh` commands against `Optima-Chat/<repo>`.
@@ -30,6 +31,7 @@ After `npm install -g @optima-chat/dev-skills`, this package installs skills und
 - `grant-credits`
 - `restart-ecs`
 - `use-commerce-cli`
+- `cn-deploy`
 
 ## Tooling Assumptions
 
