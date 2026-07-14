@@ -150,20 +150,81 @@ function queryDatabase(host: string, port: number, user: string, password: strin
   return result;
 }
 
-async function main() {
-  const args = process.argv.slice(2);
+function printUsage(print: (msg: string) => void = console.error) {
+  print('Usage: query-db.ts <service> <sql> [environment]');
+  print('');
+  print('Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway, gateway-core, optima-logistics, billing, ads-backend, amazon-backend, browser-backend, shopify-backend, optima-generation, optima-sentinel');
+  print('Environments: ci (default), stage, prod, cn-prod (阿里云生产), cn-stage (阿里云预发)');
+  print('');
+  print('Example: query-db.ts user-auth "SELECT COUNT(*) FROM users" prod');
+}
+
+/** 参数用法错误（打印 message + usage 后退非零，区别于运行期错误）。 */
+export class QueryDbUsageError extends Error {}
+
+// 单 token 旗标形态（--env / -h）。带空白的 SQL 文本不会匹配，
+// 但整段是 `-- 注释` 的 SQL 由 parseQueryDbArgs 的空语句检查兜住。
+const FLAG_RE = /^--?[A-Za-z][-A-Za-z0-9]*$/;
+
+/**
+ * 解析位置参数 `<service> <sql> [environment]`。
+ * 本 CLI 没有旗标——历史 footgun（#60）：`--env cn-stage` 会被吞成
+ * sql='--env'（SQL 注释 = no-op）+ 真 SQL 静默丢弃，空输出 + exit 0
+ * 被误判成「环境读不到」。故旗标、多余参数、纯注释 SQL 一律硬报错。
+ */
+export function parseQueryDbArgs(
+  args: string[],
+): { service: string; sql: string; environment: string } | 'help' {
+  if (args.includes('--help') || args.includes('-h')) return 'help';
+
+  const flag = args.find((a) => FLAG_RE.test(a));
+  if (flag) {
+    const hint = flag === '--env' || flag === '-e'
+      ? '。没有 --env 旗标：environment 是第 3 个位置参数，如 query-db.ts gateway-core "SELECT 1" cn-stage'
+      : '';
+    throw new QueryDbUsageError(`未知旗标 ${flag}（本命令只收位置参数）${hint}`);
+  }
 
   if (args.length < 2) {
-    console.error('Usage: query-db.ts <service> <sql> [environment]');
-    console.error('');
-    console.error('Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway, gateway-core, optima-logistics, billing, ads-backend, amazon-backend, browser-backend, shopify-backend, optima-generation, optima-sentinel');
-    console.error('Environments: ci (default), stage, prod, cn-prod (阿里云生产), cn-stage (阿里云预发)');
-    console.error('');
-    console.error('Example: query-db.ts user-auth "SELECT COUNT(*) FROM users" prod');
-    process.exit(1);
+    throw new QueryDbUsageError('缺少参数：需要 <service> <sql>');
+  }
+  if (args.length > 3) {
+    throw new QueryDbUsageError(
+      `多余参数已拒绝（绝不静默丢弃）：${args.slice(3).join(' ')}。SQL 含空格时记得整体加引号`,
+    );
   }
 
   const [service, sql, environment = 'ci'] = args;
+
+  const sqlBody = sql.split('\n').filter((l) => !/^\s*(--.*)?$/.test(l)).join('\n');
+  if (!sqlBody.trim()) {
+    throw new QueryDbUsageError(
+      'SQL 为空或全是 `--` 注释（会静默 no-op）——检查参数顺序：<service> <sql> [environment]',
+    );
+  }
+
+  return { service, sql, environment };
+}
+
+async function main() {
+  let parsed: ReturnType<typeof parseQueryDbArgs>;
+  try {
+    parsed = parseQueryDbArgs(process.argv.slice(2));
+  } catch (error) {
+    if (error instanceof QueryDbUsageError) {
+      console.error(`❌ ${error.message}`);
+      console.error('');
+      printUsage();
+      process.exit(1);
+    }
+    throw error;
+  }
+  if (parsed === 'help') {
+    printUsage(console.log);
+    return;
+  }
+
+  const { service, sql, environment } = parsed;
 
   if (!SERVICE_DB_MAP[service as keyof typeof SERVICE_DB_MAP]) {
     console.error(`Unknown service: ${service}`);
@@ -273,7 +334,11 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error('\n❌ Error:', error.message);
-  process.exit(1);
-});
+// Only run the CLI flow when invoked directly — being require()'d (e.g. by the
+// unit tests for parseQueryDbArgs) must not trigger main().
+if (require.main === module) {
+  main().catch(error => {
+    console.error('\n❌ Error:', error.message);
+    process.exit(1);
+  });
+}
