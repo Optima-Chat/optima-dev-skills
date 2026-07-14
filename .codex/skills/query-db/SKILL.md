@@ -19,7 +19,7 @@ optima-query-db <service> "<sql>" [environment]
 
 `ci` (default), `stage`, `prod`, `cn-prod` (Aliyun production), `cn-stage` (Aliyun staging).
 
-The CLI takes **positional arguments only — there are no flags**. Pass the environment as the 3rd positional argument, e.g. `optima-query-db gateway-core "SELECT 1" cn-stage`. Flag-style tokens such as `--env` are rejected with an error (see issue #60).
+Pass the environment as the 3rd positional argument (`optima-query-db gateway-core "SELECT 1" cn-stage`) or via the `--env` flag (`--env cn-stage`, consistent with optima-logs). Any other flag, extra positional argument, unknown environment name, or comment-only SQL is rejected with a hard error instead of a silent empty result (see issue #60).
 
 For `cn-prod` / `cn-stage`, two extra env vars are required (the CLI prints an actionable error when missing; see https://github.com/Optima-Chat/optima-dev-skills/issues/21 ):
 

@@ -16,7 +16,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 optima-query-db <service> "<sql>" [environment]
 ```
 
-**⚠️ 只收位置参数、没有任何旗标**：environment 取 `ci`（默认）/ `stage` / `prod` / `cn-prod` / `cn-stage`，作为**第 3 个位置参数**直接传，例如 `optima-query-db gateway-core "SELECT 1" cn-stage`。不存在 `--env` 之类旗标，传旗标会报错并打印 usage（背景见 issue #60）。
+**环境怎么传**：environment 取 `ci`（默认）/ `stage` / `prod` / `cn-prod` / `cn-stage`，作为**第 3 个位置参数**（`optima-query-db gateway-core "SELECT 1" cn-stage`）或 **`--env` 旗标**（`--env cn-stage`，与 optima-logs 一致）。除 `--env` 外没有其他旗标；未知旗标、多余参数、未知环境名、纯注释 SQL 都会硬报错并打印 usage，绝不静默空输出（背景见 issue #60）。
 
 **为什么使用 CLI 工具**：
 - ✅ 统一实现，避免重复代码
@@ -63,7 +63,7 @@ optima-query-db commerce-backend "SELECT COUNT(*) FROM orders" stage
 # Prod 环境
 optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY status" prod
 
-# cn-stage 环境（阿里云预发；环境名放第 3 个位置参数，不是 --env 旗标）
+# cn-stage 环境（阿里云预发；也可写成 --env cn-stage）
 optima-query-db gateway-core "SELECT COUNT(*) FROM conversations" cn-stage
 
 # cn-prod 环境（阿里云生产）

@@ -150,56 +150,93 @@ function queryDatabase(host: string, port: number, user: string, password: strin
   return result;
 }
 
-function printUsage(print: (msg: string) => void = console.error) {
-  print('Usage: query-db.ts <service> <sql> [environment]');
-  print('');
-  print('Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway, gateway-core, optima-logistics, billing, ads-backend, amazon-backend, browser-backend, shopify-backend, optima-generation, optima-sentinel');
-  print('Environments: ci (default), stage, prod, cn-prod (阿里云生产), cn-stage (阿里云预发)');
-  print('');
-  print('Example: query-db.ts user-auth "SELECT COUNT(*) FROM users" prod');
-}
+const USAGE = `Usage: optima-query-db <service> "<sql>" [environment]
+   or: optima-query-db <service> "<sql>" --env <environment>
 
-/** 参数用法错误（打印 message + usage 后退非零，区别于运行期错误）。 */
+Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway, gateway-core, optima-logistics, billing, ads-backend, amazon-backend, browser-backend, shopify-backend, optima-generation, optima-sentinel
+Environments: ci (default), stage, prod, cn-prod (阿里云生产), cn-stage (阿里云预发)
+
+Example: optima-query-db user-auth "SELECT COUNT(*) FROM users" prod`;
+
+/** 参数用法错误（入口打印 message + usage 后退非零，区别于运行期错误）。 */
 export class QueryDbUsageError extends Error {}
 
-// 单 token 旗标形态（--env / -h）。带空白的 SQL 文本不会匹配，
-// 但整段是 `-- 注释` 的 SQL 由 parseQueryDbArgs 的空语句检查兜住。
-const FLAG_RE = /^--?[A-Za-z][-A-Za-z0-9]*$/;
+const VALID_ENVS = ['ci', 'stage', 'prod', 'cn-prod', 'cn-stage'];
+// 'cn' 是历史别名（isCnEnv 认作 cn-prod），继续放行但不在 usage 里宣传。
+const ENV_ALIASES = ['cn'];
+
+// 单 token 旗标形态，含 --flag=value / 下划线（--env=cn-stage、--dry_run）。
+// 带空白的 SQL 文本不会匹配；整段是注释的 SQL 由下方空语句检查兜住。
+const FLAG_RE = /^--?[A-Za-z][-A-Za-z0-9_]*(=.*)?$/;
+
+/** SQL 去掉块注释、行注释、分号与空白后是否不剩任何语句（psql 对纯注释静默 no-op + exit 0）。 */
+function isEffectivelyEmptySql(sql: string): boolean {
+  const stripped = sql
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .split('\n').map((l) => l.replace(/--.*/, '')).join('\n')
+    .replace(/[;\s]+/g, '');
+  return stripped.length === 0;
+}
 
 /**
- * 解析位置参数 `<service> <sql> [environment]`。
- * 本 CLI 没有旗标——历史 footgun（#60）：`--env cn-stage` 会被吞成
- * sql='--env'（SQL 注释 = no-op）+ 真 SQL 静默丢弃，空输出 + exit 0
- * 被误判成「环境读不到」。故旗标、多余参数、纯注释 SQL 一律硬报错。
+ * 解析 `<service> <sql> [environment]`，environment 也可经 --env/-e 旗标给
+ * （对齐 optima-logs 惯例）。历史 footgun（#60）：`--env cn-stage` 曾被吞成
+ * sql='--env'（SQL 注释 = no-op）+ 真 SQL 静默丢弃，空输出 + exit 0 被误判成
+ * 「环境读不到」。故未知旗标、多余参数、未知环境、纯注释 SQL 一律硬报错。
  */
 export function parseQueryDbArgs(
   args: string[],
-): { service: string; sql: string; environment: string } | 'help' {
-  if (args.includes('--help') || args.includes('-h')) return 'help';
+): { service: string; sql: string; environment: string } {
+  const positionals: string[] = [];
+  let envFromFlag: string | undefined;
 
-  const flag = args.find((a) => FLAG_RE.test(a));
-  if (flag) {
-    const hint = flag === '--env' || flag === '-e'
-      ? '。没有 --env 旗标：environment 是第 3 个位置参数，如 query-db.ts gateway-core "SELECT 1" cn-stage'
-      : '';
-    throw new QueryDbUsageError(`未知旗标 ${flag}（本命令只收位置参数）${hint}`);
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--env' || arg === '-e' || arg.startsWith('--env=') || arg.startsWith('-e=')) {
+      let value: string | undefined;
+      if (arg.includes('=')) {
+        value = arg.slice(arg.indexOf('=') + 1);
+      } else {
+        value = args[i + 1];
+        i++;
+      }
+      if (!value || FLAG_RE.test(value)) {
+        throw new QueryDbUsageError('--env 需要环境名，如 --env cn-stage');
+      }
+      if (envFromFlag !== undefined) {
+        throw new QueryDbUsageError('--env 重复指定');
+      }
+      envFromFlag = value;
+      continue;
+    }
+    if (FLAG_RE.test(arg)) {
+      throw new QueryDbUsageError(`未知旗标 ${arg}（仅支持 --env <环境>，其余都是位置参数）`);
+    }
+    positionals.push(arg);
   }
 
-  if (args.length < 2) {
+  if (positionals.length < 2) {
     throw new QueryDbUsageError('缺少参数：需要 <service> <sql>');
   }
-  if (args.length > 3) {
+  const maxPositionals = envFromFlag !== undefined ? 2 : 3;
+  if (positionals.length > maxPositionals) {
     throw new QueryDbUsageError(
-      `多余参数已拒绝（绝不静默丢弃）：${args.slice(3).join(' ')}。SQL 含空格时记得整体加引号`,
+      envFromFlag !== undefined && positionals.length === 3
+        ? `environment 同时以 --env 和位置参数给出：${envFromFlag} vs ${positionals[2]}`
+        : `多余参数已拒绝（绝不静默丢弃）：${positionals.slice(maxPositionals).join(' ')}。SQL 含空格时记得整体加引号`,
     );
   }
 
-  const [service, sql, environment = 'ci'] = args;
+  const [service, sql] = positionals;
+  const environment = envFromFlag ?? positionals[2] ?? 'ci';
 
-  const sqlBody = sql.split('\n').filter((l) => !/^\s*(--.*)?$/.test(l)).join('\n');
-  if (!sqlBody.trim()) {
+  if (!VALID_ENVS.includes(environment) && !ENV_ALIASES.includes(environment)) {
+    throw new QueryDbUsageError(`未知环境 ${environment}（可选 ${VALID_ENVS.join(' | ')}）`);
+  }
+
+  if (isEffectivelyEmptySql(sql)) {
     throw new QueryDbUsageError(
-      'SQL 为空或全是 `--` 注释（会静默 no-op）——检查参数顺序：<service> <sql> [environment]',
+      'SQL 为空或全是注释/分号（psql 会静默 no-op）——检查参数顺序：<service> <sql> [environment]',
     );
   }
 
@@ -207,24 +244,15 @@ export function parseQueryDbArgs(
 }
 
 async function main() {
-  let parsed: ReturnType<typeof parseQueryDbArgs>;
-  try {
-    parsed = parseQueryDbArgs(process.argv.slice(2));
-  } catch (error) {
-    if (error instanceof QueryDbUsageError) {
-      console.error(`❌ ${error.message}`);
-      console.error('');
-      printUsage();
-      process.exit(1);
-    }
-    throw error;
-  }
-  if (parsed === 'help') {
-    printUsage(console.log);
+  const argv = process.argv.slice(2);
+  // help 只认第 1 个参数位：尾部混入的 -h 走未知旗标报错（exit 1），
+  // 不给「打 usage 后 exit 0 但没跑 SQL」的静默通道。
+  if (argv[0] === '--help' || argv[0] === '-h') {
+    console.log(USAGE);
     return;
   }
 
-  const { service, sql, environment } = parsed;
+  const { service, sql, environment } = parseQueryDbArgs(argv);
 
   if (!SERVICE_DB_MAP[service as keyof typeof SERVICE_DB_MAP]) {
     console.error(`Unknown service: ${service}`);
@@ -338,7 +366,12 @@ async function main() {
 // unit tests for parseQueryDbArgs) must not trigger main().
 if (require.main === module) {
   main().catch(error => {
-    console.error('\n❌ Error:', error.message);
+    if (error instanceof QueryDbUsageError) {
+      console.error(`❌ ${error.message}\n`);
+      console.error(USAGE);
+    } else {
+      console.error('\n❌ Error:', error.message);
+    }
     process.exit(1);
   });
 }
