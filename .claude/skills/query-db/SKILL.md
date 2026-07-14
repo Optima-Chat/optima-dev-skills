@@ -16,7 +16,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 optima-query-db <service> "<sql>" [environment]
 ```
 
-**环境怎么传**：environment 取 `ci`（默认）/ `stage` / `prod` / `cn-prod` / `cn-stage`，作为**第 3 个位置参数**（`optima-query-db gateway-core "SELECT 1" cn-stage`）或 **`--env` 旗标**（`--env cn-stage`，与 optima-logs 一致）。除 `--env` 外没有其他旗标；未知旗标、多余参数、未知环境名、纯注释 SQL 都会硬报错并打印 usage，绝不静默空输出（背景见 issue #60）。
+**环境怎么传**：environment 取 `ci`（默认）/ `stage` / `prod` / `cn-prod` / `cn-stage`，作为**第 3 个位置参数**（`optima-query-db gateway-core "SELECT 1" cn-stage`）或 **`--env` 旗标**（`--env cn-stage`，短形式 `-e`、`--env=cn-stage` 也认，与 optima-logs 一致）。除 `--env`/`-e` 外没有其他旗标；未知旗标、多余参数、未知环境名、纯注释 SQL 都会硬报错并打印 usage，绝不静默空输出（背景见 issue #60）。
 
 **为什么使用 CLI 工具**：
 - ✅ 统一实现，避免重复代码

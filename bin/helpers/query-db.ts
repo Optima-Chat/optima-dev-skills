@@ -169,7 +169,9 @@ const ENV_ALIASES = ['cn'];
 // 带空白的 SQL 文本不会匹配；整段是注释的 SQL 由下方空语句检查兜住。
 const FLAG_RE = /^--?[A-Za-z][-A-Za-z0-9_]*(=.*)?$/;
 
-/** SQL 去掉块注释、行注释、分号与空白后是否不剩任何语句（psql 对纯注释静默 no-op + exit 0）。 */
+// SQL 去掉块注释、行注释、分号与空白后是否不剩任何语句（psql 对纯注释静默 no-op + exit 0）。
+// 已知残留：PostgreSQL 块注释可嵌套（/* a /* b …两层闭合… ），本检查非嵌套感知会放行——
+// 现实中几乎不出现，真出现也只是退回旧的空输出行为，不误伤合法 SQL。
 function isEffectivelyEmptySql(sql: string): boolean {
   const stripped = sql
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
