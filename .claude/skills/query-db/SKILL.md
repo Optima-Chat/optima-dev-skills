@@ -1,6 +1,6 @@
 ---
 name: "query-db"
-description: "当用户请求查询数据库、执行SQL、查看数据、统计数据、检查数据库、查询表、数据库查询时，使用此技能。支持 CI、Stage、Prod 三个环境的 commerce-backend、user-auth、agentic-chat、bi-backend、session-gateway、gateway-core、ads-backend、amazon-backend、shopify-backend、optima-sentinel 等服务的数据库查询。优先使用 optima-query-db CLI 工具。"
+description: "当用户请求查询数据库、执行SQL、查看数据、统计数据、检查数据库、查询表、数据库查询时，使用此技能。支持 CI、Stage、Prod、cn-prod、cn-stage（阿里云）五个环境的 commerce-backend、user-auth、agentic-chat、bi-backend、session-gateway、gateway-core、ads-backend、amazon-backend、shopify-backend、optima-sentinel 等服务的数据库查询。优先使用 optima-query-db CLI 工具。"
 allowed-tools: ["Bash", "SlashCommand"]
 ---
 
@@ -15,6 +15,8 @@ allowed-tools: ["Bash", "SlashCommand"]
 ```bash
 optima-query-db <service> "<sql>" [environment]
 ```
+
+**环境怎么传**：environment 取 `ci`（默认）/ `stage` / `prod` / `cn-prod` / `cn-stage`，作为**第 3 个位置参数**（`optima-query-db gateway-core "SELECT 1" cn-stage`）或 **`--env` 旗标**（`--env cn-stage`，短形式 `-e`、`--env=cn-stage` 也认，与 optima-logs 一致）。除 `--env`/`-e` 外没有其他旗标；未知旗标、多余参数、未知环境名、纯注释 SQL 都会硬报错并打印 usage，绝不静默空输出（背景见 issue #60）。
 
 **为什么使用 CLI 工具**：
 - ✅ 统一实现，避免重复代码
@@ -60,6 +62,12 @@ optima-query-db commerce-backend "SELECT COUNT(*) FROM orders" stage
 
 # Prod 环境
 optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY status" prod
+
+# cn-stage 环境（阿里云预发；也可写成 --env cn-stage）
+optima-query-db gateway-core "SELECT COUNT(*) FROM conversations" cn-stage
+
+# cn-prod 环境（阿里云生产）
+optima-query-db billing "SELECT COUNT(*) FROM credit_ledger" cn-prod
 ```
 
 ### 使用 Slash 命令（备用）
@@ -184,6 +192,26 @@ optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY s
 - 通过 SSH 隧道访问 RDS
 - ⚠️ 谨慎使用
 
+### cn-stage / cn-prod 环境（阿里云）
+
+```bash
+optima-query-db gateway-core "SELECT COUNT(*) FROM conversations" cn-stage
+optima-query-db gateway-core "SELECT key, value FROM app_configs" cn-prod
+```
+
+**特点**：
+- 阿里云侧独立部署：cn-stage（预发）与 cn-prod（生产）是**两个独立 RDS 实例**（共用 prod VPC 与 buildbox 跳板）
+- 独立 Infisical 实例（secrets-cn.optima.chat，单实例双环境：cn-prod→`prod`、cn-stage→`staging`），与 AWS 侧 Infisical 完全无关
+- 经 buildbox ECS 跳板自动建 SSH 隧道连内网 RDS
+- ⚠️ cn-prod 是生产真实用户数据，谨慎使用
+
+**前置环境变量**（缺失时命令会报错并提示，详见 https://github.com/Optima-Chat/optima-dev-skills/issues/21 ）：
+
+| 变量 | 用途 | 来源 |
+|------|------|------|
+| `INFISICAL_CN_EMAIL` + `INFISICAL_CN_PASSWORD` | 登录 cn Infisical 取数据库凭证 | 1Password「Infisical cn-prod admin (secrets-cn.optima.chat)」 |
+| `OPTIMA_CN_BUILDBOX_PASSWORD` | 经 buildbox 跳板建 RDS 隧道（本机已有健康隧道时可省） | 1Password「Aliyun cn-prod buildbox ECS (root)」 |
+
 ## 🔧 技术架构
 
 ### Infisical 配置（v0.7.0+）
@@ -217,12 +245,14 @@ optima-query-db commerce-backend "SELECT status, COUNT(*) FROM orders GROUP BY s
 
 ### RDS 连接
 
-| 环境 | RDS Host | 本地端口 |
-|------|----------|----------|
-| Stage | `optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com` | 15432 |
-| Prod | `optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com` | 15433 |
+| 环境 | RDS Host | 跳板 |
+|------|----------|------|
+| Stage | `optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com` | Shared EC2 `3.0.210.113` |
+| Prod | `optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com` | Shared EC2 `3.0.210.113` |
+| cn-stage | `pgm-2zem1u9zdh06boim.pg.rds.aliyuncs.com` | buildbox ECS `47.94.105.163` |
+| cn-prod | `pgm-2zexwx9eso9e4yla.pg.rds.aliyuncs.com` | buildbox ECS `47.94.105.163` |
 
-**跳板机**: `3.0.210.113` (Shared EC2)
+**本地端口**：动态分配（自 25432 起扫描空闲端口，记录在 `~/.cache/optima-dev-skills/tunnel-ports.json`，复用前校验隧道健康）；旧文档的固定 15432/15433 已废弃——固定端口会撞本机 Docker PG。
 
 ## 🔗 相关命令
 

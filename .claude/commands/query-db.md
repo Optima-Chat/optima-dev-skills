@@ -200,13 +200,14 @@ print(f\"COMMERCE_DB_PASSWORD={secrets['COMMERCE_DB_PASSWORD']}\")
 " > /tmp/stage_db_config.sh && source /tmp/stage_db_config.sh
 
 # 4. 建立 SSH 隧道到 Shared EC2，通过隧道访问 Stage RDS
-ssh -i ~/.ssh/optima-ec2-key -f -N -L 15432:optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com:5432 ec2-user@3.0.210.113
+# ⚠️ 先确认本地端口空闲(ss -ltn | grep 25432)——端口被本机 Docker PG 占用时,凭证会发给错误的库、报「密码错误」
+ssh -i ~/.ssh/optima-ec2-key -f -N -L 25432:optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com:5432 ec2-user@3.0.210.113
 
-# 5. 通过本地端口 15432 连接到 RDS
-PGPASSWORD="${COMMERCE_DB_PASSWORD}" psql -h localhost -p 15432 -U "${COMMERCE_DB_USER}" -d optima_commerce -c "SELECT COUNT(*) FROM products"
+# 5. 通过本地端口 25432 连接到 RDS
+PGPASSWORD="${COMMERCE_DB_PASSWORD}" psql -h localhost -p 25432 -U "${COMMERCE_DB_USER}" -d optima_commerce -c "SELECT COUNT(*) FROM products"
 
 # 6. 关闭 SSH 隧道（可选）
-pkill -f "ssh.*15432:${DATABASE_HOST}:5432"
+pkill -f "ssh.*25432:${DATABASE_HOST}:5432"
 ```
 
 **完整示例（五个服务）**:
@@ -283,7 +284,7 @@ pkill -f "ssh.*15432:${DATABASE_HOST}:5432"
 - billing、ads-backend、amazon-backend、browser-backend、shopify-backend、optima-generation、optima-sentinel 的凭证存在各自服务路径的 `DATABASE_URL` 中
 - Stage RDS: `optima-stage-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com`
 - Shared EC2 IP: `3.0.210.113`
-- SSH 隧道: 本地端口 `15432` → Shared EC2 → Stage RDS `5432`
+- SSH 隧道: 本地端口 `25432` → Shared EC2 → Stage RDS `5432`
 - Stage 和 Prod 有独立的 RDS 实例
 - ⚠️ session-gateway 数据库名: Stage 用 `optima_shell`, Prod 用 `optima_ai_shell`
 
@@ -323,13 +324,14 @@ print(f\"COMMERCE_DB_PASSWORD={secrets['COMMERCE_DB_PASSWORD']}\")
 " > /tmp/prod_db_config.sh && source /tmp/prod_db_config.sh
 
 # 4. 建立 SSH 隧道到 Shared EC2，通过隧道访问 Prod RDS
-ssh -i ~/.ssh/optima-ec2-key -f -N -L 15433:optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com:5432 ec2-user@3.0.210.113
+# ⚠️ 先确认本地端口空闲(ss -ltn | grep 25433)——端口被本机 Docker PG 占用时,凭证会发给错误的库、报「密码错误」
+ssh -i ~/.ssh/optima-ec2-key -f -N -L 25433:optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com:5432 ec2-user@3.0.210.113
 
-# 5. 通过本地端口 15433 连接到 RDS
-PGPASSWORD="${COMMERCE_DB_PASSWORD}" psql -h localhost -p 15433 -U "${COMMERCE_DB_USER}" -d optima_commerce -c "SELECT COUNT(*) FROM products"
+# 5. 通过本地端口 25433 连接到 RDS
+PGPASSWORD="${COMMERCE_DB_PASSWORD}" psql -h localhost -p 25433 -U "${COMMERCE_DB_USER}" -d optima_commerce -c "SELECT COUNT(*) FROM products"
 
 # 6. 关闭 SSH 隧道（可选）
-pkill -f "ssh.*15433:${DATABASE_HOST}:5432"
+pkill -f "ssh.*25433:${DATABASE_HOST}:5432"
 ```
 
 **完整示例（五个服务）**:
@@ -394,8 +396,8 @@ pkill -f "ssh.*15433:${DATABASE_HOST}:5432"
 - billing、browser-backend、optima-generation 的凭证存在各自服务路径的 DATABASE_URL 中
 - Prod RDS: `optima-prod-postgres.ctg866o0ehac.ap-southeast-1.rds.amazonaws.com`
 - Shared EC2 IP: `3.0.210.113`
-- SSH 隧道: 本地端口 `15433` → Shared EC2 → Prod RDS `5432`
-- Stage 用端口 `15432`，Prod 用端口 `15433`
+- SSH 隧道: 本地端口 `25433` → Shared EC2 → Prod RDS `5432`
+- Stage 用端口 `25432`，Prod 用端口 `25433`
 - Stage 和 Prod 有独立的 RDS 实例
 - ⚠️ session-gateway 数据库名: Stage 用 `optima_shell`, Prod 用 `optima_ai_shell`
 

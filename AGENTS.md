@@ -1,6 +1,6 @@
 # Optima Dev Skills For Codex
 
-This repository provides shared development skills and CLI helpers for Optima engineers across `ci`, `stage`, and `prod`.
+This repository provides shared development skills and CLI helpers for Optima engineers across `ci`, `stage`, `prod`, `cn-stage`, and `cn-prod` (Aliyun).
 
 ## Primary Entry Points
 
@@ -51,9 +51,9 @@ Some flows also require:
 
 ## Safety Rules
 
-- Default to `ci` or `stage` when possible.
-- Treat `prod` as read-only unless the user explicitly asks for a write action.
-- For `prod`, prefer limited queries and targeted operational commands.
+- Default to `ci` or `stage` when possible; on the Aliyun side, default to `cn-stage`.
+- Treat `prod` and `cn-prod` as read-only unless the user explicitly asks for a write action — `cn-prod` holds real production user data.
+- For `prod` / `cn-prod`, prefer limited queries and targeted operational commands.
 - Do not expose secrets unless the user explicitly asks to inspect them.
 
 ## Platform Notes

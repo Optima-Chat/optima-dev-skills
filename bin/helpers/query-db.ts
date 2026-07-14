@@ -150,20 +150,111 @@ function queryDatabase(host: string, port: number, user: string, password: strin
   return result;
 }
 
-async function main() {
-  const args = process.argv.slice(2);
+const USAGE = `Usage: optima-query-db <service> "<sql>" [environment]
+   or: optima-query-db <service> "<sql>" --env <environment>
 
-  if (args.length < 2) {
-    console.error('Usage: query-db.ts <service> <sql> [environment]');
-    console.error('');
-    console.error('Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway, gateway-core, optima-logistics, billing, ads-backend, amazon-backend, browser-backend, shopify-backend, optima-generation, optima-sentinel');
-    console.error('Environments: ci (default), stage, prod, cn-prod (阿里云生产), cn-stage (阿里云预发)');
-    console.error('');
-    console.error('Example: query-db.ts user-auth "SELECT COUNT(*) FROM users" prod');
-    process.exit(1);
+Services: commerce-backend, user-auth, agentic-chat, bi-backend, session-gateway, gateway-core, optima-logistics, billing, ads-backend, amazon-backend, browser-backend, shopify-backend, optima-generation, optima-sentinel
+Environments: ci (default), stage, prod, cn-prod (阿里云生产), cn-stage (阿里云预发)
+
+Example: optima-query-db user-auth "SELECT COUNT(*) FROM users" prod`;
+
+/** 参数用法错误（入口打印 message + usage 后退非零，区别于运行期错误）。 */
+export class QueryDbUsageError extends Error {}
+
+const VALID_ENVS = ['ci', 'stage', 'prod', 'cn-prod', 'cn-stage'];
+// 'cn' 是历史别名（isCnEnv 认作 cn-prod），继续放行但不在 usage 里宣传。
+const ENV_ALIASES = ['cn'];
+
+// 单 token 旗标形态，含 --flag=value / 下划线（--env=cn-stage、--dry_run）。
+// 带空白的 SQL 文本不会匹配；整段是注释的 SQL 由下方空语句检查兜住。
+const FLAG_RE = /^--?[A-Za-z][-A-Za-z0-9_]*(=.*)?$/;
+
+// SQL 去掉块注释、行注释、分号与空白后是否不剩任何语句（psql 对纯注释静默 no-op + exit 0）。
+// 已知残留：PostgreSQL 块注释可嵌套（/* a /* b …两层闭合… ），本检查非嵌套感知会放行——
+// 现实中几乎不出现，真出现也只是退回旧的空输出行为，不误伤合法 SQL。
+function isEffectivelyEmptySql(sql: string): boolean {
+  const stripped = sql
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .split('\n').map((l) => l.replace(/--.*/, '')).join('\n')
+    .replace(/[;\s]+/g, '');
+  return stripped.length === 0;
+}
+
+/**
+ * 解析 `<service> <sql> [environment]`，environment 也可经 --env/-e 旗标给
+ * （对齐 optima-logs 惯例）。历史 footgun（#60）：`--env cn-stage` 曾被吞成
+ * sql='--env'（SQL 注释 = no-op）+ 真 SQL 静默丢弃，空输出 + exit 0 被误判成
+ * 「环境读不到」。故未知旗标、多余参数、未知环境、纯注释 SQL 一律硬报错。
+ */
+export function parseQueryDbArgs(
+  args: string[],
+): { service: string; sql: string; environment: string } {
+  const positionals: string[] = [];
+  let envFromFlag: string | undefined;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--env' || arg === '-e' || arg.startsWith('--env=') || arg.startsWith('-e=')) {
+      let value: string | undefined;
+      if (arg.includes('=')) {
+        value = arg.slice(arg.indexOf('=') + 1);
+      } else {
+        value = args[i + 1];
+        i++;
+      }
+      if (!value || FLAG_RE.test(value)) {
+        throw new QueryDbUsageError('--env 需要环境名，如 --env cn-stage');
+      }
+      if (envFromFlag !== undefined) {
+        throw new QueryDbUsageError('--env 重复指定');
+      }
+      envFromFlag = value;
+      continue;
+    }
+    if (FLAG_RE.test(arg)) {
+      throw new QueryDbUsageError(`未知旗标 ${arg}（仅支持 --env <环境>，其余都是位置参数）`);
+    }
+    positionals.push(arg);
   }
 
-  const [service, sql, environment = 'ci'] = args;
+  if (positionals.length < 2) {
+    throw new QueryDbUsageError('缺少参数：需要 <service> <sql>');
+  }
+  const maxPositionals = envFromFlag !== undefined ? 2 : 3;
+  if (positionals.length > maxPositionals) {
+    throw new QueryDbUsageError(
+      envFromFlag !== undefined && positionals.length === 3
+        ? `environment 同时以 --env 和位置参数给出：${envFromFlag} vs ${positionals[2]}`
+        : `多余参数已拒绝（绝不静默丢弃）：${positionals.slice(maxPositionals).join(' ')}。SQL 含空格时记得整体加引号`,
+    );
+  }
+
+  const [service, sql] = positionals;
+  const environment = envFromFlag ?? positionals[2] ?? 'ci';
+
+  if (!VALID_ENVS.includes(environment) && !ENV_ALIASES.includes(environment)) {
+    throw new QueryDbUsageError(`未知环境 ${environment}（可选 ${VALID_ENVS.join(' | ')}）`);
+  }
+
+  if (isEffectivelyEmptySql(sql)) {
+    throw new QueryDbUsageError(
+      'SQL 为空或全是注释/分号（psql 会静默 no-op）——检查参数顺序：<service> <sql> [environment]',
+    );
+  }
+
+  return { service, sql, environment };
+}
+
+async function main() {
+  const argv = process.argv.slice(2);
+  // help 只认第 1 个参数位：尾部混入的 -h 走未知旗标报错（exit 1），
+  // 不给「打 usage 后 exit 0 但没跑 SQL」的静默通道。
+  if (argv[0] === '--help' || argv[0] === '-h') {
+    console.log(USAGE);
+    return;
+  }
+
+  const { service, sql, environment } = parseQueryDbArgs(argv);
 
   if (!SERVICE_DB_MAP[service as keyof typeof SERVICE_DB_MAP]) {
     console.error(`Unknown service: ${service}`);
@@ -273,7 +364,16 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error('\n❌ Error:', error.message);
-  process.exit(1);
-});
+// Only run the CLI flow when invoked directly — being require()'d (e.g. by the
+// unit tests for parseQueryDbArgs) must not trigger main().
+if (require.main === module) {
+  main().catch(error => {
+    if (error instanceof QueryDbUsageError) {
+      console.error(`❌ ${error.message}\n`);
+      console.error(USAGE);
+    } else {
+      console.error('\n❌ Error:', error.message);
+    }
+    process.exit(1);
+  });
+}
