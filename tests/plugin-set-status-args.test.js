@@ -50,3 +50,13 @@ test('rejects unknown args', () => {
     /Unknown arg: --force/,
   );
 });
+
+test('rejects --status with no value (trailing flag)', () => {
+  assert.throws(() => parseSetStatusArgs(['--slug', 'scout', '--status']), /--status must be one of/);
+});
+
+test('accepts 64-char slug boundary and underscores', () => {
+  const slug64 = 'a' + 'b'.repeat(63);
+  assert.equal(parseSetStatusArgs(['--slug', slug64, '--status', 'ACTIVE']).slug, slug64);
+  assert.equal(parseSetStatusArgs(['--slug', 'my_plugin-2', '--status', 'ACTIVE']).slug, 'my_plugin-2');
+});

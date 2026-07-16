@@ -31,9 +31,10 @@ Optional:
   --yes                Skip prod confirmation prompt (no-op on stage)
   --env <env>          stage|prod|cn-prod|cn-stage (default: stage)
 
-Note: a 404 means the slug has no marketplace row in this env (nothing to
-retire) — check 'optima-plugin show --slug <slug> --env <env>' or the slug
-spelling.`);
+Note: this PATCH's 404 is the authoritative "slug has no marketplace row in
+this env" signal. Don't use 'optima-plugin show' to check existence — it reads
+the public endpoint, which also 404s for non-ACTIVE (e.g. already-DEPRECATED)
+plugins.`);
     process.exit(0);
   }
   const out: Partial<SetStatusArgs> = { env: 'stage', yes: false };
@@ -83,5 +84,7 @@ export async function runSetStatus(argv: string[]): Promise<void> {
     console.log(`\nℹ️  Takes effect on each user's next skill sync (new session / billing event): registry stops serving the plugin and agents unload its skills. In-flight sessions keep it until then. Restore anytime with --status ACTIVE. Verify retirement end-to-end by confirming an agent session no longer loads the plugin's skills.`);
   } else if (args.status === 'ACTIVE') {
     console.log(`\nℹ️  Plugin restored: registry serves it again on each user's next skill sync.`);
+  } else if (args.status === 'BETA') {
+    console.log(`\n⚠️  BETA is NOT served either: registry sync / system load / user install all filter status='ACTIVE' (optima-skills internal.ts & user-plugins.ts). Users lose the plugin on their next sync, same as DEPRECATED — it's a pre-GA gate, not a soft-launch channel.`);
   }
 }
