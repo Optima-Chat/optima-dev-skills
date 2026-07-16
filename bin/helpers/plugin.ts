@@ -3,6 +3,7 @@
 import { runShow } from './plugin/show';
 import { runSetPaid } from './plugin/set-paid';
 import { runSetDefault } from './plugin/set-default';
+import { runSetStatus } from './plugin/set-status';
 
 function printHelp() {
   console.log(`Usage: optima-plugin <subcommand> [options]
@@ -11,6 +12,7 @@ Subcommands:
   show          Show a plugin's marketplace state (isPaid, salesUrl, ... ACTIVE plugins only)
   set-paid      Flip a plugin's isPaid flag (the user-facing paid/free gate)
   set-default   Flip a plugin's defaultForUser flag
+  set-status    Set a plugin's lifecycle status (ACTIVE|BETA|DEPRECATED — retire/restore)
 
 Run 'optima-plugin <subcommand> --help' for subcommand-specific options.`);
 }
@@ -22,6 +24,7 @@ async function main() {
     case 'show': await runShow(rest); break;
     case 'set-paid': await runSetPaid(rest); break;
     case 'set-default': await runSetDefault(rest); break;
+    case 'set-status': await runSetStatus(rest); break;
     default:
       console.error(`Unknown subcommand: ${subcommand}`);
       printHelp();
