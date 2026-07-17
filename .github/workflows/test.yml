@@ -1,0 +1,20 @@
+name: test
+
+# PR 门禁：对 main 的 PR 自动跑 npm test（node --test）。
+# publish.yml 发版前虽也跑测试，但那是出厂前最后一道；这里把回归网前移到
+# 每个 PR，避免红在合并之后才被发现（#60 那类静默参数回归就该挡在 PR）。
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # npm ci 触发 prepare→build；npm test 的 pretest 再 build 一次，秒级，忍。
+      - run: npm ci
+      - run: npm test
