@@ -34,9 +34,13 @@ const PROFILE = process.env.OPTIMA_ALIYUN_PROFILE || 'aliyun-optima';
 const CODEUP_BASE = `https://codeup.aliyun.com/${ORG}`;
 
 // 服务注册表(快照自 optima-terraform services.stage.env + gen-pipelines.py,2026-07-13)
-interface Svc { pipelineId: number; repo: string; saeAppId?: string; prodSaeAppId?: string; }
+interface Svc { pipelineId: number; repo: string; saeAppId?: string; prodSaeAppId?: string; buildOnly?: boolean; }
 const SERVICES: Record<string, Svc> = {
   'agent-portal':             { pipelineId: 5118519, repo: 'optima-portals',     saeAppId: 'fe757f78-d18d-4480-9402-fe59d4721055', prodSaeAppId: '9211db38-a255-4393-ae92-7a7bb41b583d' },
+  // build-only:非 SAE 常驻(gateway-core 按 session 拉起的镜像)。release 段=解析 ACR digest
+  // → 回写 Infisical /services/gateway-core/ALIYUN_AGENT_RUNTIME_IMAGE(#807)→ 滚动重启 gateway-core。
+  // 无自身 saeAppId;prod 流水线(agent-runtime-cn-prod,5124970)按名实时解析(见下方 ListPipelines 逻辑)。
+  'agent-runtime':            { pipelineId: 5124962, repo: 'optima-gateway',     buildOnly: true },
   'agentic-chat':             { pipelineId: 5118520, repo: 'agentic-chat',       saeAppId: '6aea1ce1-f813-4e1c-8e97-d1ecb5398e37', prodSaeAppId: '6e290c73-a646-43ef-9da5-ad0b2e7eff73' },
   'billing':                  { pipelineId: 5118521, repo: 'optima-billing',     saeAppId: '09d8e292-dc64-4af8-bce5-0a56cb666921', prodSaeAppId: '6c31cf82-8802-4d45-b6a2-e9d7c83ccce9' },
   'browser-backend':          { pipelineId: 5118522, repo: 'optima-browser-use', saeAppId: '1fced3f6-a80a-41a4-8f23-e4d5a467f8eb', prodSaeAppId: 'eb782ed9-c468-4e81-a0fe-87e5b4264192' },
@@ -161,7 +165,17 @@ async function main() {
   console.log(`${status === 'SUCCESS' ? '✅' : '❌'} ${svcName} run#${runId}: ${status}`);
   if (status !== 'SUCCESS') process.exit(1);
 
-  // 4. SAE ImageUrl 校验(空返回重试守卫)。prod 是 digest 寻址,校验含 @sha256 即部署成功。
+  // 4. 成功标准。build-only(agent-runtime)无自身 SAE app 可查:digest 回写 Infisical +
+  //    滚动重启 gateway-core 都在流水线 release 段内完成(任一步失败即 exit 非 0)。CLI 不碰
+  //    Infisical 凭证,只以流水线终态为准、不独立校验回写是否真落地——故措辞用「应已」而非「已」;
+  //    真实 digest / 重启变更单在 run『发版』段日志里(见上方链接)。
+  if (svc.buildOnly) {
+    const infEnv = envName === 'prod' ? 'prod' : 'staging';
+    console.log(`✓ 流水线 SUCCESS(build-only)。release 段应已回写 ${infEnv} Infisical ALIYUN_AGENT_RUNTIME_IMAGE(@sha256 digest)并滚动重启 gateway-core;CLI 未独立校验,digest 见上方 run『发版』段日志`);
+    return;
+  }
+
+  // SAE ImageUrl 校验(空返回重试守卫)。prod 是 digest 寻址,校验含 @sha256 即部署成功。
   const appId = envName === 'prod' ? svc.prodSaeAppId : svc.saeAppId;
   if (appId) {
     let img = '';
