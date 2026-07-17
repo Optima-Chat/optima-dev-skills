@@ -158,6 +158,38 @@ test('optima-logs is wired as a bin and routes cn envs to SLS, aws envs to Cloud
   assert.doesNotMatch(source, /'DescribeInstanceLog'/, 'must not call DescribeInstanceLog (buffer-only)');
 });
 
+test('cn-deploy registers build-only agent-runtime and SKILL.md count matches the table', () => {
+  // The cn-deploy SERVICES table is a hand-kept snapshot of the yunxiao pipeline
+  // generator; nothing else guards it. agent-runtime is the one build-only entry
+  // (no SAE app of its own — gateway-core pulls its image per session), so it must
+  // NOT carry a saeAppId, or the deploy would run a bogus SAE ImageUrl check
+  // against an app that doesn't exist. The "N 个服务" figure in the SKILL.md docs
+  // is also manual, and the .claude/.codex mirror pair already drifted once — pin
+  // both copies to the real table size so the count can't silently rot again.
+  const source = fs.readFileSync(path.join(repoRoot, 'bin/helpers/cn-deploy.ts'), 'utf8');
+  const block = source.match(/const SERVICES[^{]*\{(.*?)\n\};/s);
+  assert.ok(block, 'Could not find SERVICES table in cn-deploy.ts');
+  const entries = [...block[1].matchAll(/^\s*'([^']+)':\s*\{([^}]*)\}/gm)];
+  const names = entries.map((m) => m[1]);
+
+  assert.ok(names.includes('agent-runtime'), 'cn-deploy must register agent-runtime');
+  const agentRuntime = entries.find((m) => m[1] === 'agent-runtime')[2];
+  assert.match(agentRuntime, /buildOnly:\s*true/, 'agent-runtime must be marked buildOnly');
+  assert.doesNotMatch(agentRuntime, /saeAppId/, 'build-only agent-runtime must not carry a saeAppId');
+
+  for (const rel of [
+    '.claude/skills/cn-deploy/SKILL.md',
+    '.codex/skills/cn-deploy/SKILL.md',
+  ]) {
+    const doc = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
+    const declared = [...doc.matchAll(/(\d+)\s*个服务/g)].map((m) => Number(m[1]));
+    assert.ok(declared.length > 0, `${rel} must state the cn-stage service count`);
+    for (const n of declared) {
+      assert.equal(n, names.length, `${rel} service count (${n}) must match SERVICES table (${names.length})`);
+    }
+  }
+});
+
 function parseObjectKeys(source, variableName) {
   const escapedName = variableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = source.match(new RegExp(`const ${escapedName} = \\{(.*?)\\n\\};`, 's'));

@@ -165,12 +165,13 @@ async function main() {
   console.log(`${status === 'SUCCESS' ? '✅' : '❌'} ${svcName} run#${runId}: ${status}`);
   if (status !== 'SUCCESS') process.exit(1);
 
-  // 4. 成功标准。build-only(agent-runtime)无自身 SAE app:release 段已在流水线内完成
-  //    digest 回写 Infisical + 重启 gateway-core(任一步失败即 exit 非 0,不会静默),
-  //    故流水线 SUCCESS 即发版成功,不做 SAE ImageUrl 校验。
+  // 4. 成功标准。build-only(agent-runtime)无自身 SAE app 可查:digest 回写 Infisical +
+  //    滚动重启 gateway-core 都在流水线 release 段内完成(任一步失败即 exit 非 0)。CLI 不碰
+  //    Infisical 凭证,只以流水线终态为准、不独立校验回写是否真落地——故措辞用「应已」而非「已」;
+  //    真实 digest / 重启变更单在 run『发版』段日志里(见上方链接)。
   if (svc.buildOnly) {
     const infEnv = envName === 'prod' ? 'prod' : 'staging';
-    console.log(`✓ build-only 发版完成:release 段已回写 ${infEnv} Infisical ALIYUN_AGENT_RUNTIME_IMAGE(@sha256 digest)并滚动重启 gateway-core`);
+    console.log(`✓ 流水线 SUCCESS(build-only)。release 段应已回写 ${infEnv} Infisical ALIYUN_AGENT_RUNTIME_IMAGE(@sha256 digest)并滚动重启 gateway-core;CLI 未独立校验,digest 见上方 run『发版』段日志`);
     return;
   }
 
