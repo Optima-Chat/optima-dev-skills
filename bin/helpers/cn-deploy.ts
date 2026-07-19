@@ -120,7 +120,10 @@ async function main() {
   devops('TriggerRepositoryMirrorSync', { repositoryId: String(repoId), account: 'xbfool', token: ghTok });
   let synced = false;
   for (let i = 0; i < 30; i++) {
-    const b = devops('GetBranchInfo', { repositoryId: String(repoId), branchName: ref });
+    // vtag 发版时 ref 是 tag,不是 branch —— GetBranchInfo 查不到 tag 会恒超时,改用 tag 接口。
+    const b = vtag
+      ? devops('GetRepositoryTag', { repositoryId: String(repoId), tagName: ref })
+      : devops('GetBranchInfo', { repositoryId: String(repoId), branchName: ref });
     if (b?.result?.commit?.id === ghSha) { synced = true; break; }
     await sleep(10000);
   }
