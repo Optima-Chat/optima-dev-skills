@@ -37,6 +37,7 @@ switch (command) {
     log('  optima-grant-credits <email|phone|userId> --credits <n> [--env] Grant credits (bonus, 30d)', 'cyan');
     log('  optima-grant-subscription <email|phone|userId> --plan <p> [--env] Grant subscription', 'cyan');
     log('  optima-logs <service> [--env] [--since] [--grep] [-n]  View logs (cn=SLS 直连/aws=CloudWatch)', 'cyan');
+    log('  optima-gateway-admin <METHOD> </admin/path> [body] [--env cn-stage|cn-prod]  Gateway /admin/* passthrough (#70)', 'cyan');
     log('  /restart-ecs <service> [env]                         Restart ECS service (skill)', 'cyan');
 
     log('\nSupported Services:', 'yellow');
