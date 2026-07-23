@@ -107,8 +107,13 @@ function getSkillsUrl(env: string): string {
   return url;
 }
 
-export function getServiceToken(env: string): string {
-  if (tokenCache[env]) return tokenCache[env];
+export function getServiceToken(env: string, scope?: string): string {
+  // Cache key includes scope: the same env can mint tokens with different
+  // scopes (default internal:users:write vs gateway:admin for gateway-admin,
+  // #70) and user-auth issues request∩allowed_scopes — mixing them up would
+  // hand a wrongly-scoped token to the caller.
+  const cacheKey = scope ? `${env}:${scope}` : env;
+  if (tokenCache[cacheKey]) return tokenCache[cacheKey];
 
   // cn-prod 与 cn-stage 都用 client_credentials M2M token，scope=internal:users:write。
   // 凭证来源不同：
@@ -141,7 +146,8 @@ export function getServiceToken(env: string): string {
   const authUrl = USER_AUTH_URLS[env];
   if (!authUrl) throw new Error(`Unknown env: ${env}`);
 
-  const scopeParam = isCn ? `&scope=${encodeURIComponent(CN_PROD_TOKEN_SCOPE)}` : '';
+  const effectiveScope = scope ?? (isCn ? CN_PROD_TOKEN_SCOPE : undefined);
+  const scopeParam = effectiveScope ? `&scope=${encodeURIComponent(effectiveScope)}` : '';
   const body = `grant_type=client_credentials&client_id=${encodeURIComponent(clientId)}&client_secret=${encodeURIComponent(clientSecret)}${scopeParam}`;
   const response = execSync(
     `curl -s -X POST '${authUrl}/api/v1/oauth/token' -H 'Content-Type: application/x-www-form-urlencoded' -d '${body}'`,
@@ -157,7 +163,7 @@ export function getServiceToken(env: string): string {
   if (!parsed.access_token) {
     throw new Error(`user-auth token mint failed (${env}): ${response.slice(0, 200)}`);
   }
-  tokenCache[env] = parsed.access_token;
+  tokenCache[cacheKey] = parsed.access_token;
   return parsed.access_token;
 }
 
