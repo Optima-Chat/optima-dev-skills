@@ -207,7 +207,9 @@ npm install -g @optima-chat/dev-skills@latest
 - **走 1Password（推荐，密码不落盘）**：从「Infisical cn-prod admin (secrets-cn.optima.chat)」取值，`export INFISICAL_CN_EMAIL=... INFISICAL_CN_PASSWORD=...` 到当前 session（装了 `op` CLI 可 `op run` / `op read` 注入，用完即散）。
 - **本地凭据文件（便捷，安全性较弱）**：若你**自己**维护 `~/.infisical_cn_creds`（每行 `export KEY=val`），本工具会自动读取、免手动 `source`；路径用 `INFISICAL_CN_CREDS_FILE` 覆盖。⚠️ 明文落盘（务必 `chmod 600`），是「省事 vs 暴露面」的取舍——**不是让你把 1P 密码抄进文件当默认做法**，只是给已经这么存的人一个自动读取入口。
 
-> 两者互不依赖：有本地文件就自动用，没有就回退读 env（即走 1P 那条）。`optima-query-db cn-stage/cn-prod` 的 buildbox 密码同理——`export OPTIMA_CN_BUILDBOX_PASSWORD=...`，或本地 `~/.buildbox_pw`（纯密码一行，自动读取）；密码在 1P「Aliyun cn-prod buildbox ECS (root)」。
+> 两者互不依赖：有本地文件就自动用，没有就回退读 env（即走 1P 那条）。`optima-query-db cn-stage/cn-prod` 的 buildbox 密码同理——`export OPTIMA_CN_BUILDBOX_PASSWORD=...`，或本地 `~/.buildbox_pw`（纯密码一行，自动读取；`OPTIMA_CN_BUILDBOX_PW_FILE` 可覆盖路径）；密码在 1P「Aliyun cn-prod buildbox ECS (root)」。
+>
+> ⚠️ creds 文件的解析**不是 shell**：只认每行一条最朴素的 `KEY=值`（可带 `export `），值要么整体用成对引号包住、要么不含空格；引号值后的内容（如行尾注释）会被忽略，**无引号值别写行尾注释**（`#` 会被当成值的一部分）。文件权限宽于 600 时工具会打警告。
 
 ### 问题 3：服务不存在
 

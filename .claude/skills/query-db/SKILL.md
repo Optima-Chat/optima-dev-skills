@@ -212,7 +212,7 @@ optima-query-db gateway-core "SELECT key, value FROM app_configs" cn-prod
 | `INFISICAL_CN_EMAIL` + `INFISICAL_CN_PASSWORD` | 登录 cn Infisical 取数据库凭证 | 1Password「Infisical cn-prod admin (secrets-cn.optima.chat)」 |
 | `OPTIMA_CN_BUILDBOX_PASSWORD` | 经 buildbox 跳板建 RDS 隧道（本机已有健康隧道时可省） | 1Password「Aliyun cn-prod buildbox ECS (root)」 |
 
-> **两条独立路径**：① 从上表的 1P 取值 `export` 到当前 session（不落盘，推荐；有 `op` CLI 更佳）；或 ② 若你**自己**维护本地明文文件 `~/.infisical_cn_creds`（每行 `export KEY=val`）和 `~/.buildbox_pw`（纯密码一行），工具会自动读取、免手动 `export`/`source`（`INFISICAL_CN_CREDS_FILE` 可覆盖路径）。②是明文落盘的便捷取舍（`chmod 600`），非默认做法、别把 1P 密码抄进文件；没放这些文件时回退走 env（①）。
+> **两条独立路径**：① 从上表的 1P 取值 `export` 到当前 session（不落盘，推荐；有 `op` CLI 更佳）；或 ② 若你**自己**维护本地明文文件 `~/.infisical_cn_creds`（每行 `export KEY=val`）和 `~/.buildbox_pw`（纯密码一行），工具会自动读取、免手动 `export`/`source`（路径分别可用 `INFISICAL_CN_CREDS_FILE` / `OPTIMA_CN_BUILDBOX_PW_FILE` 覆盖）。②是明文落盘的便捷取舍（`chmod 600`，权限宽于 600 工具会打警告），非默认做法、别把 1P 密码抄进文件；没放这些文件时回退走 env（①）。creds 文件解析**不是 shell**：只认最朴素的 `KEY=值` 与成对引号，无引号值别写行尾注释。
 
 ## 🔧 技术架构
 
