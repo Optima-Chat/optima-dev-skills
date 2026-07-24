@@ -109,15 +109,75 @@ function curlJson(args: string[]): any {
   catch { throw new Error(`cn Infisical: non-JSON response: ${String(out).slice(0, 200)}`); }
 }
 
+/** 明文密码文件权限比 600 宽（组/其他用户可读）时往 stderr 警告一行。Windows 无此语义，跳过。 */
+function warnIfLoosePerms(file: string): void {
+  if (process.platform === 'win32') return;
+  try {
+    const mode = fs.statSync(file).mode & 0o777;
+    if (mode & 0o077) console.error(`⚠️  ${file} 权限 ${mode.toString(8).padStart(3, '0')}（同机其他用户可读）——建议 chmod 600 ${file}`);
+  } catch { /* stat 失败不阻塞主流程 */ }
+}
+
+/**
+ * 若 creds 文件存在，把其中 `export KEY=val` / `KEY=val` 行注入 process.env（已存在的键不覆盖）。
+ * 免去每次手动 `source ~/.infisical_cn_creds`；文件不存在则静默跳过，回退到调用方的 env 检查。
+ * ⚠️ 不是 shell：只认最朴素的每行一条 `KEY=值`。值以引号开头时取到配对引号为止（其后内容
+ * 忽略，行尾注释因此无害）；引号未闭合的行警告并跳过（真 shell 会语法错，静默注入 `"abc`
+ * 这类错值只会换来下游 401、更难查）；无引号值取到行尾原样保留（别写行尾注释，`#` 会进值）。
+ * 导出仅供测试。
+ */
+const loadedCredsFiles = new Set<string>(); // 同一文件只加载/警告一次（getCnInfisicalToken 与 setupCnSSHTunnel 都会调）
+export function loadCredsFileIntoEnv(file: string): void {
+  if (loadedCredsFiles.has(file)) return;
+  loadedCredsFiles.add(file);
+  let content: string;
+  try { content = fs.readFileSync(file, 'utf-8'); }
+  catch { return; } // 文件不存在/不可读 = 无操作，保持原有「读 env」行为
+  warnIfLoosePerms(file);
+  const lines = content.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!m) continue;
+    const key = m[1];
+    if (process.env[key] !== undefined) continue; // 已有 env 优先，不覆盖
+    let val = m[2].trim();
+    const q = val[0];
+    if (q === '"' || q === "'") {
+      const close = val.indexOf(q, 1);
+      if (close === -1) {
+        console.error(`⚠️  ${file} 第 ${i + 1} 行（${key}=）引号未闭合，已跳过该行`);
+        continue;
+      }
+      val = val.slice(1, close); // 配对引号截取，忽略其后（如行尾注释）
+    }
+    process.env[key] = val;
+  }
+}
+
+/**
+ * 读 buildbox 密码文件（纯密码一行；默认 ~/.buildbox_pw，OPTIMA_CN_BUILDBOX_PW_FILE 可覆盖）。
+ * 文件不存在/为空 → undefined，回退到调用方报错。导出仅供测试。
+ */
+export function readBuildboxPwFile(): string | undefined {
+  const file = process.env.OPTIMA_CN_BUILDBOX_PW_FILE || `${os.homedir()}/.buildbox_pw`;
+  let pw: string;
+  try { pw = fs.readFileSync(file, 'utf-8').trim(); }
+  catch { return undefined; }
+  warnIfLoosePerms(file); // 读到文件就查权限，空文件也警告
+  if (!pw) return undefined;
+  return pw;
+}
+
 /**
  * 认证 cn Infisical（admin email/password → org-scoped token）。
  * ⚠️ 字段名坑：login 返回 `accessToken`（不是 token），select-organization 才返回 `token`。
  */
 export function getCnInfisicalToken(): string {
+  loadCredsFileIntoEnv(process.env.INFISICAL_CN_CREDS_FILE || `${os.homedir()}/.infisical_cn_creds`);
   const email = process.env.INFISICAL_CN_EMAIL;
   const password = process.env.INFISICAL_CN_PASSWORD;
   if (!email || !password) {
-    throw new Error('cn Infisical 需要 INFISICAL_CN_EMAIL + INFISICAL_CN_PASSWORD 环境变量（admin user，1P "Infisical cn-prod admin (secrets-cn.optima.chat)"）。见 optima-dev-skills#21。');
+    throw new Error('cn Infisical 需要 INFISICAL_CN_EMAIL + INFISICAL_CN_PASSWORD。① 从 1Password "Infisical cn-prod admin (secrets-cn.optima.chat)" 取值 export（不落盘）；或 ② 本工具自动读取本地文件 ~/.infisical_cn_creds（每行 `export KEY=val`，INFISICAL_CN_CREDS_FILE 可覆盖）。见 optima-dev-skills#21。');
   }
   const login = curlJson([
     '-X', 'POST', `${CN_INFISICAL_URL}/api/v3/auth/login`,
@@ -318,8 +378,10 @@ function setupSSMTunnel(dbHost: string, localPort: number): void {
  * 密码经 SSHPASS 环境变量传给 `sshpass -e`：不进命令行（ps 不可见）、不经 shell 引号展开。
  */
 function setupCnSSHTunnel(dbHost: string, localPort: number): void {
-  const pw = process.env.OPTIMA_CN_BUILDBOX_PASSWORD;
-  if (!pw) throw new Error('cn DB 隧道需要 OPTIMA_CN_BUILDBOX_PASSWORD 环境变量（buildbox root 密码，1P "Aliyun cn-prod buildbox ECS (root)"）。见 optima-dev-skills#21。');
+  // creds 文件里也可能放 OPTIMA_CN_BUILDBOX_PASSWORD——自己加载一次（幂等），不依赖 getCnInfisicalToken 恰好先跑
+  loadCredsFileIntoEnv(process.env.INFISICAL_CN_CREDS_FILE || `${os.homedir()}/.infisical_cn_creds`);
+  const pw = process.env.OPTIMA_CN_BUILDBOX_PASSWORD || readBuildboxPwFile();
+  if (!pw) throw new Error('cn DB 隧道需要 OPTIMA_CN_BUILDBOX_PASSWORD。① 从 1Password "Aliyun cn-prod buildbox ECS (root)" 取值 export；或 ② 本工具自动读取本地文件 ~/.buildbox_pw（纯密码一行，OPTIMA_CN_BUILDBOX_PW_FILE 可覆盖路径）。见 optima-dev-skills#21。');
   try { execSync('command -v sshpass', { stdio: 'ignore' }); }
   catch { throw new Error('sshpass not found — cn buildbox 隧道需要（apt install sshpass / brew install esolitos/ipa/sshpass）。Windows 用 WSL。'); }
 
