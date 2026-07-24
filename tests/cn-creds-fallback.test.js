@@ -144,3 +144,22 @@ test('引号未闭合的行：stderr 警告 + 跳过，不注入错值', () => {
     delete process.env.CN_CREDS_TEST_OK;
   }
 });
+
+test('同一文件第二次加载直接跳过，权限警告不重复', () => {
+  const f = tmpCreds('export CN_CREDS_TEST_DEDUP=x\n');
+  fs.chmodSync(f, 0o644);
+  delete process.env.CN_CREDS_TEST_DEDUP;
+  const orig = console.error;
+  const lines = [];
+  console.error = (msg) => lines.push(String(msg));
+  try {
+    loadCredsFileIntoEnv(f);
+    loadCredsFileIntoEnv(f);
+    assert.equal(process.env.CN_CREDS_TEST_DEDUP, 'x');
+    assert.equal(lines.filter((l) => l.includes('chmod 600')).length, 1, `警告应只打一次: ${JSON.stringify(lines)}`);
+  } finally {
+    console.error = orig;
+    fs.unlinkSync(f);
+    delete process.env.CN_CREDS_TEST_DEDUP;
+  }
+});

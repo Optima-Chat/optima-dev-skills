@@ -126,7 +126,10 @@ function warnIfLoosePerms(file: string): void {
  * 这类错值只会换来下游 401、更难查）；无引号值取到行尾原样保留（别写行尾注释，`#` 会进值）。
  * 导出仅供测试。
  */
+const loadedCredsFiles = new Set<string>(); // 同一文件只加载/警告一次（getCnInfisicalToken 与 setupCnSSHTunnel 都会调）
 export function loadCredsFileIntoEnv(file: string): void {
+  if (loadedCredsFiles.has(file)) return;
+  loadedCredsFiles.add(file);
   let content: string;
   try { content = fs.readFileSync(file, 'utf-8'); }
   catch { return; } // 文件不存在/不可读 = 无操作，保持原有「读 env」行为
