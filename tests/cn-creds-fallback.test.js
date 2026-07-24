@@ -109,3 +109,38 @@ test('权限比 600 宽时往 stderr 警告（不抛错）', () => {
     delete process.env.CN_CREDS_TEST_PERM;
   }
 });
+
+test('CRLF 换行的文件照常解析（Windows 编辑/拷来的文件）', () => {
+  const f = tmpCreds('export CN_CREDS_TEST_CRLF_A=foo\r\nCN_CREDS_TEST_CRLF_B="b ar"\r\n');
+  delete process.env.CN_CREDS_TEST_CRLF_A;
+  delete process.env.CN_CREDS_TEST_CRLF_B;
+  try {
+    loadCredsFileIntoEnv(f);
+    assert.equal(process.env.CN_CREDS_TEST_CRLF_A, 'foo');
+    assert.equal(process.env.CN_CREDS_TEST_CRLF_B, 'b ar');
+  } finally {
+    fs.unlinkSync(f);
+    delete process.env.CN_CREDS_TEST_CRLF_A;
+    delete process.env.CN_CREDS_TEST_CRLF_B;
+  }
+});
+
+test('引号未闭合的行：stderr 警告 + 跳过，不注入错值', () => {
+  const f = tmpCreds('export CN_CREDS_TEST_UNCLOSED="abc\nexport CN_CREDS_TEST_OK=fine\n');
+  delete process.env.CN_CREDS_TEST_UNCLOSED;
+  delete process.env.CN_CREDS_TEST_OK;
+  const orig = console.error;
+  const lines = [];
+  console.error = (msg) => lines.push(String(msg));
+  try {
+    loadCredsFileIntoEnv(f);
+    assert.equal(process.env.CN_CREDS_TEST_UNCLOSED, undefined); // 不注入 `"abc` 这种错值
+    assert.equal(process.env.CN_CREDS_TEST_OK, 'fine'); // 后续行不受影响
+    assert.ok(lines.some((l) => l.includes('引号未闭合') && l.includes('第 1 行')), `未见未闭合警告: ${JSON.stringify(lines)}`);
+  } finally {
+    console.error = orig;
+    fs.unlinkSync(f);
+    delete process.env.CN_CREDS_TEST_UNCLOSED;
+    delete process.env.CN_CREDS_TEST_OK;
+  }
+});
