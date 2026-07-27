@@ -299,6 +299,79 @@ function isTunnelProcessOnPort(localPort: number): boolean {
   });
 }
 
+/**
+ * 隧道进程 cmdline 指向的 RDS host 与期望的 `dbHost` 是否一致（#76）。
+ *
+ * `isTunnelProcessOnPort` + `isTunnelHealthy` 只能回答「端口上是我们的隧道且 postgres
+ * 应答」—— **答不了「通向哪个库」**：连到错误实例的隧道同样 ssh + 同样 pg_isready 通。
+ * 注册表一旦出现两个 host 指向同一端口（见 pickTunnelPort 注释），warm reuse 就会把
+ * cn-prod 的查询送进 cn-stage 的隧道；两库账号密码不同才会报 auth failed 暴露出来，
+ * 同名账号则是**静默连错环境**。故复用前解析 cmdline 里的转发目标。
+ *
+ * 两种隧道形态的 cmdline（**均已在本机实测**，勿凭文档猜）：
+ *   ssh / cn-ssh：`ssh … -L [bind:]<localPort>:<dbHost>:5432 root@<bastion>`
+ *   SSM        ：持端口的是 `session-manager-plugin`（不是 `aws` CLI），argv 里是
+ *                StartSession 请求 **JSON**：
+ *                `… StartSession  {"Target":"i-…","DocumentName":"AWS-StartPortForwarding…",
+ *                 "Parameters": {"host": ["<dbHost>"], "portNumber": ["5432"],
+ *                 "localPortNumber": ["<localPort>"]}} https://ssm.…`
+ *
+ * **按 localPort 锚定**：一个 ssh 进程可以带多条 `-L`（工程师自建的多路转发也会被
+ * `isTunnelProcessOnPort` 认作「我们的隧道」）。只要 cmdline 里任一条 `-L` 命中 dbHost
+ * 就判 match，会把「25432 实际通向 stage、25433 才通向 prod」的进程误判为可复用 →
+ * 正好造成本 issue 要防的连错库。故只认**转发自本端口**的那一条。
+ *
+ * 返回 `unknown`（读不到 cmdline / 格式不认识）时**保守回退**：宁可偶尔多复用一次，
+ * 也不因误判杀掉正常 warm reuse；`mismatch` 才是确凿证据，一律拒绝复用。注意
+ * `unknown` 单独不足以防「注册表已存在重复端口」，那由 ensureTunnel 的 dup 判据兜底。
+ */
+export function classifyTunnelTarget(
+  args: string,
+  dbHost: string,
+  localPort?: number,
+): 'match' | 'mismatch' | 'unknown' {
+  const lp = localPort === undefined ? '\\d+' : String(localPort);
+  const targets: string[] = [];
+  // ssh：`-L [bind_address:]<localPort>:<host>:<remotePort>`（bind_address 可选是 ssh 合法写法）
+  for (const m of args.matchAll(new RegExp(`-L\\s*(?:[A-Za-z0-9._-]+:)?${lp}:([A-Za-z0-9._-]+):\\d+`, 'g'))) {
+    targets.push(m[1]);
+  }
+  // SSM：请求 JSON 里的 host；带 localPortNumber 时同样按本端口锚定
+  const ssmHost = args.match(/"host"\s*:\s*\[\s*"([A-Za-z0-9._-]+)"/);
+  if (ssmHost) {
+    const ssmLocal = args.match(/"localPortNumber"\s*:\s*\[\s*"(\d+)"/);
+    if (localPort === undefined || !ssmLocal || ssmLocal[1] === String(localPort)) targets.push(ssmHost[1]);
+  }
+  if (targets.length === 0) return 'unknown';
+  const want = dbHost.toLowerCase();
+  return targets.some(t => t.toLowerCase() === want) ? 'match' : 'mismatch';
+}
+
+/**
+ * 端口上的隧道进程是否通向 `dbHost`（聚合多 pid：任一 match 即 match）。
+ * 只读**隧道进程**（comm=ssh / session-manager）的 argv —— `lsof -ti:PORT` 同时会列出
+ * 连到该端口的**客户端**（psql / pg_isready），其 argv 里若恰好含 `host=…` 会造成假 mismatch。
+ */
+function tunnelTargetOnPort(localPort: number, dbHost: string): 'match' | 'mismatch' | 'unknown' {
+  let sawMismatch = false;
+  for (const pid of portPids(localPort)) {
+    let comm = '';
+    let args = '';
+    try {
+      const out = execSync(`ps -o comm=,args= -p ${pid}`, { encoding: 'utf-8' }).trim();
+      comm = out.split(/\s+/)[0] ?? '';
+      args = out;
+    } catch {
+      continue; // 进程刚退出
+    }
+    if (comm !== 'ssh' && !comm.includes('session-manager')) continue; // 客户端进程，跳过
+    const verdict = classifyTunnelTarget(args, dbHost, localPort);
+    if (verdict === 'match') return 'match';
+    if (verdict === 'mismatch') sawMismatch = true;
+  }
+  return sawMismatch ? 'mismatch' : 'unknown';
+}
+
 function killOrphanTunnel(localPort: number): void {
   // 只杀我们的隧道进程 —— 端口上若是别人（docker-proxy/postgres），kill -9 是破坏性的。
   for (const pid of portPids(localPort)) {
@@ -429,13 +502,21 @@ function writeTunnelRegistry(reg: Record<string, number>): void {
   fs.writeFileSync(TUNNEL_REGISTRY, JSON.stringify(reg, null, 2));
 }
 
-/** First free local port, preferring the registry's previous assignment. */
-function pickTunnelPort(preferred?: number): number {
+/**
+ * First free local port, preferring the registry's previous assignment.
+ *
+ * `reserved` = 注册表里**其它 host** 已占用的端口（#76）。原实现只看「此刻空闲」：
+ * 隧道进程死掉后端口释放，下一个 host 扫描到同一个 25432 就写进注册表 → 多个 host
+ * 指向同一端口（实遇 4 个 RDS 里 3 个都是 25432），之后任一条隧道活着都会被其它
+ * host 误复用 → 连错库。排除其它 host 已认领的端口，注册表由构造保持单射。
+ */
+function pickTunnelPort(preferred: number | undefined, reserved: ReadonlySet<number> = new Set()): number {
   const candidates = preferred ? [preferred] : [];
   for (let p = TUNNEL_PORT_SCAN_BASE; p < TUNNEL_PORT_SCAN_BASE + TUNNEL_PORT_SCAN_LIMIT; p++) {
     if (p !== preferred) candidates.push(p);
   }
   for (const p of candidates) {
+    if (reserved.has(p)) continue;
     if (portPids(p).length === 0 && !isPortResponding(p)) return p;
   }
   throw new Error(`No free local port in ${TUNNEL_PORT_SCAN_BASE}-${TUNNEL_PORT_SCAN_BASE + TUNNEL_PORT_SCAN_LIMIT - 1} for the DB tunnel`);
@@ -454,15 +535,33 @@ export function ensureTunnel(dbHost: string, via: 'aws' | 'cn-buildbox' = 'aws')
   const reg = readTunnelRegistry();
   const known = reg[dbHost];
 
+  // #76：端口同时被注册表里其它 host 认领 = 注册表已损坏（历史遗留缓存就是这个状态）。
+  // 此时若目标又验不出来（unknown，如 argv 格式不认识），不能乐观复用——否则那条路径
+  // 永远早返回、不写注册表，重复项永不自愈（AWS/SSM 默认路径尤其吃这个亏）。
+  const dupClaimed = known !== undefined
+    && Object.entries(reg).some(([h, p]) => h !== dbHost && p === known);
+
   if (known !== undefined && isTunnelProcessOnPort(known)) {
-    if (isTunnelHealthy(known)) return known; // warm reuse — no cold start
-    console.log(`! Tunnel on port ${known} not responding (zombie), replacing...`);
-    killOrphanTunnel(known);
+    // #76：健康 ≠ 通向正确的库 —— 先验转发目标，确凿指向别的 RDS 就别复用（也别杀，
+    // 那是另一个 host 正在用的隧道），换个端口自己建。
+    const verdict = tunnelTargetOnPort(known, dbHost);
+    if (verdict === 'mismatch' || (verdict === 'unknown' && dupClaimed)) {
+      console.log(`! Tunnel on port ${known} may forward to a different RDS host, not reusing (#76)`);
+    } else if (isTunnelHealthy(known)) {
+      return known; // warm reuse — no cold start
+    } else {
+      console.log(`! Tunnel on port ${known} not responding (zombie), replacing...`);
+      killOrphanTunnel(known);
+    }
   }
 
   // Foreign process on the recorded port (e.g. a local Docker PG) → pick a
   // different port instead of talking to whatever squats there.
-  const port = pickTunnelPort(known);
+  // #76：同时排除注册表里其它 host 认领的端口，避免两个 host 收敛到同一端口。
+  const reserved = new Set(
+    Object.entries(reg).filter(([h]) => h !== dbHost).map(([, p]) => p),
+  );
+  const port = pickTunnelPort(known, reserved);
   if (via === 'cn-buildbox') {
     setupCnSSHTunnel(dbHost, port);
   } else if ((process.env.OPTIMA_DB_TUNNEL || 'ssm').toLowerCase() === 'ssh') {
