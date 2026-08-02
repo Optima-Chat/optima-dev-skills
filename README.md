@@ -79,7 +79,7 @@ Claude:
 | 环境 | 部署方式 | 服务器 | 访问地址示例 |
 |------|---------|--------|------------|
 | **ci** | Docker Compose | dev.optima.chat | api.optima.chat<br>auth.optima.chat<br>mcp.optima.chat |
-| **stage** | AWS ECS | AWS ECS | api.stage.optima.onl<br>auth.stage.optima.onl<br>mcp.stage.optima.onl |
+| **stage** | AWS ECS | AWS ECS | api.stage.optima.onl<br>auth.stage.optima.onl |
 | **prod** | EC2 + Docker | AWS EC2 | api.optima.onl<br>auth.optima.onl |
 | **cn-stage** | 阿里云 SAE（云效流水线发布） | 阿里云 SAE + RDS（经 buildbox ECS 跳板） | auth.stage.optima.chat<br>commerce.stage.optima.chat |
 | **cn-prod** | 阿里云 SAE | 阿里云 SAE + RDS（经 buildbox ECS 跳板） | auth.yzsgo.com<br>commerce.yzsgo.com |
@@ -129,7 +129,7 @@ Claude:
 **特点**：
 - ✅ 支持 ci / stage / prod / cn-stage / cn-prod（query-db，见 `bin/helpers/query-db.ts` 的 `VALID_ENVS`）
 - ✅ 支持 stage / prod / cn-stage / cn-prod（show-env）
-- ✅ 自动管理 SSH 隧道和密钥
+- ✅ 自动管理 DB 隧道与密钥（stage / prod 默认 AWS SSM 端口转发，cn 两侧经 buildbox ECS 跳板 SSH）
 - ✅ 可在任何终端直接使用
 - ✅ 自动注册账户、获取 token、设置 merchant profile（generate-test-token）
 - ✅ Claude Code 的命令内部也使用这些工具
