@@ -95,16 +95,16 @@ Claude:
 | 命令 | 说明 | 示例 | 跨环境 |
 |------|------|------|--------|
 | `/generate-test-token` | 生成测试 token | `/generate-test-token` | 🔧 Development |
-| `/logs` | 查看服务日志 | `/logs commerce-backend 100` | ci / stage / prod |
+| `/logs` | 查看服务日志 | `/logs commerce-backend 100` | ci / stage / prod / cn-stage / cn-prod |
 | `/query-db` | 查询数据库 | `/query-db user-auth "SELECT COUNT(*) FROM users"` | ci / stage / prod / cn-stage / cn-prod |
 | `/read-code` | 阅读代码 | `/read-code commerce-backend app/main.py` | - |
 | `/restart-ecs` | 重启 ECS 服务 | `/restart-ecs user-auth stage` | stage / prod |
-| `/trace-user` | 用户链路追踪：按账号把全链路行为拼成时间线 | `/trace-user user@example.com` | ✅ |
+| `/trace-user` | 用户链路追踪：按账号把全链路行为拼成时间线 | `/trace-user user@example.com` | stage / prod / cn-stage / cn-prod |
 
 **说明**：
 - 本表与 `.claude/commands/` 一一对应（由 `tests/service-matrix-alignment.test.js` 校验，加命令漏更本表会红）。
 - 上方「任务场景」里的 skill 同样可以用 `/<skill 名>` 直接唤起（例如 cn-deploy、gateway-admin），但它们是 skill、不在 `.claude/commands/` 里，因此不列进本表。
-- 各命令支持的环境不同，见「跨环境」列；默认 CI 环境，适合日常开发。
+- 各命令支持的环境不同，见「跨环境」列。默认环境也不统一：`/logs`、`/query-db`、`/generate-test-token` 默认 `ci`，**`/restart-ecs`、`/trace-user` 默认 `stage`**（别当成 ci —— `/restart-ecs session-gateway` 不带环境重启的是 stage）。
 - `/generate-test-token` 生成的账户用于 development 环境（api.optima.chat）
 - Claude Code 会根据上下文自动选择环境和执行方式
 
@@ -213,7 +213,7 @@ $ optima-query-db commerce-backend "SELECT id, title FROM products LIMIT 5" stag
 
 ### dev-skills 提供什么？
 
-- ✅ **跨环境命令** - 在 CI/Stage/Prod 统一执行
+- ✅ **跨环境命令** - 在 ci / stage / prod / cn-stage / cn-prod 统一执行
 - ✅ **任务场景指导** - 完整的操作流程（不是零散命令）
 - ✅ **团队协作工具** - 跨仓库、跨环境的共享知识
 
@@ -264,7 +264,7 @@ $ optima-query-db commerce-backend "SELECT id, title FROM products LIMIT 5" stag
 - ✅ 命令、任务场景、CLI 工具三份清单见上方对应章节，此处不再重复计数（重复一次就多一处会漂的地方）
 - ✅ 支持 ci、stage、prod、cn-stage、cn-prod 五个环境
 - ✅ CI 环境通过 SSH + Docker 访问
-- ✅ Stage/Prod 通过 SSH 隧道访问 RDS
+- ✅ stage / prod / cn-stage / cn-prod 均通过 SSH 隧道访问 RDS（cn 两侧经 buildbox ECS 跳板）
 - ✅ 通过 Infisical 动态获取密钥和环境变量
 - ✅ 自动生成测试 token 并设置 merchant profile
 - ✅ `generate-test-token` 支持 development 和 production 环境

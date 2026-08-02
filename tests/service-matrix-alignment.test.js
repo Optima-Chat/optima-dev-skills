@@ -239,7 +239,10 @@ test('README Claude Code 命令表与 .claude/commands 目录逐一致', () => {
   // 同时漏了真实存在的 restart-ecs.md 与 trace-user.md。
   const source = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
   const body = sectionBody(source, /^## .*Claude Code 命令/, 'README Claude Code 命令');
-  const listed = [...body.matchAll(/^\| `\/([a-z0-9-]+)`/gm)].map((m) => m[1]).sort();
+  // 捕获用 [^`]+ 而非 [a-z0-9-]+：行首 `| \`/` 这个锚本身已经够窄（只有表格行能命中），
+  // 收紧字符集反而会让含大写/下划线的命令名「不匹配 → 文档侧也不出现 → deepEqual 通过」，
+  // 即静默漏检。宁可捕到怪名字后响亮地红，也不要 false-green。
+  const listed = [...body.matchAll(/^\| `\/([^`]+)`/gm)].map((m) => m[1]).sort();
 
   const files = fs
     .readdirSync(path.join(repoRoot, '.claude/commands'))
