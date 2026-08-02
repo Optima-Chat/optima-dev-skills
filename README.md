@@ -80,7 +80,7 @@ Claude:
 |------|---------|--------|------------|
 | **ci** | Docker Compose | dev.optima.chat | api.optima.chat<br>auth.optima.chat<br>mcp.optima.chat |
 | **stage** | AWS ECS | AWS ECS | api.stage.optima.onl<br>auth.stage.optima.onl<br>mcp.stage.optima.onl |
-| **prod** | EC2 + Docker | AWS EC2 | api.optima.shop<br>auth.optima.shop<br>mcp.optima.shop |
+| **prod** | EC2 + Docker | AWS EC2 | api.optima.onl<br>auth.optima.onl |
 | **cn-stage** | 阿里云 SAE（云效流水线发布） | 阿里云 SAE + RDS（经 buildbox ECS 跳板） | auth.stage.optima.chat<br>commerce.stage.optima.chat |
 | **cn-prod** | 阿里云 SAE | 阿里云 SAE + RDS（经 buildbox ECS 跳板） | auth.yzsgo.com<br>commerce.yzsgo.com |
 
@@ -94,7 +94,7 @@ Claude:
 
 | 命令 | 说明 | 示例 | 跨环境 |
 |------|------|------|--------|
-| `/generate-test-token` | 生成测试 token | `/generate-test-token` | 🔧 Development |
+| `/generate-test-token` | 生成测试 token | `/generate-test-token` | ci / stage / prod / cn-stage / cn-prod |
 | `/logs` | 查看服务日志 | `/logs commerce-backend 100` | ci / stage / prod / cn-stage / cn-prod |
 | `/query-db` | 查询数据库 | `/query-db user-auth "SELECT COUNT(*) FROM users"` | ci / stage / prod / cn-stage / cn-prod |
 | `/read-code` | 阅读代码 | `/read-code commerce-backend app/main.py` | - |
@@ -105,7 +105,7 @@ Claude:
 - 本表与 `.claude/commands/` 一一对应（由 `tests/service-matrix-alignment.test.js` 校验，加命令漏更本表会红）。
 - 上方「任务场景」里的 skill 同样可以用 `/<skill 名>` 直接唤起（例如 cn-deploy、gateway-admin），但它们是 skill、不在 `.claude/commands/` 里，因此不列进本表。
 - 各命令支持的环境不同，见「跨环境」列。默认环境也不统一：`/logs`、`/query-db`、`/generate-test-token` 默认 `ci`，**`/restart-ecs`、`/trace-user` 默认 `stage`**（别当成 ci —— `/restart-ecs session-gateway` 不带环境重启的是 stage）。
-- `/generate-test-token` 生成的账户用于 development 环境（api.optima.chat）
+- `/generate-test-token` 默认生成 `ci` 环境的账户（api.optima.chat）；`--env` 可切到 stage / prod / cn-stage / cn-prod。**注意 `development` / `production` 不是合法取值**，CLI 只认上面五个（`bin/helpers/generate-test-token.ts:27`）
 - Claude Code 会根据上下文自动选择环境和执行方式
 
 ## 🛠️ CLI 工具
@@ -176,17 +176,17 @@ Claude:
 ### 示例 2：生成测试 token 并管理店铺
 
 ```bash
-# 1. 生成 production 环境测试 token
-$ optima-generate-test-token --env production
+# 1. 生成 prod 环境测试 token
+$ optima-generate-test-token --env prod
 
-Environment: production
-Auth API: https://auth.optima.shop
+Environment: prod
+Auth API: https://auth.optima.onl
 ✅ Test token generated successfully!
 📁 Token File Path: /tmp/optima-test-token-xxx.txt
 
-# 2. 使用 token 创建商品
+# 2. 使用 token 创建商品（OPTIMA_ENV 取 generate-test-token 回显的那个 envName）
 $ OPTIMA_TOKEN=$(cat /tmp/optima-test-token-xxx.txt) \
-  OPTIMA_ENV=production \
+  OPTIMA_ENV=prod \
   commerce product create --title "测试商品" --price 99.99 --stock 100
 
 {
@@ -264,10 +264,11 @@ $ optima-query-db commerce-backend "SELECT id, title FROM products LIMIT 5" stag
 - ✅ 命令、任务场景、CLI 工具三份清单见上方对应章节，此处不再重复计数（重复一次就多一处会漂的地方）
 - ✅ 支持 ci、stage、prod、cn-stage、cn-prod 五个环境
 - ✅ CI 环境通过 SSH + Docker 访问
-- ✅ stage / prod / cn-stage / cn-prod 均通过 SSH 隧道访问 RDS（cn 两侧经 buildbox ECS 跳板）
+- ✅ stage / prod 默认经共享 bastion 的 **AWS SSM 端口转发**访问 RDS（需 `session-manager-plugin`；`OPTIMA_DB_TUNNEL=ssh` 可回退 legacy SSH 隧道）
+- ✅ cn-stage / cn-prod 经 buildbox ECS 跳板的 **SSH 隧道**访问内网 RDS
 - ✅ 通过 Infisical 动态获取密钥和环境变量
 - ✅ 自动生成测试 token 并设置 merchant profile
-- ✅ `generate-test-token` 支持 development 和 production 环境
+- ✅ `generate-test-token` 支持 ci / stage / prod / cn-stage / cn-prod 五个环境
 
 **设计原则**:
 - 命令提供信息（URL、路径、凭证位置），不实现复杂逻辑
