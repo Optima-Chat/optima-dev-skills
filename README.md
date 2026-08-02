@@ -25,24 +25,31 @@ npm install -g @optima-chat/dev-skills@latest
 
 ## 🎯 核心理念
 
-Optima Dev Skills 让 Claude Code 能够直接在 **CI、Stage、Prod** 三个环境中执行开发任务。
+Optima Dev Skills 让 Claude Code 能够直接在 **ci、stage、prod、cn-stage、cn-prod** 五个环境中执行开发任务（后两个是阿里云侧，与 AWS 侧完全独立；并非每个 skill 都覆盖全部五个，逐个见下）。
 
 **核心价值**:
 - **即时执行** - Claude 直接执行操作，开发者零手动操作
 - **任务驱动** - 基于具体任务场景（查看日志、调用 API），不是抽象分类
-- **跨环境协作** - 统一的命令在 CI、Stage、Prod 三个环境中使用
+- **跨环境协作** - 统一的命令在 AWS 侧（ci / stage / prod）与阿里云侧（cn-stage / cn-prod）通用
 
-## 📋 任务场景（6 个）
+## 📋 任务场景
 
-当 Claude Code 识别到以下任务时，会自动加载对应的 Skill：
+当 Claude Code 识别到以下任务时，会自动加载对应的 Skill。按目录字母序，与 `.claude/skills/` 一一对应（由 `tests/service-matrix-alignment.test.js` 校验，加 skill 漏更本清单会红）：
 
-- **logs** - 查看 CI/Stage/Prod 的服务器日志
-- **query-db** - 查询 CI/Stage/Prod 的数据库
-- **show-env** - 查看 Stage/Prod 的服务环境变量（从 Infisical）
-- **generate-test-token** - 生成测试 Access Token 用于 API 测试
-- **use-commerce-cli** - 使用 Commerce CLI 管理电商店铺
+- **account** - 查账号状态/订阅/权益，封禁与解封（stage / prod / cn-stage / cn-prod）
+- **cn-deploy** - 把服务发布到 cn-stage，走云效流水线一条龙（cn-stage）
+- **discount-codes** - 创建/生成/查看/停用 billing 优惠码（stage / prod）
+- **entitlement** - 授予、撤销、查看产品权益（stage / prod / cn-stage / cn-prod）
+- **gateway-admin** - gateway 管理面：COO kill、warm-pool、credits adjust、config 读写（cn-stage / cn-prod）
+- **generate-test-token** - 生成测试 Access Token 并配好 merchant，用于 API 测试
+- **grant-credits** - 赠送、发放积分（stage / prod / cn-stage / cn-prod）
+- **grant-subscription** - 开通、赠送、升级订阅（stage / prod / cn-stage / cn-prod）
+- **logs** - 查看服务日志（ci / stage / prod 走 CloudWatch，cn-stage / cn-prod 走 SLS）
+- **query-db** - 查询数据库、执行 SQL（ci / stage / prod / cn-stage / cn-prod）
 - **read-code** - 阅读 Optima-Chat 组织下任意仓库的代码
-- **discount-codes** - 创建/生成/查看/停用 billing 优惠码（Stage/Prod）
+- **restart-ecs** - 重启 ECS 服务（stage / prod）
+- **show-env** - 查看服务环境变量，从 Infisical 取（stage / prod / cn-stage / cn-prod）
+- **use-commerce-cli** - 用 Commerce CLI 管理电商店铺（商品、订单、库存、运费、集合、首页、国际化）
 
 ## 👤 用户故事
 
@@ -128,28 +135,21 @@ Claude:
 ```
 optima-dev-skills/
 ├── .claude/
-│   ├── commands/
-│   │   ├── logs.md                    # /logs - 查看服务日志
-│   │   ├── query-db.md                # /query-db - 查询数据库
-│   │   ├── generate-test-token.md     # /generate-test-token - 生成测试 token
-│   │   └── read-code.md               # /read-code - 阅读代码
-│   │
-│   └── skills/
-│       ├── logs/                      # 日志查看 skill
-│       ├── query-db/                  # 数据库查询 skill
-│       ├── show-env/                  # 环境变量查看 skill
-│       ├── generate-test-token/       # 测试 token 生成 skill
-│       ├── use-commerce-cli/          # Commerce CLI 使用 skill
-│       └── read-code/                 # 代码阅读 skill
+│   ├── commands/       # /<name> 斜杠命令，一个命令一个 .md
+│   └── skills/         # Claude Code skills，一个 skill 一个目录（清单见上方「任务场景」）
+│
+├── .codex/
+│   └── skills/         # Codex skills，是 .claude/skills 的镜像子集（清单见 AGENTS.md）
 │
 ├── bin/
-│   └── helpers/
-│       ├── query-db.ts                # CLI: 数据库查询
-│       ├── show-env.ts                # CLI: 查看环境变量
-│       └── generate-test-token.ts     # CLI: 生成测试 token
+│   └── helpers/        # optima-* CLI 的 TypeScript 实现（清单见上方「CLI 工具」）
+│
+├── scripts/
+│   └── install.js      # postinstall：按 readdir 把上面各目录全量装到 ~/.claude 与 ~/.codex
+│
+├── tests/              # node --test；service-matrix-alignment 校验文档清单与实际目录一致
 │
 └── docs/
-    └── COMMANDS_DESIGN.md
 ```
 
 ## 💡 使用示例
@@ -253,15 +253,13 @@ $ optima-query-db commerce-backend "SELECT id, title FROM products LIMIT 5" stag
 
 ## 🛠️ 开发状态
 
-**当前版本**: 0.7.16
+**当前版本**：见 [package.json](package.json)，或 `npm view @optima-chat/dev-skills version`（不在此写死——写死的数字正是本节此前一路过期到 0.7.16 的原因）
 
 **已完成**:
-- ✅ 4 个命令：`/logs`、`/query-db`、`/generate-test-token`、`/read-code`
-- ✅ 6 个任务场景：`logs`、`query-db`、`show-env`、`generate-test-token`、`use-commerce-cli`、`read-code`
-- ✅ 支持 CI、Stage、Prod 三个环境
+- ✅ 命令、任务场景、CLI 工具三份清单见上方对应章节，此处不再重复计数（重复一次就多一处会漂的地方）
+- ✅ 支持 ci、stage、prod、cn-stage、cn-prod 五个环境
 - ✅ CI 环境通过 SSH + Docker 访问
 - ✅ Stage/Prod 通过 SSH 隧道访问 RDS
-- ✅ TypeScript CLI 工具：`optima-query-db`、`optima-show-env`、`optima-generate-test-token`
 - ✅ 通过 Infisical 动态获取密钥和环境变量
 - ✅ 自动生成测试 token 并设置 merchant profile
 - ✅ `generate-test-token` 支持 development 和 production 环境

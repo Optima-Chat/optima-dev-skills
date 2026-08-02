@@ -190,6 +190,58 @@ test('cn-deploy registers build-only agent-runtime and SKILL.md count matches th
   }
 });
 
+// --- README / AGENTS.md skill 清单 vs 实际目录 -------------------------------
+// scripts/install.js 是 readdirSync 动态安装的：装什么完全由目录决定，两份文档
+// 的清单是纯手工快照。历史上漂过至少两次（a2f61e0 加 account 时更新了 README，
+// c2b7704 加 gateway-admin 时没更新），到 optima-dev-skills#80 时 README 声称
+// 「6 个」、其下实列 7、目录里实有 14。把两份清单钉死到目录，新增 skill 时漏更
+// 文档就会红。
+
+function skillDirs(rel) {
+  return fs
+    .readdirSync(path.join(repoRoot, rel), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+// 取 `## 标题` 到下一个同级 `## ` 之间的正文。清单必须在自己的小节里解析，
+// 否则正则会把文档别处形如 `- **xxx**` 的行一并吃进来。
+function sectionBody(source, headingPattern, label) {
+  const lines = source.split('\n');
+  const start = lines.findIndex((line) => headingPattern.test(line));
+  assert.ok(start !== -1, `Could not find heading for ${label}`);
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => /^## /.test(line));
+  return (end === -1 ? rest : rest.slice(0, end)).join('\n');
+}
+
+test('README 任务场景清单与 .claude/skills 目录逐一致', () => {
+  const source = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
+  const heading = /^## .*任务场景/;
+  const body = sectionBody(source, heading, 'README 任务场景');
+  const listed = [...body.matchAll(/^- \*\*([a-z0-9-]+)\*\*/gm)].map((m) => m[1]).sort();
+
+  assert.ok(listed.length > 0, 'README 任务场景小节必须以 `- **skill-name**` 形式列出 skill');
+  assert.deepEqual(listed, skillDirs('.claude/skills'));
+
+  // 标题里若写死「（N 个）」，N 必须等于实际数量——与上面 cn-deploy 那条同理，
+  // 写死的计数是本次漂移的直接病根，不禁止但必须自洽。
+  const headingLine = source.split('\n').find((line) => heading.test(line));
+  for (const [, n] of headingLine.matchAll(/(\d+)\s*个/g)) {
+    assert.equal(Number(n), listed.length, `README 任务场景标题写的 ${n} 个与实际 ${listed.length} 个不符`);
+  }
+});
+
+test('AGENTS.md Codex skills 清单与 .codex/skills 目录逐一致', () => {
+  const source = fs.readFileSync(path.join(repoRoot, 'AGENTS.md'), 'utf8');
+  const body = sectionBody(source, /^## Installed Codex Skills/, 'AGENTS.md Installed Codex Skills');
+  const listed = [...body.matchAll(/^- `([a-z0-9-]+)`/gm)].map((m) => m[1]).sort();
+
+  assert.ok(listed.length > 0, 'AGENTS.md 必须以 `- `skill-name`` 形式列出 Codex skill');
+  assert.deepEqual(listed, skillDirs('.codex/skills'));
+});
+
 function parseObjectKeys(source, variableName) {
   const escapedName = variableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = source.match(new RegExp(`const ${escapedName} = \\{(.*?)\\n\\};`, 's'));
