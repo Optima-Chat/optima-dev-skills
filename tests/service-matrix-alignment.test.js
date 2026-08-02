@@ -233,6 +233,24 @@ test('README 任务场景清单与 .claude/skills 目录逐一致', () => {
   }
 });
 
+test('README Claude Code 命令表与 .claude/commands 目录逐一致', () => {
+  // install.js 对 commands 的过滤是 `f.endsWith('.md')`，这里照抄。
+  // 漂移实例：表里曾列着 `/cn-deploy`（它是 skill、没有对应 .md），
+  // 同时漏了真实存在的 restart-ecs.md 与 trace-user.md。
+  const source = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
+  const body = sectionBody(source, /^## .*Claude Code 命令/, 'README Claude Code 命令');
+  const listed = [...body.matchAll(/^\| `\/([a-z0-9-]+)`/gm)].map((m) => m[1]).sort();
+
+  const files = fs
+    .readdirSync(path.join(repoRoot, '.claude/commands'))
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => name.replace(/\.md$/, ''))
+    .sort();
+
+  assert.ok(listed.length > 0, 'README 命令表必须以 `| `/name`` 开头的表格行列出命令');
+  assert.deepEqual(listed, files);
+});
+
 test('AGENTS.md Codex skills 清单与 .codex/skills 目录逐一致', () => {
   const source = fs.readFileSync(path.join(repoRoot, 'AGENTS.md'), 'utf8');
   const body = sectionBody(source, /^## Installed Codex Skills/, 'AGENTS.md Installed Codex Skills');

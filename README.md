@@ -44,7 +44,7 @@ Optima Dev Skills 让 Claude Code 能够直接在 **ci、stage、prod、cn-stage
 - **generate-test-token** - 生成测试 Access Token 并配好 merchant，用于 API 测试
 - **grant-credits** - 赠送、发放积分（stage / prod / cn-stage / cn-prod）
 - **grant-subscription** - 开通、赠送、升级订阅（stage / prod / cn-stage / cn-prod）
-- **logs** - 查看服务日志（ci / stage / prod 走 CloudWatch，cn-stage / cn-prod 走 SLS）
+- **logs** - 查看服务日志（stage / prod 走 CloudWatch，cn-stage / cn-prod 走 SLS；CI 走 SSH + Docker Compose，不经 `optima-logs`）
 - **query-db** - 查询数据库、执行 SQL（ci / stage / prod / cn-stage / cn-prod）
 - **read-code** - 阅读 Optima-Chat 组织下任意仓库的代码
 - **restart-ecs** - 重启 ECS 服务（stage / prod）
@@ -78,28 +78,33 @@ Claude:
 
 | 环境 | 部署方式 | 服务器 | 访问地址示例 |
 |------|---------|--------|------------|
-| **CI** | Docker Compose | dev.optima.chat | api.optima.chat<br>auth.optima.chat<br>mcp.optima.chat |
-| **Stage** | AWS ECS | AWS ECS | api.stage.optima.onl<br>auth.stage.optima.onl<br>mcp.stage.optima.onl |
-| **Prod** | EC2 + Docker | AWS EC2 | api.optima.shop<br>auth.optima.shop<br>mcp.optima.shop |
+| **ci** | Docker Compose | dev.optima.chat | api.optima.chat<br>auth.optima.chat<br>mcp.optima.chat |
+| **stage** | AWS ECS | AWS ECS | api.stage.optima.onl<br>auth.stage.optima.onl<br>mcp.stage.optima.onl |
+| **prod** | EC2 + Docker | AWS EC2 | api.optima.shop<br>auth.optima.shop<br>mcp.optima.shop |
+| **cn-stage** | 阿里云 SAE（云效流水线发布） | 阿里云 SAE + RDS（经 buildbox ECS 跳板） | auth.stage.optima.chat<br>commerce.stage.optima.chat |
+| **cn-prod** | 阿里云 SAE | 阿里云 SAE + RDS（经 buildbox ECS 跳板） | auth.yzsgo.com<br>commerce.yzsgo.com |
 
 **说明**：
-- **CI** - 团队共享的持续集成测试环境，部署在 dev.optima.chat 服务器
-- **Stage** - 预发布环境，用于上线前的最终验证
-- **Prod** - 生产环境，服务真实用户
+- **ci** - 团队共享的持续集成测试环境，部署在 dev.optima.chat 服务器
+- **stage** - 预发布环境，用于上线前的最终验证
+- **prod** - 生产环境，服务真实用户
+- **cn-stage / cn-prod** - 阿里云侧独立部署，与 AWS 侧完全无关（独立 Infisical 实例、独立 RDS 实例）；cn-prod 服务境内真实用户
 
 ## 🚀 Claude Code 命令
 
 | 命令 | 说明 | 示例 | 跨环境 |
 |------|------|------|--------|
-| `/logs` | 查看服务日志 | `/logs commerce-backend 100` | ✅ |
-| `/query-db` | 查询数据库 | `/query-db user-auth "SELECT COUNT(*) FROM users"` | ✅ |
 | `/generate-test-token` | 生成测试 token | `/generate-test-token` | 🔧 Development |
+| `/logs` | 查看服务日志 | `/logs commerce-backend 100` | ci / stage / prod |
+| `/query-db` | 查询数据库 | `/query-db user-auth "SELECT COUNT(*) FROM users"` | ci / stage / prod / cn-stage / cn-prod |
 | `/read-code` | 阅读代码 | `/read-code commerce-backend app/main.py` | - |
-| `/cn-deploy` | 发布服务到 cn-stage（云效流水线一条龙） | 「把 billing 发到 cn-stage」 | cn-stage |
+| `/restart-ecs` | 重启 ECS 服务 | `/restart-ecs user-auth stage` | stage / prod |
+| `/trace-user` | 用户链路追踪：按账号把全链路行为拼成时间线 | `/trace-user user@example.com` | ✅ |
 
 **说明**：
-- 命令支持 CI、Stage、Prod 三个环境
-- 默认使用 CI 环境，适合日常开发
+- 本表与 `.claude/commands/` 一一对应（由 `tests/service-matrix-alignment.test.js` 校验，加命令漏更本表会红）。
+- 上方「任务场景」里的 skill 同样可以用 `/<skill 名>` 直接唤起（例如 cn-deploy、gateway-admin），但它们是 skill、不在 `.claude/commands/` 里，因此不列进本表。
+- 各命令支持的环境不同，见「跨环境」列；默认 CI 环境，适合日常开发。
 - `/generate-test-token` 生成的账户用于 development 环境（api.optima.chat）
 - Claude Code 会根据上下文自动选择环境和执行方式
 
@@ -122,8 +127,8 @@ Claude:
 > **4 环境 + 标识符**：`grant-subscription` / `grant-credits` / `entitlement` / `account` 均支持 `stage` / `prod` / `cn-prod` / `cn-stage`。标识符 `<email\|phone\|userId>`——**cn-prod / cn-stage 用户多为手机号注册**，三种均可；AWS stage/prod 仅 email。`ban`/`unban` 及 `account status` 的禁用态读取需 admin-用户凭证（Infisical `/shared-secrets/credentials`；cn 另需 `INFISICAL_CN_EMAIL/PASSWORD`）。
 
 **特点**：
-- ✅ 支持 CI、Stage、Prod 三个环境（query-db）
-- ✅ 支持 Stage、Prod 环境（show-env）
+- ✅ 支持 ci / stage / prod / cn-stage / cn-prod（query-db，见 `bin/helpers/query-db.ts` 的 `VALID_ENVS`）
+- ✅ 支持 stage / prod / cn-stage / cn-prod（show-env）
 - ✅ 自动管理 SSH 隧道和密钥
 - ✅ 可在任何终端直接使用
 - ✅ 自动注册账户、获取 token、设置 merchant profile（generate-test-token）
