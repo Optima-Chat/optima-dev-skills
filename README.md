@@ -47,6 +47,7 @@ Optima Dev Skills 让 Claude Code 能够直接在 **ci、stage、prod、cn-stage
 - **logs** - 查看服务日志（stage / prod 走 CloudWatch，cn-stage / cn-prod 走 SLS；CI 走 SSH + Docker Compose，不经 `optima-logs`）
 - **query-db** - 查询数据库、执行 SQL（ci / stage / prod / cn-stage / cn-prod）
 - **read-code** - 阅读 Optima-Chat 组织下任意仓库的代码
+- **reset-onboarding** - 重置账号的 onboarding 资格，让它重新触发新手引导问卷（cn-stage / cn-prod）
 - **restart-ecs** - 重启 ECS 服务（stage / prod）
 - **show-env** - 查看服务环境变量，从 Infisical 取（stage / prod / cn-stage / cn-prod）
 - **use-commerce-cli** - 用 Commerce CLI 管理电商店铺（商品、订单、库存、运费、集合、首页、国际化）

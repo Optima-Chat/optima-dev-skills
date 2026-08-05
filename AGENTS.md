@@ -31,6 +31,7 @@ After `npm install -g @optima-chat/dev-skills`, this package installs skills und
 - `logs`
 - `query-db`
 - `read-code`
+- `reset-onboarding`
 - `restart-ecs`
 - `show-env`
 - `use-commerce-cli`
