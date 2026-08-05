@@ -80,7 +80,7 @@ Claude:
 |------|---------|--------|------------|
 | **ci** | Docker Compose | dev.optima.chat | api.optima.chat<br>auth.optima.chat<br>mcp.optima.chat |
 | **stage** | AWS ECS | AWS ECS | api.stage.optima.onl<br>auth.stage.optima.onl |
-| **prod** | EC2 + Docker | AWS EC2 | api.optima.onl<br>auth.optima.onl |
+| **prod** | AWS ECS | AWS ECS | api.optima.onl<br>auth.optima.onl |
 | **cn-stage** | 阿里云 SAE（云效流水线发布） | 阿里云 SAE + RDS（经 buildbox ECS 跳板） | auth.stage.optima.chat<br>commerce.stage.optima.chat |
 | **cn-prod** | 阿里云 SAE | 阿里云 SAE + RDS（经 buildbox ECS 跳板） | auth.yzsgo.com<br>commerce.yzsgo.com |
 
@@ -123,6 +123,13 @@ Claude:
 | `optima-entitlement` | 产品权益 grant/revoke/list | `optima-entitlement grant 18898654855 --product-key scout-gift --justification "..." --env cn-prod` |
 | `optima-account` | 账号 status/ban/unban | `optima-account ban user@example.com --reason "abuse" --env prod` |
 | `optima-cn-deploy` | 云效 Flow 发布到 cn-stage（构建→DB迁移→SAE 发布→sha 校验，20 服务） | `optima-cn-deploy billing` / `optima-cn-deploy user-auth --branch feat/xxx` |
+| `optima-logs` | 查看服务日志（stage / prod 走 CloudWatch，cn 两侧直连 SLS；默认 `cn-prod`） | `optima-logs gateway-core --env cn-stage --since 2h` |
+| `optima-verify-health` | 上线健康探针，L1 DNS → L5 依赖逐层探 | `optima-verify-health user-auth --env prod` |
+| `optima-gateway-admin` | gateway-core `/admin/*` 直调（写操作需确认，默认 `cn-stage`） | `optima-gateway-admin GET /admin/llm-rates --env cn-stage` |
+| `optima-plugin` | 插件市场态 show/set-paid/set-default/set-status | `optima-plugin show --slug <slug> --env stage` |
+| `optima-product` | Product 的 create/update/add-channel/toggle-channel/show | `optima-product show --key <productKey> --env stage` |
+
+本表与 `package.json` 的 `bin` 一一对应（同样由 `tests/service-matrix-alignment.test.js` 校验）。包自身的入口 `optima-dev-skills`（只提供 `version` / `help`）与 `optima-grant-credits` 的废弃别名 `optima-grant-balance` 有意不单独列行。
 
 > **4 环境 + 标识符**：`grant-subscription` / `grant-credits` / `entitlement` / `account` 均支持 `stage` / `prod` / `cn-prod` / `cn-stage`。标识符 `<email\|phone\|userId>`——**cn-prod / cn-stage 用户多为手机号注册**，三种均可；AWS stage/prod 仅 email。`ban`/`unban` 及 `account status` 的禁用态读取需 admin-用户凭证（Infisical `/shared-secrets/credentials`；cn 另需 `INFISICAL_CN_EMAIL/PASSWORD`）。
 

@@ -220,7 +220,9 @@ test('README 任务场景清单与 .claude/skills 目录逐一致', () => {
   const source = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
   const heading = /^## .*任务场景/;
   const body = sectionBody(source, heading, 'README 任务场景');
-  const listed = [...body.matchAll(/^- \*\*([a-z0-9-]+)\*\*/gm)].map((m) => m[1]).sort();
+  // 捕获用 [^*]+ 而非 [a-z0-9-]+，理由同下面命令表那条：收紧字符集会让
+  // `- **Fake_Skill**` 这种条目「不匹配 → 文档侧也不出现 → deepEqual 通过」。
+  const listed = [...body.matchAll(/^- \*\*([^*]+)\*\*/gm)].map((m) => m[1]).sort();
 
   assert.ok(listed.length > 0, 'README 任务场景小节必须以 `- **skill-name**` 形式列出 skill');
   assert.deepEqual(listed, skillDirs('.claude/skills'));
@@ -254,10 +256,31 @@ test('README Claude Code 命令表与 .claude/commands 目录逐一致', () => {
   assert.deepEqual(listed, files);
 });
 
+test('README CLI 工具表与 package.json 的 bin 逐一致', () => {
+  // 同一个病的第四处，此前没被守卫盖住：这张表是手工快照，真正决定装什么的
+  // 是 package.json 的 `bin`。发现时表里 9 行、bin 里 16 个，漏了 optima-logs
+  // / verify-health / gateway-admin / plugin / product 五个——而「开发状态」
+  // 一节又把读者指向这张表。
+  const source = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
+  const body = sectionBody(source, /^## .*CLI 工具/, 'README CLI 工具');
+  const listed = [...body.matchAll(/^\| `(optima-[^`]+)`/gm)].map((m) => m[1]).sort();
+
+  // 两个有意不单独列行的：包自身的入口（只提供 version/help）、以及
+  // grant-credits 的废弃别名（已在该行括号里说明）。新增 bin 不会落进这个
+  // 集合，因此漏更表格照样红。
+  const notListed = new Set(['optima-dev-skills', 'optima-grant-balance']);
+  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  const bins = Object.keys(pkg.bin).filter((name) => !notListed.has(name)).sort();
+
+  assert.ok(listed.length > 0, 'README CLI 工具表必须以 `| `optima-xxx`` 开头的表格行列出工具');
+  assert.deepEqual(listed, bins);
+});
+
 test('AGENTS.md Codex skills 清单与 .codex/skills 目录逐一致', () => {
   const source = fs.readFileSync(path.join(repoRoot, 'AGENTS.md'), 'utf8');
   const body = sectionBody(source, /^## Installed Codex Skills/, 'AGENTS.md Installed Codex Skills');
-  const listed = [...body.matchAll(/^- `([a-z0-9-]+)`/gm)].map((m) => m[1]).sort();
+  // 同样放宽字符集，避免 false-green（见命令表那条的注释）。
+  const listed = [...body.matchAll(/^- `([^`]+)`/gm)].map((m) => m[1]).sort();
 
   assert.ok(listed.length > 0, 'AGENTS.md 必须以 `- `skill-name`` 形式列出 Codex skill');
   assert.deepEqual(listed, skillDirs('.codex/skills'));
