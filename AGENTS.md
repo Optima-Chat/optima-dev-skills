@@ -20,18 +20,23 @@ For code-reading tasks across Optima repositories, use `gh` commands against `Op
 
 ## Installed Codex Skills
 
-After `npm install -g @optima-chat/dev-skills`, this package installs skills under `~/.codex/skills/optima-dev/`:
+After `npm install -g @optima-chat/dev-skills`, this package installs skills under `~/.codex/skills/optima-dev/`. `scripts/install.js` copies every directory it finds, so the list below mirrors `.codex/skills/` exactly and is pinned by `tests/service-matrix-alignment.test.js` — adding a skill without updating this list turns the test red.
 
+- `account`
+- `cn-deploy`
+- `entitlement`
+- `generate-test-token`
+- `grant-credits`
+- `grant-subscription`
 - `logs`
 - `query-db`
-- `show-env`
-- `generate-test-token`
 - `read-code`
-- `grant-subscription`
-- `grant-credits`
+- `reset-onboarding`
 - `restart-ecs`
+- `show-env`
 - `use-commerce-cli`
-- `cn-deploy`
+
+`discount-codes` and `gateway-admin` exist under `.claude/skills/` only, so they are not installed for Codex.
 
 ## Tooling Assumptions
 

@@ -190,6 +190,102 @@ test('cn-deploy registers build-only agent-runtime and SKILL.md count matches th
   }
 });
 
+// --- README / AGENTS.md skill 清单 vs 实际目录 -------------------------------
+// scripts/install.js 是 readdirSync 动态安装的：装什么完全由目录决定，两份文档
+// 的清单是纯手工快照。历史上漂过至少两次（a2f61e0 加 account 时更新了 README，
+// c2b7704 加 gateway-admin 时没更新），到 optima-dev-skills#80 时 README 声称
+// 「6 个」、其下实列 7、目录里实有 14。把两份清单钉死到目录，新增 skill 时漏更
+// 文档就会红。
+
+function skillDirs(rel) {
+  return fs
+    .readdirSync(path.join(repoRoot, rel), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+// 取 `## 标题` 到下一个同级 `## ` 之间的正文。清单必须在自己的小节里解析，
+// 否则正则会把文档别处形如 `- **xxx**` 的行一并吃进来。
+function sectionBody(source, headingPattern, label) {
+  const lines = source.split('\n');
+  const start = lines.findIndex((line) => headingPattern.test(line));
+  assert.ok(start !== -1, `Could not find heading for ${label}`);
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => /^## /.test(line));
+  return (end === -1 ? rest : rest.slice(0, end)).join('\n');
+}
+
+test('README 任务场景清单与 .claude/skills 目录逐一致', () => {
+  const source = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
+  const heading = /^## .*任务场景/;
+  const body = sectionBody(source, heading, 'README 任务场景');
+  // 捕获用 [^*]+ 而非 [a-z0-9-]+，理由同下面命令表那条：收紧字符集会让
+  // `- **Fake_Skill**` 这种条目「不匹配 → 文档侧也不出现 → deepEqual 通过」。
+  const listed = [...body.matchAll(/^- \*\*([^*]+)\*\*/gm)].map((m) => m[1]).sort();
+
+  assert.ok(listed.length > 0, 'README 任务场景小节必须以 `- **skill-name**` 形式列出 skill');
+  assert.deepEqual(listed, skillDirs('.claude/skills'));
+
+  // 标题里若写死「（N 个）」，N 必须等于实际数量——与上面 cn-deploy 那条同理，
+  // 写死的计数是本次漂移的直接病根，不禁止但必须自洽。
+  const headingLine = source.split('\n').find((line) => heading.test(line));
+  for (const [, n] of headingLine.matchAll(/(\d+)\s*个/g)) {
+    assert.equal(Number(n), listed.length, `README 任务场景标题写的 ${n} 个与实际 ${listed.length} 个不符`);
+  }
+});
+
+test('README Claude Code 命令表与 .claude/commands 目录逐一致', () => {
+  // install.js 对 commands 的过滤是 `f.endsWith('.md')`，这里照抄。
+  // 漂移实例：表里曾列着 `/cn-deploy`（它是 skill、没有对应 .md），
+  // 同时漏了真实存在的 restart-ecs.md 与 trace-user.md。
+  const source = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
+  const body = sectionBody(source, /^## .*Claude Code 命令/, 'README Claude Code 命令');
+  // 捕获用 [^`]+ 而非 [a-z0-9-]+：行首 `| \`/` 这个锚本身已经够窄（只有表格行能命中），
+  // 收紧字符集反而会让含大写/下划线的命令名「不匹配 → 文档侧也不出现 → deepEqual 通过」，
+  // 即静默漏检。宁可捕到怪名字后响亮地红，也不要 false-green。
+  const listed = [...body.matchAll(/^\| `\/([^`]+)`/gm)].map((m) => m[1]).sort();
+
+  const files = fs
+    .readdirSync(path.join(repoRoot, '.claude/commands'))
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => name.replace(/\.md$/, ''))
+    .sort();
+
+  assert.ok(listed.length > 0, 'README 命令表必须以 `| `/name`` 开头的表格行列出命令');
+  assert.deepEqual(listed, files);
+});
+
+test('README CLI 工具表与 package.json 的 bin 逐一致', () => {
+  // 同一个病的第四处，此前没被守卫盖住：这张表是手工快照，真正决定装什么的
+  // 是 package.json 的 `bin`。发现时表里 9 行、bin 里 16 个，漏了 optima-logs
+  // / verify-health / gateway-admin / plugin / product 五个——而「开发状态」
+  // 一节又把读者指向这张表。
+  const source = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
+  const body = sectionBody(source, /^## .*CLI 工具/, 'README CLI 工具');
+  const listed = [...body.matchAll(/^\| `(optima-[^`]+)`/gm)].map((m) => m[1]).sort();
+
+  // 两个有意不单独列行的：包自身的入口（只提供 version/help）、以及
+  // grant-credits 的废弃别名（已在该行括号里说明）。新增 bin 不会落进这个
+  // 集合，因此漏更表格照样红。
+  const notListed = new Set(['optima-dev-skills', 'optima-grant-balance']);
+  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  const bins = Object.keys(pkg.bin).filter((name) => !notListed.has(name)).sort();
+
+  assert.ok(listed.length > 0, 'README CLI 工具表必须以 `| `optima-xxx`` 开头的表格行列出工具');
+  assert.deepEqual(listed, bins);
+});
+
+test('AGENTS.md Codex skills 清单与 .codex/skills 目录逐一致', () => {
+  const source = fs.readFileSync(path.join(repoRoot, 'AGENTS.md'), 'utf8');
+  const body = sectionBody(source, /^## Installed Codex Skills/, 'AGENTS.md Installed Codex Skills');
+  // 同样放宽字符集，避免 false-green（见命令表那条的注释）。
+  const listed = [...body.matchAll(/^- `([^`]+)`/gm)].map((m) => m[1]).sort();
+
+  assert.ok(listed.length > 0, 'AGENTS.md 必须以 `- `skill-name`` 形式列出 Codex skill');
+  assert.deepEqual(listed, skillDirs('.codex/skills'));
+});
+
 function parseObjectKeys(source, variableName) {
   const escapedName = variableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = source.match(new RegExp(`const ${escapedName} = \\{(.*?)\\n\\};`, 's'));
