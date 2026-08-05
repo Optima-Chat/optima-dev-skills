@@ -30,7 +30,7 @@ optima-cn-deploy --list                       # 列出全部可发服务
 7. **build-only 服务（`agent-runtime`）**：非 SAE 常驻（gateway-core 按 session 拉起的镜像）。成功标准不是 SAE ImageUrl，而是流水线绿即可——release 段自动把 ACR digest 回写 Infisical `/services/gateway-core/ALIYUN_AGENT_RUNTIME_IMAGE`(#807) 并滚动重启 gateway-core（任一步失败即 exit 非 0）。工具最后一行为 `✓ 流水线 SUCCESS(build-only)…` —— CLI 以流水线终态为准，未独立校验 Infisical/gateway-core（digest 与重启变更单见 run『发版』段日志）。
 
 
-## cn-prod vtag 发版（2026-07-14 起实跑，截至 2026-07-31 发过 5 个服务）
+## cn-prod vtag 发版（通路已跑通；清单外的服务仍算首发）
 
 ```bash
 optima-cn-deploy <service> --vtag cn-v1.2.3               # 先 stage 同 tag 验证
@@ -40,9 +40,9 @@ optima-cn-deploy <service> --env prod --vtag cn-v1.2.3    # prod 发版
 - prod 是 vtag 制：必须先 `git tag cn-vX.Y.Z && git push`，工具拒绝无 vtag / 裸 v* / 带 --branch 的 prod 请求
 - prod 流水线构建后**停在人工卡点**（xbfool/svenyang 在云效控制台审批），之后 DB 迁移 + digest 钉死部署自动走完
 - 成功标准：prod SAE ImageUrl 为 `@sha256:` digest 寻址（工具最后一行校验）
+- ⚠️ **老路径会盖掉 digest**：云效 prod 钉的是 `@sha256:` digest，buildbox `cn-deploy.sh` 发的是 `:<sha>` tag，后发的覆盖先发的。发版后隔天复查一次 SAE ImageUrl：已从 digest 变回 tag 形态即为被老路径覆盖，需重跑云效 prod 流水线（2026-07-31 一天内见 3 例，`cn-deploy.sh` 下线前一直存在）
 - 用户请求发 cn-prod 时：确认已有 stage 验证过的 cn-v tag；没有则先引导走 stage
-- 已实跑过 prod 的服务：commerce-backend / optima-scout / optima-generation(-worker) / browser-backend（最近一次 2026-07-30 browser-backend cn-v1.0.0 全绿）。**其余 16 个服务的 prod 流水线一次没跑过**，首发按 pilot 谨慎度对待
-- ⚠️ **双轨期**：云效 prod 是 digest 寻址，buildbox `cn-deploy.sh` 日常发布是 `:<sha>` tag 寻址、会盖掉前者。发完过一阵若 SAE ImageUrl 变回 tag 形态，说明被老路径覆盖了（2026-07-31 已见 3 例）
+- **已发过 prod 的服务**（2026-07-14 起，截至 2026-07-31）：`commerce-backend`、`optima-scout`、`optima-generation`、`optima-generation-worker`、`browser-backend`（最近一次 2026-07-30 browser-backend cn-v1.0.0 全绿）。**不在此列的一律当首发处理**：避开业务高峰、卡点前后找 xbfool/svenyang 人工确认、发完立刻校验 ImageUrl
 
 ## 前置依赖
 
