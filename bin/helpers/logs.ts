@@ -90,7 +90,10 @@ Examples:
     用 grep -c '__time__'。
   · cn 侧 --grep 走 SLS 索引:logstore 没把正文纳入索引时,零命中不代表没有、
     非零命中也不是真实次数(已知 cn-stage/agent-runtime)。用了 --grep 会先查
-    GetIndex,搜不到正文就在结果前告警;索引正常时零命中会明说「确实没有」。`;
+    GetIndex,搜不到正文就在结果前告警。
+  · 即便索引正常,零命中也**不等于**这个词不存在:SLS 按完整 token 匹配
+    (分词表不含 - _ .),"reconciler" 命不中 "session-reconciler"。要断定「真没有」
+    请换完整 token,或去掉 --grep 拉原始行本地过滤复核。`;
 
 /** 把 30m / 2h / 1d / 纯秒 解析成秒数;同时回填给 aws 用的带单位字符串。 */
 function parseSince(raw: string): { sec: number; awsStr: string } {
