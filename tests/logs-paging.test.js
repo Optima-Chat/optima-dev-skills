@@ -4,7 +4,7 @@ const path = require('node:path');
 
 // Test the compiled dist artifacts (package bin points at dist/), not the
 // .ts source — run `npm run build` first.
-const { SLS_PAGE_MAX, pageSizes, isAnalyticQuery, coverage, fmtCn, sampleProbeTokens } = require(
+const { SLS_PAGE_MAX, pageSizes, isAnalyticQuery, coverage, fmtCn, bodySearchable, collectPages } = require(
   path.resolve(__dirname, '..', 'dist', 'bin', 'helpers', 'logs.js'),
 );
 
@@ -83,32 +83,6 @@ test('fmtCn 跨天正确进位', () => {
   assert.equal(fmtCn(Date.UTC(2026, 7, 6, 16, 30, 0) / 1000), '08-07 00:30:00');
 });
 
-// ── sampleProbeTokens：零命中告警的自验证探针 ────────────────────────────────
-test('sampleProbeTokens 从 JSON 日志里挑出纯字母候选词', () => {
-  const line = '{"timestamp":"2026-08-06T15:00:00.000Z","level":"info","message":"WSBridge client connected"}';
-  assert.deepEqual(sampleProbeTokens(line), ['timestamp', 'message']);
-});
-
-test('sampleProbeTokens 不把含 - / _ / . 的 token 切开', () => {
-  // SLS 的分词表不含 `-` `_` `.`：`agent-runtime` 是一个完整 token。
-  // 若切成 `agent` 去探测，健康的 logstore 也会零命中 → 误判成「索引坏了」。
-  assert.deepEqual(sampleProbeTokens('agent-runtime restore_conversations v1.20.3 barbaz quuxxx'), ['barbaz', 'quuxxx']);
-});
-
-test('sampleProbeTokens 跳过过短/含数字的 token', () => {
-  assert.deepEqual(sampleProbeTokens('a bb ccc dddd eeeee abc123 ffffff'), ['ffffff']);
-});
-
-test('sampleProbeTokens 去重且遵守 max', () => {
-  assert.deepEqual(sampleProbeTokens('session session Session reconcile stderr', 2), ['session', 'reconcile']);
-  assert.deepEqual(sampleProbeTokens('session reconcile stderr', 1), ['session']);
-});
-
-test('sampleProbeTokens 无合格候选时返回空(调用方据此退回笼统提示)', () => {
-  assert.deepEqual(sampleProbeTokens('{"a":1,"b":2}'), []);
-  assert.deepEqual(sampleProbeTokens(''), []);
-});
-
 test('fmtCn 不随本机时区变化', () => {
   const before = process.env.TZ;
   try {
@@ -120,4 +94,117 @@ test('fmtCn 不随本机时区变化', () => {
     if (before === undefined) delete process.env.TZ;
     else process.env.TZ = before;
   }
+});
+
+// ── bodySearchable：--grep 能不能搜到正文,按 GetIndex 直查而非猜 ─────────────
+// 四份 fixture 都是 2026-08-07 从真实 logstore `aliyun sls GetIndex` 取回的形状。
+const IDX_TEXT = { line: { token: [' '] }, keys: { content: { type: 'text' } } };            // cn-stage/gateway-core
+const IDX_NO_FIELD = { line: { token: [' '] }, keys: {} };                                    // cn-prod/agent-runtime
+const IDX_JSON_WHITELIST = {                                                                 // cn-stage/agent-runtime
+  line: { token: [' '] },
+  keys: { content: { type: 'json', index_all: false, json_keys: { level: {}, service: {}, sessionId: {} } } },
+};
+const IDX_JSON_ALL = { line: { token: [' '] }, keys: { content: { type: 'json', index_all: true } } };
+
+test('bodySearchable: text 型正文字段 → 可搜', () => {
+  assert.deepEqual(bodySearchable(IDX_TEXT), { ok: true });
+});
+
+test('bodySearchable: 正文字段无字段级索引 → 由全文索引覆盖,可搜', () => {
+  assert.deepEqual(bodySearchable(IDX_NO_FIELD), { ok: true });
+});
+
+test('bodySearchable: json 型 + index_all=false → 正文不可搜,并列出可搜的键', () => {
+  const v = bodySearchable(IDX_JSON_WHITELIST);
+  assert.equal(v.ok, false);
+  assert.match(v.reason, /index_all=false/);
+  assert.deepEqual(v.indexedKeys, ['level', 'service', 'sessionId']);
+});
+
+test('bodySearchable: json 型但 index_all=true → 可搜', () => {
+  assert.deepEqual(bodySearchable(IDX_JSON_ALL), { ok: true });
+});
+
+test('bodySearchable: 完全没有全文索引 → 不可搜', () => {
+  assert.equal(bodySearchable({ keys: {} }).ok, false);
+});
+
+test('bodySearchable: 拿不到索引就不下结论(不能因为查不到就报警)', () => {
+  assert.deepEqual(bodySearchable(null), { ok: true });
+  assert.deepEqual(bodySearchable(undefined), { ok: true });
+});
+
+// ── collectPages：翻页/截断判定 —— 上一版的假「已取满」bug 就长在这段 ─────────
+/** 造一个假 SLS:窗内共 total 条,可选 incompleteOn 让第 k 次请求自报未扫完。 */
+function fakeSls(total, opts = {}) {
+  const calls = [];
+  const fetch = (line, offset) => {
+    calls.push({ line, offset });
+    const n = Math.max(0, Math.min(line, total - offset));
+    return {
+      rows: Array.from({ length: n }, (_, i) => ({ __time__: String(1786030000 + offset + i) })),
+      progress: opts.incompleteOn === calls.length ? 'Incomplete' : 'Complete',
+    };
+  };
+  return { fetch, calls };
+}
+
+test('collectPages 按 0/100/200… 递进 offset,直到取满 -n', () => {
+  const { fetch, calls } = fakeSls(1000);
+  const got = collectPages(fetch, 250);
+  assert.deepEqual(calls, [{ line: 100, offset: 0 }, { line: 100, offset: 100 }, { line: 50, offset: 200 }]);
+  assert.equal(got.rows.length, 250);
+  assert.equal(got.requests, 3);
+});
+
+test('collectPages 取到的行不重不漏', () => {
+  const got = collectPages(fakeSls(1000).fetch, 250);
+  assert.equal(new Set(got.rows.map((r) => r.__time__)).size, 250);
+});
+
+test('collectPages 末页短返回即停,不再多发请求', () => {
+  const { fetch, calls } = fakeSls(130);
+  const got = collectPages(fetch, 500);
+  assert.equal(got.rows.length, 130);
+  assert.deepEqual(calls, [{ line: 100, offset: 0 }, { line: 100, offset: 100 }]);
+  assert.equal(got.truncated, false, '窗内已取尽,不该报截断');
+});
+
+test('collectPages 窗内为空 → 一次请求、不报截断', () => {
+  const { fetch, calls } = fakeSls(0);
+  const got = collectPages(fetch, 300);
+  assert.equal(got.rows.length, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(got.truncated, false);
+});
+
+test('collectPages 取满 -n 时报截断(真实总数未知)', () => {
+  const got = collectPages(fakeSls(1000).fetch, 200);
+  assert.equal(got.rows.length, 200);
+  assert.equal(got.truncated, true);
+});
+
+test('collectPages 窗内恰好 -n 条时宁可多报一次截断(保守方向)', () => {
+  // 拿不到第 201 条就无法区分「刚好 200」与「还有更多」,文案是「可能还有」而非「一定有」。
+  const got = collectPages(fakeSls(200).fetch, 200);
+  assert.equal(got.truncated, true);
+});
+
+test('collectPages 分析语句(single)只发一次请求,且报截断而不是假装取满', () => {
+  const { fetch, calls } = fakeSls(1000);
+  const got = collectPages(fetch, 300, { single: true });
+  assert.equal(calls.length, 1, 'SQL 下 line/offset 无效,翻页只会重复拿同一批');
+  assert.deepEqual(calls[0], { line: 100, offset: 0 });
+  assert.equal(got.rows.length, 100);
+  assert.equal(got.truncated, true);
+});
+
+test('collectPages 透传 SLS 自报的「未扫完」,哪怕它出现在中间某一页', () => {
+  const got = collectPages(fakeSls(1000, { incompleteOn: 2 }).fetch, 300);
+  assert.equal(got.incomplete, true);
+  assert.equal(got.rows.length, 300, '未扫完不影响已取到的行');
+});
+
+test('collectPages 全部 Complete 时不报未扫完', () => {
+  assert.equal(collectPages(fakeSls(1000).fetch, 300).incomplete, false);
 });
