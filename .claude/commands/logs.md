@@ -234,6 +234,21 @@ optima-logs gateway-core --since 30m --json | jq .   # 机器可读
 `service` == SLS logstore 名（同名）。列全部 logstore：
 `aliyun sls ListLogStores --project optima-cn-prod-1911493506120573 --region cn-beijing --profile aliyun-optima`
 
+#### 🔴 读数纪律（#75 / #57 两次误导生产级排障的直接病根）
+
+这三条都属于「**看起来拿到了全部，其实只拿到一角**」——不是查错了，是**看不出被截断**：
+
+1. **`-n` 取满 ≠ 窗内只有这么多。** SLS `GetLogs` 单次请求服务端硬顶 **100 条**（`--line 3000` 也只回 100）。`optima-logs` 已自动 `--offset` 翻页到 `-n` 要的条数，但**取满 `-n` 时会打 ⚠**：此时真实总数未知。
+   **两个都返回上限的查询相除，比值是纯噪声**——实测拿 30d 的 `timed out` / `dispatching` 相除得「100/100」，看着像 100% 失败率，缩窄到两边都 <100 后真数是 7/60 与 16/70。要计数就缩窄 `--since` 直到不再报 ⚠。
+2. **请求 `--since 24h` ≠ 覆盖了 24h。** 取满 `-n` 时窗口被截在最新那一段。每次运行 stderr 都会打**实际覆盖窗**（由 `__time__` 反算，北京时间），以它为准，别以 `--since` 为准。
+3. **`--grep` 零命中 ≠ 没有报错。** cn 侧 `--grep` 走 SLS 索引，logstore 没把正文纳入索引时**恒零命中**。
+   已知：**cn-stage 的 `agent-runtime`** —— 它的 `content` 被建成 JSON 型索引且 `index_all: false`，只索引了 26 个白名单键（`level` / `service` / `sessionId` / `event_key` …），**`message` 不在其中**，所以日志正文里的任何词都搜不到；而 `--grep 'content.level: error'` 这类按键查是好的。cn-prod 的 `agent-runtime` 只有全文索引，正文可搜。
+   `optima-logs` 在零命中时会**自动拿窗内真实存在的词回查**来自证索引可用性，并据此告诉你这是「关键词确实不存在」还是「这个 logstore 搜不了正文」。
+
+**数记录数不要用 `wc -l`**：`--json` 是 pretty-print 数组，100 条记录会显示成 1800+ 行。用 `grep -c '__time__'`。
+
+**已知未覆盖**：SLS 对重查询会返回部分结果（`x-log-progress: Incomplete`），而 `aliyun` CLI 不透出该标志，本工具无法据此重试——大窗 + 高基数查询的结果仍可能偏少。
+
 **底层（仅参考，正常用 `optima-logs` 即可）**:
 - SLS project：`optima-cn-prod-1911493506120573` / `optima-cn-stage-1911493506120573`（`optima-<env>-<accountId>`）。
 - logstore = service 名；日志正文在 `content` 字段。

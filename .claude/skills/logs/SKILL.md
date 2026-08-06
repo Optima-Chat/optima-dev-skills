@@ -188,6 +188,13 @@ INFO - Database query took 3200ms: SELECT * FROM products WHERE...
 - 前置：本机需装 `aliyun` CLI + `aliyun-optima` profile（cn-beijing）
 - 旧的「buildbox → SAE `DescribeInstanceLog` 取当前缓冲」已弃用（缓冲式、重启即丢、不能检索）；技术细节见 `/logs --help`（第 3 节）
 
+**🔴 cn 侧读数纪律（下结论前必看，详见 `/logs --help` 第 3 节）**：
+
+- **`-n` 取满 ≠ 窗内只有这么多**：SLS 单次请求硬顶 100 条，工具已自动翻页，但取满 `-n` 时会打 ⚠——此时真实总数未知，**别拿这批数做计数或算比值**（两个都触顶的查询相除，比值是纯噪声）。要计数就缩窄 `--since` 到不再报 ⚠。
+- **请求 `--since 24h` ≠ 覆盖了 24h**：以 stderr 打出的**实际覆盖窗**为准，不是以 `--since` 为准。
+- **`--grep` 零命中 ≠ 没有报错**：cn 侧 `--grep` 走 SLS 索引，正文没入索引的 logstore 恒零命中（已知 **cn-stage 的 `agent-runtime`**：`content` 是 JSON 型索引且只覆盖 26 个白名单键，`message` 正文搜不到）。工具会自动用窗内真实词回查判断是哪一种，看它给的结论。
+- **数记录数用 `grep -c '__time__'`，不要用 `wc -l`**（`--json` 是 pretty-print，100 条会显示成 1800+ 行）。
+
 ## 支持的服务列表
 
 | 服务 | 说明 | CI | Stage | Prod |
