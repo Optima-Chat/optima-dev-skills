@@ -254,11 +254,13 @@ optima-logs gateway-core --since 30m --json | jq .   # 机器可读
 **底层（仅参考，正常用 `optima-logs` 即可）**:
 - SLS project：`optima-cn-prod-1911493506120573` / `optima-cn-stage-1911493506120573`（`optima-<env>-<accountId>`）。
 - logstore = service 名；日志正文在 `content` 字段。
+- **直连要用 `GetLogsV2`**：只有它返回 `meta.progress` / `meta.count`。V1 的 `GetLogs` 拿不到「本次查询扫完没有」，`Incomplete` 与「窗内就这么多」在 V1 下完全无法区分。
 ```bash
 NOW=$(date +%s); FROM=$((NOW-3600))
-aliyun sls GetLogs --project optima-cn-prod-1911493506120573 --logstore gateway-core \
-  --from $FROM --to $NOW --line 100 --reverse true --query error \
+aliyun sls GetLogsV2 --project optima-cn-prod-1911493506120573 --logstore gateway-core \
+  --body "{\"from\":$FROM,\"to\":$NOW,\"line\":100,\"offset\":0,\"reverse\":true,\"query\":\"error\"}" \
   --region cn-beijing --profile aliyun-optima
+# 单次仍硬顶 100 条 → 要更多就 offset 递增翻页；每次都看一眼 meta.progress 是不是 Complete
 ```
 
 ## 完整示例脚本

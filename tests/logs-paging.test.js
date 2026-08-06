@@ -4,7 +4,10 @@ const path = require('node:path');
 
 // Test the compiled dist artifacts (package bin points at dist/), not the
 // .ts source — run `npm run build` first.
-const { SLS_PAGE_MAX, pageSizes, isAnalyticQuery, coverage, fmtCn, bodySearchable, collectPages } = require(
+const {
+  SLS_PAGE_MAX, pageSizes, isAnalyticQuery, coverage, fmtCn,
+  bodySearchable, collectPages, indexWarning, reportLines, slsRequestBody, parseSlsResponse,
+} = require(
   path.resolve(__dirname, '..', 'dist', 'bin', 'helpers', 'logs.js'),
 );
 
@@ -107,31 +110,33 @@ const IDX_JSON_WHITELIST = {                                                    
 const IDX_JSON_ALL = { line: { token: [' '] }, keys: { content: { type: 'json', index_all: true } } };
 
 test('bodySearchable: text 型正文字段 → 可搜', () => {
-  assert.deepEqual(bodySearchable(IDX_TEXT), { ok: true });
+  assert.deepEqual(bodySearchable(IDX_TEXT), { state: 'searchable' });
 });
 
 test('bodySearchable: 正文字段无字段级索引 → 由全文索引覆盖,可搜', () => {
-  assert.deepEqual(bodySearchable(IDX_NO_FIELD), { ok: true });
+  assert.deepEqual(bodySearchable(IDX_NO_FIELD), { state: 'searchable' });
 });
 
 test('bodySearchable: json 型 + index_all=false → 正文不可搜,并列出可搜的键', () => {
   const v = bodySearchable(IDX_JSON_WHITELIST);
-  assert.equal(v.ok, false);
+  assert.equal(v.state, 'body-not-indexed');
   assert.match(v.reason, /index_all=false/);
   assert.deepEqual(v.indexedKeys, ['level', 'service', 'sessionId']);
 });
 
 test('bodySearchable: json 型但 index_all=true → 可搜', () => {
-  assert.deepEqual(bodySearchable(IDX_JSON_ALL), { ok: true });
+  assert.deepEqual(bodySearchable(IDX_JSON_ALL), { state: 'searchable' });
 });
 
 test('bodySearchable: 完全没有全文索引 → 不可搜', () => {
-  assert.equal(bodySearchable({ keys: {} }).ok, false);
+  assert.equal(bodySearchable({ keys: {} }).state, 'body-not-indexed');
 });
 
-test('bodySearchable: 拿不到索引就不下结论(不能因为查不到就报警)', () => {
-  assert.deepEqual(bodySearchable(null), { ok: true });
-  assert.deepEqual(bodySearchable(undefined), { ok: true });
+test("bodySearchable: 拿不到索引 → 'unknown',绝不退化成 'searchable'", () => {
+  // 退化成 searchable 就等于拿一个从没读到过的索引给零命中背书(GetIndex 可能因
+  // AK 缺 log:GetIndex 权限而失败)。unknown 既不告警、也不下结论。
+  assert.deepEqual(bodySearchable(null), { state: 'unknown' });
+  assert.deepEqual(bodySearchable(undefined), { state: 'unknown' });
 });
 
 // ── collectPages：翻页/截断判定 —— 上一版的假「已取满」bug 就长在这段 ─────────
@@ -207,4 +212,107 @@ test('collectPages 透传 SLS 自报的「未扫完」,哪怕它出现在中间�
 
 test('collectPages 全部 Complete 时不报未扫完', () => {
   assert.equal(collectPages(fakeSls(1000).fetch, 300).incomplete, false);
+});
+
+// ── 接线层：决定「该响的告警响不响」的那一层,本工具的全部价值所在 ─────────────
+const warns = (msgs) => msgs.filter((m) => m.level === 'warn').map((m) => m.text);
+const all = (msgs) => msgs.map((m) => m.text).join('\n');
+const REPORT = {
+  service: 'gateway-core', lines: 100, grep: undefined, analytic: false,
+  from: 1786024016, to: 1786031216, cov: { count: 5, from: 1786030000, to: 1786031000 },
+  truncated: false, incomplete: false, body: 'unknown',
+};
+
+test('indexWarning: 正文不可搜时告警,并列出可搜的键', () => {
+  const m = indexWarning('agent-runtime', bodySearchable(IDX_JSON_WHITELIST));
+  assert.equal(warns(m).length, 3);
+  assert.match(all(m), /没进 SLS 索引/);
+  assert.match(all(m), /非零命中也\*\*不是\*\*真实出现次数/);
+  assert.match(all(m), /level, service, sessionId/);
+});
+
+test('indexWarning: 可搜 / 未知都不告警(不能因为查不到索引就报警)', () => {
+  assert.deepEqual(indexWarning('gateway-core', { state: 'searchable' }), []);
+  assert.deepEqual(indexWarning('gateway-core', { state: 'unknown' }), []);
+});
+
+test('reportLines: 取满 -n 必须打截断 ⚠', () => {
+  const m = reportLines({ ...REPORT, cov: { count: 100, from: 1, to: 2 }, truncated: true });
+  assert.match(warns(m).join('\n'), /已取满 -n 100.*真实总数未知/s);
+});
+
+test('reportLines: 窗内取尽时不打截断 ⚠', () => {
+  assert.deepEqual(warns(reportLines(REPORT)), []);
+});
+
+test('reportLines: 分析语句的截断话术不能说「已取满 -n」(那是假数字)', () => {
+  const m = reportLines({ ...REPORT, lines: 300, analytic: true, cov: { count: 100, from: 1, to: 1 }, truncated: true });
+  assert.doesNotMatch(all(m), /已取满 -n 300/, '只回了 100 条,不能说取满 300');
+  assert.match(warns(m).join('\n'), /SQL 的行上限.*LIMIT/s);
+});
+
+test('reportLines: 分析语句不打由聚合行反算出的假「实际覆盖窗」', () => {
+  // 聚合行的 __time__ 恒等于 from,反算出来是个零宽窗口,读的人会以为只覆盖 1 秒。
+  const m = reportLines({ ...REPORT, analytic: true, cov: { count: 1, from: 1786024016, to: 1786024016 } });
+  assert.doesNotMatch(all(m), /实际覆盖/);
+  assert.match(all(m), /请求窗/);
+});
+
+test('reportLines: 🔴 零结果时也必须打「未扫完」⚠(SLS 扫不完最典型的表现就是空)', () => {
+  const m = reportLines({ ...REPORT, grep: 'KAIROS', body: 'searchable', cov: { count: 0 }, incomplete: true });
+  assert.match(warns(m).join('\n'), /未扫完/, '零结果 + Incomplete 正是最容易被读成「窗内没有」的时候');
+});
+
+test('reportLines: 非零结果时同样打「未扫完」⚠', () => {
+  assert.match(warns(reportLines({ ...REPORT, incomplete: true })).join('\n'), /未扫完/);
+});
+
+test('reportLines: 🔴 未扫完时绝不给零命中背书', () => {
+  const m = reportLines({ ...REPORT, grep: 'KAIROS', body: 'searchable', cov: { count: 0 }, incomplete: true });
+  assert.doesNotMatch(all(m), /已进全文索引/, '结果都没扫完,凭什么说这个零命中说明了什么');
+});
+
+test('reportLines: 🔴 零命中的说明只说到证据支持的那一步,不许断言「确实没有」', () => {
+  // 实测:gateway-core 上 `reconciler` 零命中,而 `session-reconciler` 有 100+ 条
+  // ——SLS 按完整 token 匹配(分词表不含 - _ .),「正文进了索引」推不出「这个词不存在」。
+  const m = reportLines({ ...REPORT, grep: 'reconciler', body: 'searchable', cov: { count: 0 } });
+  assert.doesNotMatch(all(m), /确实没有/);
+  assert.doesNotMatch(all(m), /零命中是真的/);
+  assert.match(all(m), /完整 token/);
+  assert.match(all(m), /session-reconciler/);
+});
+
+test('reportLines: 正文不可搜 / 索引未知时,零命中一个字的背书也没有', () => {
+  for (const body of ['body-not-indexed', 'unknown']) {
+    const m = reportLines({ ...REPORT, grep: 'x', body, cov: { count: 0 } });
+    assert.doesNotMatch(all(m), /已进全文索引/, `body=${body} 不该背书`);
+  }
+});
+
+test('reportLines: 没用 --grep 时不谈索引', () => {
+  const m = reportLines({ ...REPORT, grep: undefined, body: 'searchable', cov: { count: 0 } });
+  assert.doesNotMatch(all(m), /索引/);
+  assert.doesNotMatch(all(m), /--grep 没命中/);
+});
+
+// ── GetLogsV2 的 wire：漏传一个字段就是静默失真 ──────────────────────────────
+test('slsRequestBody 必须带 reverse=true(否则拿到的是最旧而非最新的日志)', () => {
+  assert.deepEqual(slsRequestBody(100, 200, 50, 0), { from: 100, to: 200, line: 50, offset: 0, reverse: true });
+});
+
+test('slsRequestBody 有 --grep 就必须把它放进 query(漏了会静默返回未过滤日志)', () => {
+  assert.equal(slsRequestBody(100, 200, 50, 0, 'error').query, 'error');
+});
+
+test('parseSlsResponse 认 data / meta.progress 这两个字面名', () => {
+  assert.deepEqual(
+    parseSlsResponse('{"data":[{"__time__":"1"}],"meta":{"progress":"Complete"}}'),
+    { rows: [{ __time__: '1' }], progress: 'Complete' },
+  );
+  assert.deepEqual(parseSlsResponse('{"data":[],"meta":{"progress":"Incomplete"}}'), { rows: [], progress: 'Incomplete' });
+});
+
+test('parseSlsResponse 对空/畸形响应退化成空结果而不是抛错', () => {
+  assert.deepEqual(parseSlsResponse(''), { rows: [], progress: '' });
+  assert.deepEqual(parseSlsResponse('{}'), { rows: [], progress: '' });
 });
