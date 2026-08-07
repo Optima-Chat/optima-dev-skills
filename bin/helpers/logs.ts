@@ -434,6 +434,27 @@ function fetchAws(args: Args): void {
   }
 }
 
+/**
+ * `--grep 'a|b'` 撞上 SLS 的 parse fail 时给一句人话。返回 null = 这条错误不归它管。
+ *
+ * 参数刻意要 **childStderr(子进程真正写出来的那份)**,不是「stderr 退化到 message」
+ * 的合并串 —— 因为这条提示的措辞里写着「原始报错见上」,而那句只有在子进程确实
+ * 打过东西时才成立(execFileSync 默认把子进程 stderr 透传给父进程)。
+ * 用合并串判会两头错:e.stderr 为空时 e.message 是 `Command failed: <完整 argv>`,
+ * argv 里**回显着用户的 query**,于是任何分析型查询(必然含 `| select`)都会让
+ * /SELECT/ 命中被回显的 query 自己 ⇒ 吞掉唯一的诊断、再附一句假的「见上」。
+ * 把它写进签名,这个坑就不可能再犯。
+ */
+export function pipeQueryHint(grep: string | undefined, childStderr: string): string | null {
+  if (!grep?.includes('|')) return null;
+  // 只认 SLS 真实报错里的 `parse fail`,不认裸 `SELECT` —— 后者会命中任何**回显了
+  // 用户 query 的字符串**(如 `Command failed: <argv>`),而分析型查询必然含 select。
+  // 判据收窄后,这个函数即便被喂了合并串也不会误顶替;调用点仍只传 raw,两道保险。
+  if (!/parse fail/i.test(childStderr)) return null;
+  const asOr = grep.split('|').map((s) => s.trim()).filter(Boolean).join(' or ');
+  return `--grep 里的 | 是 SLS「检索|分析(SQL)」的分隔符,不是「或」(SLS 原始报错见上)。\n  要「或」:--grep '${asOr}'\n  要整串当一个短语:--grep '"${grep}"'`;
+}
+
 /** GetLogsV2 请求体。提成纯函数:query / reverse 之类漏传是静默失真,必须能被钉住。 */
 export function slsRequestBody(
   from: number, to: number, line: number, offset: number, grep?: string,
@@ -524,17 +545,18 @@ function fetchCn(args: Args): void {
       { single: analytic },
     );
   } catch (e: any) {
-    const msg = e.stderr || e.message || '';
+    // raw = 子进程真正写出来的 stderr(可能为空:非零退出无输出 / 被信号杀死);
+    // msg 是给人看的兜底,raw 为空时退化成 e.message(`Command failed: <完整 argv>`)。
+    // 两者必须分开,理由见 pipeQueryHint 的注释。
+    const raw = typeof e.stderr === 'string' ? e.stderr : '';
+    const msg = raw || e.message || '';
     if (/LogStoreNotExist|ProjectNotExist/.test(msg)) {
       throw new Error(`SLS logstore 不存在: ${project}/${args.service}\n  确认服务名对,或该服务未接 SLS。列全部:\n  aliyun sls ListLogStores --project ${project} --region ${ALIYUN_REGION} --profile ${ALIYUN_PROFILE}`);
     }
-    // 把 `--grep 'a|b'` 撞上的这条 SLS 报错翻译成人话。写 | 的人几乎都是当「或」用的,
-    // 而 SLS 把它当「检索|分析(SQL)」的分隔符 —— 说清楚,别让人对着 parse fail 猜。
-    // 不再把 msg 拼进来:execFileSync 默认已把 aliyun 的报错块透给父进程 stderr,
-    // 再拼一遍就是同一段打两次,把下面这条真正有用的提示埋在第二份底下。
-    if (args.grep?.includes('|') && /parse fail|SELECT/i.test(msg)) {
-      throw new Error(`--grep 里的 | 是 SLS「检索|分析(SQL)」的分隔符,不是「或」(SLS 原始报错见上)。\n  要「或」:--grep '${args.grep.split('|').map((s) => s.trim()).filter(Boolean).join(' or ')}'\n  要整串当一个短语:--grep '"${args.grep}"'`);
-    }
+    // 只在 aliyun 确实打过报错块时才用提示顶替(那种情况下 msg 拼进来就是同一段
+    // 打两遍,把提示埋在第二份底下);没打过就照常抛 msg,绝不吞掉唯一的诊断。
+    const hint = pipeQueryHint(args.grep, raw);
+    if (hint) throw new Error(hint);
     throw new Error(msg);
   }
 

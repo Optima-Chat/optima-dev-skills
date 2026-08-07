@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const {
   SLS_PAGE_MAX, pageSizes, isAnalyticQuery, keyScopedQuery, coverage, fmtCn,
   bodySearchable, collectPages, indexWarning, reportLines, slsRequestBody, parseSlsResponse,
+  pipeQueryHint,
 } = require(
   path.resolve(__dirname, '..', 'dist', 'bin', 'helpers', 'logs.js'),
 );
@@ -466,6 +467,33 @@ test('slsRequestBody 有 --grep 就必须把它放进 query(漏了会静默返�
   assert.equal(slsRequestBody(100, 200, 50, 0, 'error').query, 'error');
 });
 
+// ── `--grep 'a|b'` 的人话提示：它自称「原始报错见上」,那句必须由构造保证为真 ──
+test('🔴 pipeQueryHint: 子进程没打过 stderr 时不许顶替 —— 否则吞掉唯一的诊断还谎称「见上」', () => {
+  // e.stderr 为空(非零退出无输出 / 被信号杀死)时,调用方的兜底串是 e.message =
+  // `Command failed: <完整 argv>`,而 argv 里**回显着用户的 query**。若拿这个合并串
+  // 做判据,任何分析型查询(必然含 `| select`)都会让 /SELECT/ 命中被回显的 query
+  // 自己 ⇒ 提示顶替掉唯一的诊断,而它说的「见上」上面根本什么都没有。
+  // 两道保险各钉一条:
+  // ① 调用点只传 raw ⇒ 子进程没打过东西时 childStderr 是空串,不该顶替;
+  assert.equal(pipeQueryHint('* | select count(*)', ''), null, '上面什么都没有,不许说「见上」');
+  assert.equal(pipeQueryHint('timeout|error', ''), null);
+  // ② 判据只认 SLS 真实报错的 `parse fail`,不认裸 SELECT ⇒ 即便哪天被喂了合并串,
+  //    被回显的 query 自己也不会让它误触发。
+  const echoed = 'Command failed: aliyun sls GetLogsV2 --body {"query":"* | select count(*)"}';
+  assert.equal(pipeQueryHint('* | select count(*)', echoed), null, '被回显的 query 不算子进程报错');
+  assert.equal(pipeQueryHint('timeout|error', 'spawnSync aliyun ENOBUFS'), null);
+});
+
+test('pipeQueryHint: 真的 parse fail 才给提示,且把两种正确写法都算出来', () => {
+  const real = 'ERROR: SDKError:\n  Code: ParameterInvalid\n  Message: parse fail, please check your query,if it has (SELECT)';
+  const hint = pipeQueryHint('timeout|error', real);
+  assert.match(hint, /要「或」:--grep 'timeout or error'/);
+  assert.match(hint, /--grep '"timeout\|error"'/);
+  // 没有 | 的 query 与本提示无关,别乱插嘴。
+  assert.equal(pipeQueryHint('error', real), null);
+  assert.equal(pipeQueryHint(undefined, real), null);
+});
+
 // ── fetchCn 的接线：这两处漏传都是**静默**回归 —— 纯函数全绿而 CLI 退回修复前 ──
 test('🔴 接线层: --grep 必须传进 indexWarning、progressUnknown 必须传进 reportLines', () => {
   // fetchCn 要发真请求,没法在单测里跑;但漏传的后果是确定的:
@@ -475,6 +503,9 @@ test('🔴 接线层: --grep 必须传进 indexWarning、progressUnknown 必须�
   const src = fs.readFileSync(path.resolve(__dirname, '..', 'bin', 'helpers', 'logs.ts'), 'utf8');
   assert.match(src, /indexWarning\(\s*args\.service\s*,\s*verdict\s*,\s*args\.grep\s*\)/);
   assert.match(src, /progressUnknown:\s*got\.progressUnknown/);
+  // 第三处同型:pipeQueryHint 必须收到**子进程 stderr**(raw),不是退化过的合并串。
+  assert.match(src, /pipeQueryHint\(\s*args\.grep\s*,\s*raw\s*\)/);
+  assert.match(src, /const raw = typeof e\.stderr === 'string' \? e\.stderr : ''/);
 });
 
 test('parseSlsResponse 认 data / meta.progress 这两个字面名', () => {
