@@ -434,14 +434,6 @@ function fetchAws(args: Args): void {
   }
 }
 
-/**
- * 包成一个 bash 单引号串(内部的 ' 转义成 '\\''),用于任何**要给人照抄**的命令。
- * 裸拼会出无声的错:`--grep 'a'b'c or timeout'` 在 bash 里被静默拼成
- * `abc or timeout` —— 不报错、照跑、查的却是另一条 query。错的处方比不给更坏。
- */
-function sq(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
-}
 
 /**
  * `--grep 'a|b'` 撞上 SLS 的 parse fail 时给一句人话。返回 null = 这条错误不归它管。
@@ -473,8 +465,18 @@ export function pipeQueryHint(grep: string | undefined, childStderr: string): st
   // / `unclosed string quote`,取决于最后一个 | 后面是什么。只认 `parse fail` 会漏掉
   // `a|b|c`、`timeout|connection refused` 这些同样常见的写法,故锚在 Code 上。
   if (!/ParameterInvalid/.test(childStderr)) return null;
-  const asOr = grep.split('|').map((s) => s.trim()).filter(Boolean).join(' or ');
-  return `--grep 里的 | 是 SLS「检索|分析(SQL)」的分隔符,不是「或」(SLS 原始报错见上)。\n  要「或」:--grep ${sq(asOr)}\n  要整串当一个短语:--grep ${sq(`"${grep}"`)}`;
+  // 🔴 只给**静态**陈述,不生成「照抄就能跑」的处方。处方是个代码生成器,要同时在
+  // **两套语法**下正确 —— bash 引号规则 + SLS query 语法 —— 而它已经以同一种签名
+  // 失败过两次:生成的命令跑得通、跑的却是另一条 query(比报错更坏,因为无声)。
+  //   · `--grep "a'b'c|timeout"` → 建议 `--grep 'a'b'c or timeout'`,bash 拼成
+  //     `abc or timeout`(bash 那一半曾用 shell 转义补上,但那只是两套语法里的一套);
+  //   · `--grep '"timeout|error" or conn|refused'` → 建议把**引号内**的 | 也拆了,
+  //     实测 SLS 返回 200 不报错,但检索词从 3 个(timeout|error / conn / refused)
+  //     变成 5 个(timeout / or / error / conn / refused)。
+  // 要把 SLS 那一半也做对,等于重写 SLS 的 query tokenizer —— 为一句便利提示背一个
+  // 无界的正确性义务,不划算。陈述句零生成、永远为真,信息量也够(SLS 自己的四种
+  // 报错没有一条说得出「| 不是或」)。
+  return '--grep 里的 | 是 SLS「检索|分析(SQL)」的分隔符,不是「或」(SLS 原始报错见上)。\n  要「或」请用 or;要把整串当一个短语,请用双引号把它包起来。';
 }
 
 /** GetLogsV2 请求体。提成纯函数:query / reverse 之类漏传是静默失真,必须能被钉住。 */

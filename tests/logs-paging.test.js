@@ -483,15 +483,22 @@ test('🔴 pipeQueryHint: 子进程没打过 stderr 时不许顶替 —— 否�
   assert.equal(pipeQueryHint('timeout|error', echoed), null, '被回显的 argv 不是子进程报错');
 });
 
-test('🔴 pipeQueryHint 给的处方必须能被 bash 原样照抄 —— 错的处方比不给更坏', () => {
-  // 裸拼单引号会出**无声**的错:`--grep 'a'b'c or timeout'` 被 bash 静默拼成
-  // `abc or timeout`,不报错、照跑、查的却是另一条 query。
+test('🔴 pipeQueryHint 不生成「照抄就能跑」的处方 —— 那是个要同时满足两套语法的代码生成器', () => {
+  // 它已经以同一种签名失败过两次:生成的命令**跑得通、跑的却是另一条 query**(无声,
+  // 比报错更坏)。① bash 那一半:`--grep "a'b'c|timeout"` 曾建议 `'a'b'c or timeout'`,
+  // 被 bash 拼成 `abc or timeout`;② SLS 那一半:`'"timeout|error" or conn|refused'`
+  // 曾建议把引号内的 | 也拆掉,实测 SLS 返回 200 不报错,检索词却从 3 个变成 5 个
+  // (多出的 `or` 本身也成了检索词)。故只给静态陈述。
   const err = 'Code: ParameterInvalid Message: parse fail';
-  const line = (g) => pipeQueryHint(g, err).split('\n')[1];
-  assert.match(line("a'b'c|timeout"), /--grep 'a'\\''b'\\''c or timeout'/);
-  assert.match(line("'a'|error"), /--grep ''\\''a'\\'' or error'/);
-  // 不含单引号时不该多加转义,保持可读。
-  assert.match(line('timeout|error'), /--grep 'timeout or error'$/);
+  for (const g of ["a'b'c|timeout", '"timeout|error" or conn|refused', 'timeout|error', 'a|b|c']) {
+    const hint = pipeQueryHint(g, err);
+    assert.ok(hint, `${g} 该给提示`);
+    assert.doesNotMatch(hint, /--grep '/, `不许吐出照抄式处方: ${g}`);
+    assert.ok(!hint.includes(g), `提示里不该回灌用户的 query: ${g}`);
+  }
+  // 陈述句本身零生成、对所有输入逐字相同。
+  assert.equal(pipeQueryHint('a|b', err), pipeQueryHint('x|y|z', err));
+  assert.match(pipeQueryHint('a|b', err), /要「或」请用 or/);
 });
 
 test('🔴 pipeQueryHint 覆盖 SLS 全部四种 | 误用报错(只认 parse fail 会漏掉一半)', () => {
@@ -538,8 +545,8 @@ test('🔴 pipeQueryHint: 引号里的 | 不是分隔符 —— 别拿同一个 
 test('pipeQueryHint: 真的 SLS 拒绝才给提示,且把两种正确写法都算出来', () => {
   const real = 'ERROR: SDKError:\n  Code: ParameterInvalid\n  Message: parse fail, please check your query,if it has (SELECT)';
   const hint = pipeQueryHint('timeout|error', real);
-  assert.match(hint, /要「或」:--grep 'timeout or error'/);
-  assert.match(hint, /--grep '"timeout\|error"'/);
+  assert.match(hint, /是 SLS「检索\|分析\(SQL\)」的分隔符/);
+  assert.match(hint, /双引号/);
   // 没有 | 的 query 与本提示无关,别乱插嘴。
   assert.equal(pipeQueryHint('error', real), null);
   assert.equal(pipeQueryHint(undefined, real), null);
