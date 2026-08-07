@@ -117,8 +117,13 @@ aws logs start-query \
 
 ### 2. cn-stage / cn-prod（阿里云 SLS，首选 `optima-logs`）
 
-> SLS `GetLogs` 是公网控制面 API，本机 `aliyun-optima` profile 直连即可，支持历史检索+时间窗+关键词。
+> SLS `GetLogsV2` 是公网控制面 API，本机 `aliyun-optima` profile 直连即可，支持历史检索+时间窗+关键词。
 > SLS project：`optima-cn-stage-1911493506120573` / `optima-cn-prod-1911493506120573`；logstore == service 名；正文在 `content`。
+
+> 🔴 **本节的一切计数/求和/平均，先读 `optima-logs` 打在 stderr 上的那几行再用**（完整规则见 `/logs --help` 第 3 节「读数纪律」，那里是唯一权威）。三条与本 runbook 直接相关的：
+> 1. **SLS 单次请求硬顶 100 条**（`--line 3000` 也只回 100）。`optima-logs` 已自动 `--offset` 翻页到 `-n`，但**取满 `-n` 时会打 ⚠ = 真实总数未知**。下面那些 `-n 1200` / `-n 2000` 的统计配方，见到 ⚠ 就说明分母被截断了——**此时「调用次数 / token 合计 / 平均延迟 / stop 分布」全是在一个截断样本上算的**，缩窄 `--since` 到不再报 ⚠ 再用。（本文档 2026-08-07 之前的版本写于翻页修好之前，那时这些配方**实际只拿得到 100 条**。）
+> 2. **请求 `--since 1h` ≠ 覆盖了 1h**：以 stderr 打出的**实际覆盖窗**为准。
+> 3. **`--grep` 是 SLS 服务端索引检索，不是本地正则**：cn-stage 的 `agent-runtime` 正文（`message`）没进索引，搜正文里的词会静默少回；工具会在结果前告警。**但 `userId` / `sessionId` / `turnId` / `level` 都在索引白名单里，下面这些按 ID 查的配方不受影响**（2026-08-07 实测：`--grep <userId>` 回 8 条 == 同窗本地统计 8 条）。
 
 ```bash
 # 第一步（核心）：agent-runtime —— 拉该用户全部 LLM/tool/turn 结构化日志
@@ -135,14 +140,17 @@ optima-logs agent-runtime --env cn-stage --since 1h --grep "turn-xxxx-xxxx" -n 2
 optima-logs agent-runtime --env cn-stage --since 1h --grep "USER_ID" -n 500 --json \
   | jq '.[] | (.content|fromjson?) | select(.level=="error" or .level=="warn")'
 
-# 底层（一般不用）：aliyun sls GetLogs --project optima-cn-stage-1911493506120573 \
-#   --logstore agent-runtime --from $FROM --to $NOW --line 500 --query "USER_ID" \
+# 底层（一般不用，且拿不到 optima-logs 的翻页/告警）：--line 传多少都只回 100 条，
+# 要更多必须自己 --offset 翻页；且必须用 GetLogsV2——只有它返回 meta.progress
+# （「本次查询扫完没有」），V1 的 GetLogs 下 Incomplete 与「窗内就这么多」无法区分。
+# aliyun sls GetLogsV2 --project optima-cn-stage-1911493506120573 --logstore agent-runtime \
+#   --body "{\"from\":$FROM,\"to\":$NOW,\"line\":100,\"offset\":0,\"reverse\":true,\"query\":\"USER_ID\"}" \
 #   --region cn-beijing --profile aliyun-optima
 ```
 
 > **解析 `--json` 输出（重要）**：`optima-logs ... --json` 返回**一个 JSON 数组**，每个元素是 SLS 记录（带 `__source__`/`eci_id`/`_image_name_` 等元字段），**结构化日志正文是 `.content` 字段里的 JSON 字符串**。所以解析模式固定是 `.[] | (.content|fromjson?)`，再 select 业务字段。元字段 `_image_name_` 还能顺带看是哪个镜像 digest 的容器在服务。
 
-**一条龙拼装 + 统计的 canonical 配方（已实测可用）：**
+**一条龙拼装 + 统计的 canonical 配方**（形状实测可用；🔴 **下面第二条是聚合统计，用之前先看 stderr 有没有 ⚠ 取满 `-n`**——有就说明分母被截断，这些数不能当真实总量，缩窄 `--since` 重跑）：
 ```bash
 U=<USER_ID>
 # 时间线：每次 LLM 调用一行（model / token / 延迟 / cache / stopReason），按 turn
@@ -164,7 +172,10 @@ optima-logs agent-runtime --env cn-stage --since 1h --grep "$U" -n 2000 --json \
 ```
 
 > ⚠️ cn 多数 agent-runtime 日志只带 `userId` 不带 `userEmail`。若输入 email，先去 user-auth 换 userId（见 query-db / account 技能），再用 userId 查。
-> ⚠️ `--grep` 是 SLS 全文检索；userId/sessionId/turnId 都是高区分度 token，直接 grep 即可精确命中。
+> ⚠️ `--grep` 是 **SLS 服务端索引检索**（不是全文正则、也不是本地过滤）。userId/sessionId/turnId 都是高区分度**完整 token** 且都在 cn-stage `agent-runtime` 的索引白名单里，直接 grep 即可精确命中。
+> ⚠️ 但**别拿它搜日志正文里的词**（`message` 里的 `warm` / `timeout` 之类）——那个 logstore 的正文没进索引，会静默少回；`optima-logs` 会在结果前告警。要按正文过滤就去掉 `--grep`、拉原始行本地 `jq` / `grep`。
+> ⚠️ SLS 按**完整 token** 匹配（分词表不含 `-` `_` `.`），搜子串必然零命中——`reconciler` 命不中 `session-reconciler`。零命中先怀疑这个，别急着下「没发生」。
+> ⚠️ `--grep` 里的 `|` 不是「或」（SLS 拿它分隔「检索 | 分析(SQL)」）。要或写 `--grep 'a or b'`。
 
 ---
 
@@ -273,7 +284,8 @@ token:  输入 12,840  输出 4,210  缓存命中率 99.3%
 
 ## ⭐ 错误视图（最高频需求）
 
-> **核心技术**：`optima-logs --grep <kw>` 是 **SLS 服务端过滤**，覆盖整个 `--since` 窗口（不受"无过滤时只回最近 ~100 条"的截断）。日志正文是 `"level":"error"` 这样的 JSON，所以 `--grep error` / `--grep warn` 正好命中 level 字段 → **全窗 error/warn 全抓得到**。
+> **核心技术**：`optima-logs --grep <kw>` 是 **SLS 服务端过滤**，检索范围是整个 `--since` 窗口。日志正文是 `"level":"error"` 这样的 JSON，`level` 在两侧 `agent-runtime` 都可搜，所以 `--grep error` / `--grep warn` 命中的是 level 字段。
+> 🔴 **但「检索全窗」≠「拿回全窗」**：SLS 单次请求硬顶 **100 条**，`optima-logs` 靠 `--offset` 翻页补到 `-n`，**取满 `-n` 时会打 ⚠ = 还有没拿回来的**。所以下面这些 `-n 300` 的查询，见到 ⚠ 就**不是**「全窗 error/warn 全抓到了」，而是「最新 300 条」。要断言「一共出了 N 个错」必须先缩窄 `--since` 到不再报 ⚠，或改用分析语句 `--grep '<kw> | select count(*)'` 让 SLS 自己数。
 > **降噪**：以下属基础设施噪声，默认过滤掉（除非排查它们）：`CLI binary name collision`、`Multi-source cache all-miss`、`Runtime other than "optima" is deprecated`、`cache.load miss: ENOENT`。
 
 ### 查询 A：给一个用户 → 他出过哪些错
