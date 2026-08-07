@@ -160,8 +160,8 @@ test('🔴 coverage 不把空/空白 __time__ 算成 epoch 0(会把覆盖窗打�
 });
 
 test('coverage 计的是记录数,不是 JSON 排版行数', () => {
-  // #75 第 4 条:--json 是 pretty-print,100 条记录会显示成 1800+ 行,
-  // 用 wc -l 会读出假的「拉到很多」。计数必须锚记录本身。
+  // #75 第 4 条:--json 是 pretty-print,一条记录十几到二十行(实测 gateway-core
+  // 100 条 = 1502 行),用 wc -l 会读出假的「拉到很多」。计数必须锚记录本身。
   const rows = Array.from({ length: 100 }, (_, i) => ({ __time__: String(1786030000 + i) }));
   assert.equal(coverage(rows).count, 100);
   assert.ok(JSON.stringify(rows, null, 2).split('\n').length > 100);
@@ -366,8 +366,9 @@ test('indexWarning: 可搜 / 未知都不告警(不能因为查不到索引就�
 });
 
 test('🔴 indexWarning: 按索引键查时不告警 —— 不许先说这个查询不可信、下一行又推荐它', () => {
-  // 实测 cn-stage/agent-runtime:`content.level: info` 回 59 条,同窗原始行本地统计
-  // 也是 59,分毫不差。这个工具的全部价值是告警的可信度,在自己推荐的用法上喊狼来了,
+  // 实测 cn-stage/agent-runtime(钉死窗 1786029531..1786036731):`content.level: info`
+  // 回 150 条,同窗 166 行本地统计也是 150,分毫不差。工具的全部价值是告警的可信度,
+  // 在自己推荐的用法上喊狼来了,
   // 用户很快会学会整体无视它。
   const v = bodySearchable(IDX_JSON_WHITELIST);
   const m = indexWarning('agent-runtime', v, 'content.level: error');
@@ -391,8 +392,8 @@ test('indexWarning: 键子句混了裸词 → 照样告警(裸词仍吃正文没
 });
 
 test('🔴 indexWarning: 不许断言「非零命中一定不是真实次数」—— 索引键的值是准的', () => {
-  // 实测 cn-stage/agent-runtime:`--grep <userId>` 回 8 条 == 同窗本地统计 8 条
-  // (userId 在 26 键白名单里)。真实盲区是「词出现在正文(如 message)里」,
+  // 实测 cn-stage/agent-runtime(同一钉死窗):`--grep <userId>` 回 24 条 == 同窗
+  // 本地统计 24 条(userId 在 26 键白名单里)。真实盲区是「词出现在正文(如 message)里」,
   // 而工具替用户判断不了他搜的词属于哪一种 —— 就把这句如实说出来。
   const m = indexWarning('agent-runtime', bodySearchable(IDX_JSON_WHITELIST), 'some-user-id');
   assert.match(all(m), /若它正好是某个索引键的值/);
@@ -542,7 +543,7 @@ test('🔴 pipeQueryHint: 引号里的 | 不是分隔符 —— 别拿同一个 
   assert.ok(pipeQueryHint('"a|b" or c|d', unrelated[0]), '引号外还有一个裸 | ,仍算');
 });
 
-test('pipeQueryHint: 真的 SLS 拒绝才给提示,且把两种正确写法都算出来', () => {
+test('pipeQueryHint: 真的 SLS 拒绝才给提示,且陈述句点明两种正确写法', () => {
   const real = 'ERROR: SDKError:\n  Code: ParameterInvalid\n  Message: parse fail, please check your query,if it has (SELECT)';
   const hint = pipeQueryHint('timeout|error', real);
   assert.match(hint, /是 SLS「检索\|分析\(SQL\)」的分隔符/);

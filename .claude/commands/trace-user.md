@@ -120,10 +120,10 @@ aws logs start-query \
 > SLS `GetLogsV2` 是公网控制面 API，本机 `aliyun-optima` profile 直连即可，支持历史检索+时间窗+关键词。
 > SLS project：`optima-cn-stage-1911493506120573` / `optima-cn-prod-1911493506120573`；logstore == service 名；正文在 `content`。
 
-> 🔴 **本节的一切计数/求和/平均，先读 `optima-logs` 打在 stderr 上的那几行再用**（完整规则见 `/logs --help` 第 3 节「读数纪律」，那里是唯一权威）。三条与本 runbook 直接相关的：
+> 🔴 **本节的一切计数/求和/平均，先读 `optima-logs` 打在 stderr 上的那几行再用**（完整规则见 `.claude/commands/logs.md` 第 3 节「读数纪律」，即 `/logs` 命令文档；那里是唯一权威，不是 `--help` 输出）。三条与本 runbook 直接相关的：
 > 1. **SLS 单次请求硬顶 100 条**（`--line 3000` 也只回 100）。`optima-logs` 已自动 `--offset` 翻页到 `-n`，但**取满 `-n` 时会打 ⚠ = 真实总数未知**。下面那些 `-n 1200` / `-n 2000` 的统计配方，见到 ⚠ 就说明分母被截断了——**此时「调用次数 / token 合计 / 平均延迟 / stop 分布」全是在一个截断样本上算的**，缩窄 `--since` 到不再报 ⚠ 再用。（本文档 2026-08-07 之前的版本写于翻页修好之前，那时这些配方**实际只拿得到 100 条**。）
 > 2. **请求 `--since 1h` ≠ 覆盖了 1h**：以 stderr 打出的**实际覆盖窗**为准。
-> 3. **`--grep` 是 SLS 服务端索引检索，不是本地正则**：cn-stage 的 `agent-runtime` 正文（`message`）没进索引，搜正文里的词会静默少回；工具会在结果前告警。**但 `userId` / `sessionId` / `turnId` / `level` 都在索引白名单里，下面这些按 ID 查的配方不受影响**（2026-08-07 实测：`--grep <userId>` 回 8 条 == 同窗本地统计 8 条）。
+> 3. **`--grep` 是 SLS 服务端索引检索，不是本地正则**：cn-stage 的 `agent-runtime` 正文（`message`）没进索引，搜正文里的词会静默少回；工具会在结果前告警。**但 `userId` / `sessionId` / `turnId` / `level` 都在索引白名单里，下面这些按 ID 查的配方不受影响**（实测钉死窗 `1786029531..1786036731`：`--grep <userId>` 回 24 条 == 同窗本地统计 24 条；复跑命令见上述唯一权威处）。
 
 ```bash
 # 第一步（核心）：agent-runtime —— 拉该用户全部 LLM/tool/turn 结构化日志

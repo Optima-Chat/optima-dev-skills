@@ -84,9 +84,10 @@ Examples:
   optima-logs commerce-backend --env cn-prod --grep error -n 200
 
 读数注意(#75/#57 两次误导排障的直接病根):
-  · 每次运行都会在 stderr 打「实取 N 条 + 真实覆盖窗」——请求 --since 24h 不代表
-    真拿到了 24h,取满 -n 时窗口会被截在最新那一段。看到 ⚠ 就别拿这批数做计数/比值。
-  · --json 是 pretty-print 数组,数记录**不能** wc -l(100 条会显示成 1800+ 行),
+  · cn 侧只要取到了行,stderr 就会打「实取 N 条 + 真实覆盖窗」——请求 --since 24h
+    不代表真拿到了 24h,取满 -n 时窗口会被截在最新那一段。看到 ⚠ 就别拿这批数做
+    计数/比值。(AWS 侧无此概念:aws logs tail 吐整个窗;cn 侧零结果时只打「无日志」。)
+  · --json 是 pretty-print 数组,数记录**不能** wc -l(一条记录十几到二十行),
     用 grep -c '__time__'。
   · cn 侧 --grep 走 SLS 索引,不是本地正则:logstore 没把正文纳入索引时,搜正文里的
     词会静默少回(已知 cn-stage/agent-runtime)。用了 --grep 会先查 GetIndex,搜不到
@@ -283,12 +284,14 @@ export interface Msg { level: 'info' | 'warn'; text: string }
  * 这个工具的全部价值是**告警的可信度**,所以它必须先对自己诚实,两处收窄:
  *   1. 整条 query 只按索引键过滤时(`content.level: error`)**不告警** —— 这种查询
  *      的命中数与「正文进没进索引」无关。实测 cn-stage/agent-runtime:
- *      `content.level: info` 回 59 条,同窗原始行本地统计也是 59,分毫不差;
+ *      `content.level: info` 回 150 条,同窗 166 行本地统计也是 150,分毫不差;
  *      而旧版会一边说「这个数不可信」、一边在下一行推荐这个写法。
  *   2. 其余情况仍告警,但**不再断言**「非零命中一定不是真实次数」。索引键的值是
- *      进了索引的:实测 `--grep <userId>` 回 8 条 == 同窗本地统计 8 条(userId 在
+ *      进了索引的:实测 `--grep <userId>` 回 24 条 == 同窗本地统计 24 条(userId 在
  *      白名单里)。真实的盲区是「词出现在正文(如 message)里」,而工具无法替用户
  *      判断自己搜的词属于哪一种 —— 就把这句如实说出来。
+ *      (两组数同一钉死窗 1786029531..1786036731;复跑命令只维护在
+ *       .claude/commands/logs.md 第 3 节,那里是唯一权威。)
  */
 export function indexWarning(service: string, v: BodyVerdict, grep?: string): Msg[] {
   if (v.state !== 'body-not-indexed') return []; // 'unknown' 不告警也不背书

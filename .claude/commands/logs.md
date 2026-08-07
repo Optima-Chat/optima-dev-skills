@@ -240,7 +240,7 @@ optima-logs gateway-core --since 30m --json | jq .   # 机器可读
 
 1. **`-n` 取满 ≠ 窗内只有这么多。** SLS 单次请求服务端硬顶 **100 条**（`GetLogs` / `GetLogsV2` 都是）（`--line 3000` 也只回 100）。`optima-logs` 已自动 `--offset` 翻页到 `-n` 要的条数，但**取满 `-n` 时会打 ⚠**：此时真实总数未知。
    **两个都返回上限的查询相除，比值是纯噪声**——实测拿 30d 的 `timed out` / `dispatching` 相除得「100/100」，看着像 100% 失败率，缩窄到两边都 <100 后真数是 7/60 与 16/70。要计数就缩窄 `--since` 直到不再报 ⚠。
-2. **请求 `--since 24h` ≠ 覆盖了 24h。** 取满 `-n` 时窗口被截在最新那一段。每次运行 stderr 都会打**实际覆盖窗**（由 `__time__` 反算，北京时间），以它为准，别以 `--since` 为准。
+2. **请求 `--since 24h` ≠ 覆盖了 24h。** 取满 `-n` 时窗口被截在最新那一段。cn 侧**只要取到了行**，stderr 就会打**实际覆盖窗**（由 `__time__` 反算，北京时间），以它为准，别以 `--since` 为准。（零结果时没有覆盖窗可算，只打「无日志」；AWS 侧无此概念。）
 3. **`--grep` 走 SLS 索引，不是本地正则**——正文没进索引的 logstore 上，搜正文里的词会**静默少回**：零命中不代表「没有报错」，非零命中也不是真实出现次数。
    已知 **cn-stage 的 `agent-runtime`**：`content` 被建成 JSON 型索引且 `index_all: false`，只索引 26 个白名单键，**`message` 不在其中** ⇒ 正文里的词一个都搜不到。
    **⚠ 盲区只覆盖「词出现在正文里」这一种。** 白名单键的**值**是进了索引的（`userId` / `sessionId` / `turnId` / `level` 都在里面），搜这些值命中数是准的——**工具替你判断不了你搜的词属于哪一种**，所以它只告诉你盲区存在，不替你下结论。
@@ -262,20 +262,31 @@ optima-logs gateway-core --since 30m --json | jq .   # 机器可读
    aliyun sls GetIndex $P | jq -r '.keys.content | .type, .index_all, (.json_keys|keys|join(","))'
    ```
    b 的 **4** 对上 a 的 **166**：仅取最新 100 行的样本里就已有 **27 行**含 `warm`（本地统计，非索引）。
-   反向对照（2h 滚动窗，验证「按键查是准的」）：`--grep 'content.level: info'` 回 **59** 条，同窗原始行本地统计也是 **59**；`--grep <userId>` 回 **8** 条，本地统计也是 **8**。
+   反向对照（**同一个钉死窗**，验证「按键查是准的」）——用 SQL 数以绕开单次 100 条上限：
+   ```bash
+   # e) 按索引键查 level: info    → 150；同窗 166 行本地统计 level=="info" 也是 150
+   aliyun sls GetLogsV2 $P --body "{$W,\"line\":1,\"offset\":0,\"query\":\"content.level: info | select count(*) as c\"}"
+   # f) 裸搜一个 userId(在白名单里) → 24；content.userId: <U> 也是 24；本地统计也是 24
+   U=54afca02-cb4c-4022-9e5b-b8dc3cda17d0
+   aliyun sls GetLogsV2 $P --body "{$W,\"line\":1,\"offset\":0,\"query\":\"$U | select count(*) as c\"}"
+   ```
 
-   > **别把这组数抄进别处。** 同一组数曾在三份文件里手抄、已经漂成三个版本（24/22、28/26、27/16）——差异来自「窗内 100 行」其实只是 166 行里最新的 100 行，以及「只出现在 message」有好几种数法。**这里是唯一权威**，`SKILL.md` 与 `--help` 只引用不复制。
+   > **别把这组数抄进别处。** 同一组数曾在三份文件里手抄、已经漂成四个版本（24/22、28/26、27/16，以及 PR 正文那版 28——它数的是**不区分大小写**，多出的一行是 `Warm pool: session initialized`）。差异来自「窗内 100 行」其实只是 166 行里最新的 100 行，以及「只出现在 message」有好几种数法。**这里是唯一权威**；`SKILL.md`、`trace-user.md`、`--help` 只引用不复制，`logs.ts` 与测试里的注释可以引用具体数字，但必须与这里同源（同一钉死窗）。
    </details>
 
    **零命中能说明什么**（工具的措辞就到这一步，不再往前一步）：索引正常时它只说「正文已进全文索引 ⇒ 不是『索引搜不到』那一类」，并提醒 SLS 按**完整 token** 匹配（分词表不含 `-` `_` `.`）——实测 `gateway-core`：`reconciler` **0 条**、`session-reconciler` **100+ 条**。要断定「真没有」请换完整 token，或去掉 `--grep` 拉原始行本地过滤复核。`GetIndex` 调不通时判 `unknown`，**既不告警也不背书**。
 
    其它 logstore：cn-prod 的 `agent-runtime` 只有全文索引，正文可搜；cn-stage 的 `gateway-core` 是 `text` 型，也可搜。
 
-4. **`--grep` 里的 `|` 不是「或」。** SLS 拿 `|` 分隔「检索 | 分析(SQL)」两段，`--grep 'timeout|error'` 会被 SLS 判成 SQL 并报 `parse fail`（工具会把它翻译成人话并给出正确写法）。要「或」写 `--grep 'timeout or error'`；要把整串当一个短语写 `--grep '"timeout|error"'`（带引号是合法检索，`meta.hasSQL=false`）；要真跑 SQL 写 `--grep '… | select …'`，此时 SLS 规定 `line`/`offset` 失效 ⇒ `-n` 不起作用，翻页要用 SQL 自己的 `LIMIT`。
+4. **`--grep` 里的 `|` 不是「或」。** SLS 拿 `|` 分隔「检索 | 分析(SQL)」两段，`--grep 'timeout|error'` 会被 SLS 判成 SQL 并报错（工具会在 SLS 原文之下补一句人话说明；它**只给陈述、不生成可照抄的命令**——生成式处方要同时满足 bash 与 SLS 两套语法，试过两次都在「命令跑得通、查的却是另一条 query」上翻车）。要「或」写 `--grep 'timeout or error'`；要把整串当一个短语写 `--grep '"timeout|error"'`（带引号是合法检索，`meta.hasSQL=false`）；要真跑 SQL 写 `--grep '… | select …'`，此时 SLS 规定 `line`/`offset` 失效 ⇒ `-n` 不起作用，翻页要用 SQL 自己的 `LIMIT`。
 
-**数记录数不要用 `wc -l`**：`--json` 是 pretty-print 数组，100 条记录会显示成 1800+ 行。用 `grep -c '__time__'`。
+**数记录数不要用 `wc -l`**：`--json` 是 pretty-print 数组，一条记录就是十几到二十行（实测 `gateway-core` 100 条 = 1502 行，`agent-runtime` 约 18 行/条）。用 `grep -c '__time__'`。
 
-**已知未覆盖**：SLS 全文索引有 `max_text_len` 截断（cn-stage/gateway-core 为 16384 字节），超长单行超出部分不进索引 ⇒ 超长日志行尾部的词仍可能搜不到，本工具不检测这一种。
+**已知未覆盖**：SLS 全文索引有 `max_text_len` 截断，超长单行超出部分不进索引 ⇒ 超长日志行尾部的词仍可能搜不到，本工具不检测这一种。该值在 `GetIndex` 的**顶层**（不在 `.line` 里），可直接复核：
+```bash
+aliyun sls GetIndex --project optima-cn-stage-1911493506120573 --logstore gateway-core \
+  --region cn-beijing --profile aliyun-optima | jq .max_text_len    # → 16384（2026-08-07 采样）
+```
 （`progress: Incomplete`「查询未扫完」已覆盖：改用 `GetLogsV2` 后 `meta.progress` 可读，非 `Complete` 会打 ⚠；**响应里读不到这个字段时判 unknown 并单独打 ⚠**，不当成「扫完了」。）
 
 **底层（仅参考，正常用 `optima-logs` 即可）**:

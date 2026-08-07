@@ -140,7 +140,7 @@ test('confirmIfProd gates cn-prod as a production env', () => {
 
 test('optima-logs is wired as a bin and routes cn envs to SLS, aws envs to CloudWatch', () => {
   // The cn log pain point was the buildbox SSH hop + DescribeInstanceLog buffer.
-  // optima-logs welds the direct path in: cn-prod/cn-stage → SLS GetLogs (no
+  // optima-logs welds the direct path in: cn-prod/cn-stage → SLS GetLogsV2 (no
   // buildbox), stage/prod → CloudWatch. Guard the contract so a refactor can't
   // silently drop an env class or re-introduce the buildbox dependency.
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
@@ -150,7 +150,10 @@ test('optima-logs is wired as a bin and routes cn envs to SLS, aws envs to Cloud
   for (const env of ['stage', 'prod', 'cn-prod', 'cn-stage']) {
     assert.match(source, new RegExp(`'${env}'`), `logs.ts must handle ${env}`);
   }
-  assert.match(source, /aliyun.*sls.*GetLogs|'sls',\s*'GetLogs'/s, 'cn path must call aliyun sls GetLogs');
+  // 必须是 V2:只有 GetLogsV2 返回 meta.progress(「本次查询扫完没有」)。V1 下
+  // Incomplete 与「窗内就这么多」无法区分 —— 这正是 #86 换 V2 的全部理由,而旧断言
+  // 写成 /GetLogs/ 对 V1/V2 结构性不敏感(实测把 GetLogsV2 改回 GetLogs,133 全绿)。
+  assert.match(source, /'sls',\s*'GetLogsV2'/, 'cn path must call aliyun sls GetLogsV2 (V1 has no meta.progress)');
   assert.match(source, /'logs',\s*'tail'/, 'aws path must call aws logs tail');
   // The doc comment legitimately names what this replaces; what must not return
   // is an actual sshpass invocation or a DescribeInstanceLog command arg.
