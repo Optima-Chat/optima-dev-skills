@@ -192,7 +192,8 @@ INFO - Database query took 3200ms: SELECT * FROM products WHERE...
 
 - **`-n` 取满 ≠ 窗内只有这么多**：SLS 单次请求硬顶 100 条，工具已自动翻页，但取满 `-n` 时会打 ⚠——此时真实总数未知，**别拿这批数做计数或算比值**（两个都触顶的查询相除，比值是纯噪声）。要计数就缩窄 `--since` 到不再报 ⚠。
 - **请求 `--since 24h` ≠ 覆盖了 24h**：以 stderr 打出的**实际覆盖窗**为准，不是以 `--since` 为准。
-- **`--grep` 的命中数在部分 logstore 上无意义**：不只是「零命中 ≠ 没有报错」，**非零命中也不是真实出现次数**（已知 **cn-stage 的 `agent-runtime`**：`content` 是 JSON 型索引、只覆盖 26 个白名单键，`message` 正文搜不到；实测 `--grep warm` 回 4 条，窗内实有 24 行）。工具用 `GetIndex` 直查后会在结果前告警，看它给的结论。
+- **`--grep` 走 SLS 索引、不是本地正则**：正文没进索引的 logstore 上搜正文里的词会**静默少回**——零命中不代表「没有报错」，非零命中也不是真实次数（已知 **cn-stage 的 `agent-runtime`**：`content` 是 JSON 型索引、只覆盖 26 个白名单键，`message` 搜不到）。**但盲区只覆盖「词出现在正文里」这一种**：白名单键的值（`userId` / `sessionId` / `turnId` / `level`）搜起来是准的。工具用 `GetIndex` 直查后会在结果前告警，**看它给的结论**；纯按键查（`--grep 'content.level: error'`）不受影响、也不告警。实测取数与复跑命令**只维护在** `/logs --help` 第 3 节第 3 条，本页不复制（同一组数曾三处手抄、漂成三个版本）。
+- **`--grep` 里的 `|` 不是「或」**：SLS 拿它分隔「检索 | 分析(SQL)」。要或写 `'a or b'`，要整串当短语写 `'"a|b"'`，要 SQL 写 `'… | select …'`（此时 `-n` 失效，用 SQL `LIMIT`）。
 - **数记录数用 `grep -c '__time__'`，不要用 `wc -l`**（`--json` 是 pretty-print，100 条会显示成 1800+ 行）。
 
 ## 支持的服务列表

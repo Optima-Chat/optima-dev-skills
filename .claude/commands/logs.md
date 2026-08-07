@@ -236,20 +236,47 @@ optima-logs gateway-core --since 30m --json | jq .   # 机器可读
 
 #### 🔴 读数纪律（#75 / #57 两次误导生产级排障的直接病根）
 
-这三条都属于「**看起来拿到了全部，其实只拿到一角**」——不是查错了，是**看不出被截断**：
+前三条都属于「**看起来拿到了全部，其实只拿到一角**」——不是查错了，是**看不出被截断**；第 4 条是同一病根的另一面：查询被悄悄换了语义：
 
 1. **`-n` 取满 ≠ 窗内只有这么多。** SLS `GetLogs` 单次请求服务端硬顶 **100 条**（`--line 3000` 也只回 100）。`optima-logs` 已自动 `--offset` 翻页到 `-n` 要的条数，但**取满 `-n` 时会打 ⚠**：此时真实总数未知。
    **两个都返回上限的查询相除，比值是纯噪声**——实测拿 30d 的 `timed out` / `dispatching` 相除得「100/100」，看着像 100% 失败率，缩窄到两边都 <100 后真数是 7/60 与 16/70。要计数就缩窄 `--since` 直到不再报 ⚠。
 2. **请求 `--since 24h` ≠ 覆盖了 24h。** 取满 `-n` 时窗口被截在最新那一段。每次运行 stderr 都会打**实际覆盖窗**（由 `__time__` 反算，北京时间），以它为准，别以 `--since` 为准。
-3. **`--grep` 的命中数在部分 logstore 上无意义**——不只是「零命中 ≠ 没有报错」，**非零命中也不是真实出现次数**。
-   cn 侧 `--grep` 走 SLS 索引。已知 **cn-stage 的 `agent-runtime`**：它的 `content` 被建成 JSON 型索引且 `index_all: false`，只索引了 26 个白名单键（`level` / `service` / `sessionId` / `event_key` …），**`message` 不在其中** ⇒ 日志正文里的词一个都搜不到。实测同一个 2h 窗：`--grep warm` 只回 **4 条**，而窗内 100 行原始日志里有 **24 行**含 `warm`（其中 22 行只出现在 `message` 里）。
-   按键查是好的（`--grep 'content.level: error'`）。cn-prod 的 `agent-runtime` 只有全文索引，正文可搜；cn-stage 的 `gateway-core` 是 `text` 型，也可搜。
-   用了 `--grep` 时 `optima-logs` 会先查 `GetIndex`（权威直源，不靠试词猜），搜不到正文就**在结果之前**告警并列出可搜的键；索引正常而零命中时会明说「这个零命中是真的」。
+3. **`--grep` 走 SLS 索引，不是本地正则**——正文没进索引的 logstore 上，搜正文里的词会**静默少回**：零命中不代表「没有报错」，非零命中也不是真实出现次数。
+   已知 **cn-stage 的 `agent-runtime`**：`content` 被建成 JSON 型索引且 `index_all: false`，只索引 26 个白名单键，**`message` 不在其中** ⇒ 正文里的词一个都搜不到。
+   **⚠ 盲区只覆盖「词出现在正文里」这一种。** 白名单键的**值**是进了索引的（`userId` / `sessionId` / `turnId` / `level` 都在里面），搜这些值命中数是准的——**工具替你判断不了你搜的词属于哪一种**，所以它只告诉你盲区存在，不替你下结论。
+   `optima-logs` 用了 `--grep` 会先查 `GetIndex`（权威直源，不靠试词猜），搜不到正文就**在结果之前**告警并列出索引键；**整条 query 只按索引键过滤时不告警**（那种查询与本盲区无关）。零命中**不会**被断言成「这个词不存在」——见下面「零命中能说明什么」。
+
+   <details><summary>本条的实测取数（钉死窗口，可原样复跑）</summary>
+
+   采样 2026-08-07，`cn-stage`/`agent-runtime`，窗口钉死 `from=1786029531 to=1786036731`（北京时间 08-06 23:18:51 ~ 08-07 01:18:51）。
+   ```bash
+   P="--project optima-cn-stage-1911493506120573 --logstore agent-runtime --region cn-beijing --profile aliyun-optima"
+   W='"from":1786029531,"to":1786036731'
+   # a) 窗内真实总行数（分析语句，权威）           → 166
+   aliyun sls GetLogsV2 $P --body "{$W,\"line\":1,\"offset\":0,\"query\":\"* | select count(*) as c\"}"
+   # b) --grep warm 命中                            → 4
+   aliyun sls GetLogsV2 $P --body "{$W,\"line\":100,\"offset\":0,\"reverse\":true,\"query\":\"warm\"}"
+   # c) 按未索引键查 message                        → 0（message 不在白名单里）
+   aliyun sls GetLogsV2 $P --body "{$W,\"line\":100,\"offset\":0,\"reverse\":true,\"query\":\"content.message: warm\"}"
+   # d) 索引键白名单（26 个，无 message）
+   aliyun sls GetIndex $P | jq -r '.keys.content | .type, .index_all, (.json_keys|keys|join(","))'
+   ```
+   b 的 **4** 对上 a 的 **166**：仅取最新 100 行的样本里就已有 **27 行**含 `warm`（本地统计，非索引）。
+   反向对照（2h 滚动窗，验证「按键查是准的」）：`--grep 'content.level: info'` 回 **59** 条，同窗原始行本地统计也是 **59**；`--grep <userId>` 回 **8** 条，本地统计也是 **8**。
+
+   > **别把这组数抄进别处。** 同一组数曾在三份文件里手抄、已经漂成三个版本（24/22、28/26、27/16）——差异来自「窗内 100 行」其实只是 166 行里最新的 100 行，以及「只出现在 message」有好几种数法。**这里是唯一权威**，`SKILL.md` 与 `--help` 只引用不复制。
+   </details>
+
+   **零命中能说明什么**（工具的措辞就到这一步，不再往前一步）：索引正常时它只说「正文已进全文索引 ⇒ 不是『索引搜不到』那一类」，并提醒 SLS 按**完整 token** 匹配（分词表不含 `-` `_` `.`）——实测 `gateway-core`：`reconciler` **0 条**、`session-reconciler` **100+ 条**。要断定「真没有」请换完整 token，或去掉 `--grep` 拉原始行本地过滤复核。`GetIndex` 调不通时判 `unknown`，**既不告警也不背书**。
+
+   其它 logstore：cn-prod 的 `agent-runtime` 只有全文索引，正文可搜；cn-stage 的 `gateway-core` 是 `text` 型，也可搜。
+
+4. **`--grep` 里的 `|` 不是「或」。** SLS 拿 `|` 分隔「检索 | 分析(SQL)」两段，`--grep 'timeout|error'` 会被 SLS 判成 SQL 并报 `parse fail`（工具会把它翻译成人话并给出正确写法）。要「或」写 `--grep 'timeout or error'`；要把整串当一个短语写 `--grep '"timeout|error"'`（带引号是合法检索，`meta.hasSQL=false`）；要真跑 SQL 写 `--grep '… | select …'`，此时 SLS 规定 `line`/`offset` 失效 ⇒ `-n` 不起作用，翻页要用 SQL 自己的 `LIMIT`。
 
 **数记录数不要用 `wc -l`**：`--json` 是 pretty-print 数组，100 条记录会显示成 1800+ 行。用 `grep -c '__time__'`。
 
 **已知未覆盖**：SLS 全文索引有 `max_text_len` 截断（cn-stage/gateway-core 为 16384 字节），超长单行超出部分不进索引 ⇒ 超长日志行尾部的词仍可能搜不到，本工具不检测这一种。
-（`progress: Incomplete`「查询未扫完」已覆盖：改用 `GetLogsV2` 后 `meta.progress` 可读，非 `Complete` 会打 ⚠。）
+（`progress: Incomplete`「查询未扫完」已覆盖：改用 `GetLogsV2` 后 `meta.progress` 可读，非 `Complete` 会打 ⚠；**响应里读不到这个字段时判 unknown 并单独打 ⚠**，不当成「扫完了」。）
 
 **底层（仅参考，正常用 `optima-logs` 即可）**:
 - SLS project：`optima-cn-prod-1911493506120573` / `optima-cn-stage-1911493506120573`（`optima-<env>-<accountId>`）。
