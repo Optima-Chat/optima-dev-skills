@@ -13,9 +13,23 @@ allowed-tools: ["Bash"]
 前端 `useShowOnboardingTree`（agentic-chat）要求**全部**满足：
 
 1. 服务端资格：billing 库 `guided_run_grant` 判出 `sponsorshipAvailable === true`，公式 `(granted - used) > 0 && spent_credits < cap_credits`（cap 默认 2000）
+
 2. 有 userId
 3. **当前打开的会话无 user 消息**——开个新会话即满足，无需删旧会话
 4. 客户端浏览器 localStorage 无「已提交/已跳过」锁
+
+> ### ⏳ optima-gateway#1998 换档中——本文所有 SQL 有两版，按现网是否已建列选
+>
+> `optima-gateway#1998` 给 billing 加了两列装 **LLM 花费**：`guided_run_grant.spent_credits_llm`、`sponsored_window.window_spent_credits_llm`。**列建好之后**，cap 判据口径变成两列相加，本 skill 的 SQL 全部要跟着改，否则会看到 `spent_credits=0` 以为重置成功、而资格依旧开不出来。
+>
+> **先判断现网建列了没**（一条命令，两个环境各跑各的）：
+> ```bash
+> optima-query-db billing "SELECT COUNT(*) FROM information_schema.columns WHERE column_name='spent_credits_llm'" <env>
+> ```
+> - 返回 **0** → 用本文正文里的 SQL（当前状态，2026-08-07 两环境均为 0）
+> - 返回 **1** → 每条 SQL 都按其下方的「🆕 建列后版本」替换
+>
+> ⚠️ 列建好后 cap 默认值也会从 **2000** 换成 **8000**（配一条把存量 `cap_credits=2000` 抬上去的 migration）。**以查出来的 `cap_credits` 实际值为准**，别照记默认数。
 
 所以重置分**两层**：服务端 SQL（我方执行）+ 客户端 localStorage（只能操作浏览器的人自清）。
 
@@ -41,11 +55,13 @@ optima-query-db user-auth "SELECT id, phone, email FROM users WHERE phone='<手�
 
 ```bash
 optima-query-db billing "SELECT user_id, granted, used, cap_credits, spent_credits, updated_at FROM guided_run_grant WHERE user_id='<uid>'" <env>
+# 🆕 建列后版本：把选择列表换成 ..., spent_credits, spent_credits_llm, updated_at ...
 ```
 
 > 回显里同时确认 `granted > 0`——若 `granted=0`，重置本身就是无效的（资格公式 `(granted-used)>0` 仍不成立），③ 的 `AND granted > 0` 会让 UPDATE 影响 0 行。若查不到行或 `granted=0`：该账号从未被授予引导资格，不属「重置」范畴——发放 grant 走 billing 侧逻辑，找 billing owner 确认。
 
-**③ 重置——`used` 和 `spent_credits` 两个字段都要清、缺一不可**（只清 `used`、若 `spent_credits` 已烧到 cap 则资格仍是 false）。
+**③ 重置——`used` 和 `spent_credits` 都要清、缺一不可**（只清 `used`、若 `spent_credits` 已烧到 cap 则资格仍是 false）。
+> 🔴 **建列后要清三个**：`optima-gateway#1998` 的 `spent_credits_llm` **终身累计、无任何自动 reset 点**，而反复重跑的 QA/回归号正是最容易把它烧满的一批。漏清它 = 你会看到 `spent_credits=0` 以为成功、而资格依然开不出来——与上面这句告警一模一样，只是换了个列名。
 
 > 🔴 **跑这条 UPDATE 前必须完成的两条硬性前置**（写操作不可撤销，`cn-prod` 是生产库尤其如此；cn-stage 一样照做，别把下面两条当 cn-prod 专属）：
 >
@@ -56,6 +72,8 @@ optima-query-db billing "SELECT user_id, granted, used, cap_credits, spent_credi
 
 ```bash
 optima-query-db billing "UPDATE guided_run_grant SET used=0, spent_credits=0, updated_at=now() WHERE user_id='<uid>' AND granted > 0 RETURNING user_id, granted, used, cap_credits, spent_credits" <env>
+# 🆕 建列后版本（缺了 spent_credits_llm=0 就等于没重置干净）：
+# optima-query-db billing "UPDATE guided_run_grant SET used=0, spent_credits=0, spent_credits_llm=0, updated_at=now() WHERE user_id='<uid>' AND granted > 0 RETURNING user_id, granted, used, cap_credits, spent_credits, spent_credits_llm" <env>
 ```
 
 > `AND granted > 0` 是机械自保：打到从未被授予引导资格的账号时影响 0 行，而不是静默写一个无效重置。
@@ -88,7 +106,7 @@ optima-query-db billing "SELECT id, status, window_spent_credits, opened_at, clo
 ## 安全提醒
 
 1. `cn-prod` 是生产库写操作，真正的护栏写在 **③ 正文的两条硬性前置**里（人工核对身份 + `granted > 0`），不在本节——别只扫这节就动手。
-2. 清 `spent_credits` **不会退回真实花费**——真扣费永久留在 `usage_records`（`metadata->>'actorUserId'` = uid）与 CLOSED 窗的 `window_spent_credits`，清零只是把 lifetime 计数器归零、重开满 cap 预算。
+2. 清 `spent_credits`（建列后还有 `spent_credits_llm`）**不会退回真实花费**——真扣费永久留在 `usage_records`（`metadata->>'actorUserId'` = uid）与 CLOSED 窗的 `window_spent_credits`，清零只是把 lifetime 计数器归零、重开满 cap 预算。
 3. onboarding 门控在高频演进（COO epic 等）：若按本流程重置后仍不弹，先对 agentic-chat `origin/main` 的 `useShowOnboardingTree` / `intakeLocal` 重验门控是否有变，再排查。
 
 ## 相关命令
