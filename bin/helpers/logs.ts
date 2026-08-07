@@ -88,9 +88,11 @@ Examples:
     真拿到了 24h,取满 -n 时窗口会被截在最新那一段。看到 ⚠ 就别拿这批数做计数/比值。
   · --json 是 pretty-print 数组,数记录**不能** wc -l(100 条会显示成 1800+ 行),
     用 grep -c '__time__'。
-  · cn 侧 --grep 走 SLS 索引:logstore 没把正文纳入索引时,零命中不代表没有、
-    非零命中也不是真实次数(已知 cn-stage/agent-runtime)。用了 --grep 会先查
-    GetIndex,搜不到正文就在结果前告警。
+  · cn 侧 --grep 走 SLS 索引,不是本地正则:logstore 没把正文纳入索引时,搜正文里的
+    词会静默少回(已知 cn-stage/agent-runtime)。用了 --grep 会先查 GetIndex,搜不到
+    正文就在结果前告警;按索引键查(--grep 'content.level: error')不受影响、不告警。
+    · --grep 不认 | 作「或」。query 里的 | 是 SLS「检索|分析(SQL)」的分隔符,
+      要或就写 'a or b';要 SQL 就写 '… | select …'(此时 -n 失效,用 SQL LIMIT)。
   · 即便索引正常,零命中也**不等于**这个词不存在:SLS 按完整 token 匹配
     (分词表不含 - _ .),"reconciler" 命不中 "session-reconciler"。要断定「真没有」
     请换完整 token,或去掉 --grep 拉原始行本地过滤复核。`;
@@ -112,12 +114,43 @@ export function pageSizes(want: number, max: number = SLS_PAGE_MAX): number[] {
   return out;
 }
 
+/** 去掉双引号包住的片段:里面的 | : 之类是**值**,不是查询语法。 */
+function stripQuoted(q: string): string {
+  return q.replace(/"(?:[^"\\]|\\.)*"/g, ' ');
+}
+
 /**
  * 带分析语句(SQL)的 query 用 `|` 分隔检索与分析两段。SLS 明确规定此时
  * line/offset 失效、要用 SQL 自己的 LIMIT 翻页 —— 这种 query 不能按页累加。
+ *
+ * 只看有没有 `|` 会把 `--grep 'timeout|error'` 这种最自然的写法误判成 SQL,
+ * 后果是**单页封顶 + 一条编造的「请在 SQL 里加 LIMIT」+ 覆盖窗被抑制** ——
+ * 正是本工具要消灭的形状。故两道收窄(都由 SLS 实测行为定):
+ *   · 引号内的 `|` 不算分隔符 —— `"timeout|error"` 实测返回 meta.hasSQL=false,是普通检索;
+ *   · SLS 规定分析段是标准 SQL,必须以 SELECT 起头 —— 不带 SELECT 的 `a|b`
+ *     SLS 直接报 `parse fail, please check your query,if it has (SELECT)`,
+ *     让它照常翻页、把 SLS 自己的报错原样透出去,比我们编一个解释准。
  */
 export function isAnalyticQuery(q?: string): boolean {
-  return !!q && q.includes('|');
+  return !!q && /\|\s*select\b/i.test(stripQuoted(q));
+}
+
+/**
+ * 从 query 里认出「按索引键过滤」的子句(SLS 语法 `content.<key>: <值>`)。
+ * fullyScoped = 整条 query 只由这类子句 + 布尔算子组成 ⇒ 命中数只取决于这些键
+ * 有没有进索引,与「正文进没进索引」无关。
+ */
+export function keyScopedQuery(q?: string, field = 'content'): { keys: string[]; fullyScoped: boolean } {
+  if (!q) return { keys: [], fullyScoped: false };
+  const keys: string[] = [];
+  // 先剥引号:`content.msg: "a b"` 的值里可能有空格/冒号,不剥会被当成额外的正文词。
+  let rest = stripQuoted(q).replace(
+    new RegExp(`\\b${field}\\.([A-Za-z0-9_.-]+)\\s*:\\s*(\\S*)`, 'g'),
+    (_m, k: string) => { keys.push(k); return ' '; },
+  );
+  // 布尔算子/括号/通配符不是「正文词」,剔掉后还剩东西就说明混了全文检索项。
+  rest = rest.replace(/\b(and|or|not)\b/gi, ' ').replace(/[()*\s]+/g, ' ').trim();
+  return { keys, fullyScoped: keys.length > 0 && rest === '' };
 }
 
 /** 从返回行的 __time__ 反算**真实**覆盖窗(可能远小于请求的 --since)。 */
@@ -126,8 +159,12 @@ export function coverage(rows: Array<Record<string, string>>): { count: number; 
   let lo = Infinity;
   let hi = -Infinity;
   for (const r of rows) {
+    // `t <= 0` 这一半是必需的:Number('') / Number('  ') / Number(null) 全是 0,
+    // 只判 isFinite 会把缺字段的行算成 epoch 0,覆盖窗打成「01-01 08:00:00 ~ …」。
+    // 而文档正让人「以实际覆盖窗为准、别以 --since 为准」——这个数是被要求信任的,
+    // 不能由一个空串编出来。SLS 的 __time__ 恒为正 epoch 秒,0 与负数都不是真时间。
     const t = Number(r.__time__);
-    if (!Number.isFinite(t)) continue;
+    if (!Number.isFinite(t) || t <= 0) continue;
     if (t < lo) lo = t;
     if (t > hi) hi = t;
   }
@@ -138,7 +175,7 @@ export function coverage(rows: Array<Record<string, string>>): { count: number; 
 /** 一次 GetLogsV2 的结果:行 + SLS 自报的本次查询完整性。 */
 export interface SlsPage {
   rows: Array<Record<string, string>>;
-  /** SLS 的 meta.progress;'Complete' 以外都代表这次结果**不全**。 */
+  /** SLS 的 meta.progress;'Complete' 以外都代表这次结果**不全**。空串 = 响应里根本没有这个字段。 */
   progress: string;
 }
 
@@ -148,6 +185,8 @@ export interface CollectResult {
   truncated: boolean;
   /** SLS 自报至少有一页没扫完 ⇒ 结果偏少,且不是「窗内就这么多」。 */
   incomplete: boolean;
+  /** 至少有一页的响应里没有 meta.progress ⇒ 扫完没有**读不到**,不是「扫完了」。 */
+  progressUnknown: boolean;
   requests: number;
 }
 
@@ -164,17 +203,22 @@ export function collectPages(
   const rows: Array<Record<string, string>> = [];
   let truncated = false;
   let incomplete = false;
+  let progressUnknown = false;
   let requests = 0;
   for (const line of pageSizes(want)) {
     const page = fetch(line, rows.length);
     requests++;
     rows.push(...page.rows);
-    if (page.progress && page.progress !== 'Complete') incomplete = true;
-    if (page.rows.length < line) break;          // 窗内已取尽
+    // 换 V2 的**全部理由**就是能读到这个信号。读不到时若默认当 Complete,就等于
+    // 悄悄退回 V1 盲区 —— 与本工具「unknown 必须与 searchable 分开、不拿没读到的
+    // 东西背书」是同一条原则,故单独记一个 unknown 而不是并进 incomplete。
+    if (!page.progress) progressUnknown = true;
+    else if (page.progress !== 'Complete') incomplete = true;
+    if (page.rows.length < line) break;          // 短页:窗内已取尽(但 Incomplete 时也会短返回,见下)
     if (opts.single) { truncated = true; break; } // 不能翻页,后面拿不到
     truncated = rows.length >= want;              // 取满且最后一页是满的
   }
-  return { rows, truncated, incomplete, requests };
+  return { rows, truncated, incomplete, progressUnknown, requests };
 }
 
 /**
@@ -195,34 +239,65 @@ export interface BodyVerdict {
   indexedKeys?: string[];
 }
 
+const isObj = (v: any): boolean => typeof v === 'object' && v !== null && !Array.isArray(v);
+
 export function bodySearchable(index: any, field = 'content'): BodyVerdict {
   // 'unknown' 必须与 'searchable' 分开:GetIndex 调不通(如 AK 没有 log:GetIndex
   // 权限)时若退化成「可搜」,就会拿一个从没读到过的索引去给零命中背书。
-  if (!index || typeof index !== 'object') return { state: 'unknown' };
+  //
+  // 认不出的形状(数组、包了一层 wrapper key、能解析成 JSON 的错误对象)必须**两个
+  // 方向都**收敛到 unknown:往 body-not-indexed 掉会诬告一个健康 logstore、每次
+  // --grep 喷三行 ⚠;往 searchable 掉会把没验证过的形状变成正面背书。
+  if (!isObj(index)) return { state: 'unknown' };
+  // 真实 GetIndex 响应必有 line 或 keys 之一(cn-prod 只有 line,cn-stage 两者都有)。
+  // 两个都没有 = 这不是一份索引配置,别拿它下任何结论。
+  if (!('line' in index) && !('keys' in index)) return { state: 'unknown' };
   if (!index.line) return { state: 'body-not-indexed', reason: '该 logstore 没有全文索引' };
+  if (index.keys !== undefined && !isObj(index.keys)) return { state: 'unknown' };
   const f = (index.keys ?? {})[field];
-  if (!f) return { state: 'searchable' };                    // 全文索引覆盖整个字段
-  if (f.type !== 'json') return { state: 'searchable' };     // text 型:整段进全文索引
-  if (f.index_all) return { state: 'searchable' };           // json 型但全键索引
+  if (f === undefined) return { state: 'searchable' };        // 无字段级索引:全文索引覆盖整个字段
+  if (!isObj(f) || typeof f.type !== 'string') return { state: 'unknown' };
+  if (f.type !== 'json') return { state: 'searchable' };      // text 型:整段进全文索引
+  if (f.index_all) return { state: 'searchable' };            // json 型但全键索引
   return {
     state: 'body-not-indexed',
     reason: `${field} 被建成 JSON 型索引且 index_all=false —— 只有白名单键进了索引`,
-    indexedKeys: Object.keys(f.json_keys ?? {}),
+    indexedKeys: Object.keys(isObj(f.json_keys) ? f.json_keys : {}),
   };
 }
 
 /** 一行给人看的提示;level 决定颜色,也决定它算不算「告警」。 */
 export interface Msg { level: 'info' | 'warn'; text: string }
 
-/** --grep 搜不到正文时的告警。零命中和非零命中一视同仁 —— 后者同样失真。 */
-export function indexWarning(service: string, v: BodyVerdict): Msg[] {
+/**
+ * --grep 搜不到正文时的告警。零命中和非零命中一视同仁 —— 后者同样可能失真。
+ *
+ * 这个工具的全部价值是**告警的可信度**,所以它必须先对自己诚实,两处收窄:
+ *   1. 整条 query 只按索引键过滤时(`content.level: error`)**不告警** —— 这种查询
+ *      的命中数与「正文进没进索引」无关。实测 cn-stage/agent-runtime:
+ *      `content.level: info` 回 59 条,同窗原始行本地统计也是 59,分毫不差;
+ *      而旧版会一边说「这个数不可信」、一边在下一行推荐这个写法。
+ *   2. 其余情况仍告警,但**不再断言**「非零命中一定不是真实次数」。索引键的值是
+ *      进了索引的:实测 `--grep <userId>` 回 8 条 == 同窗本地统计 8 条(userId 在
+ *      白名单里)。真实的盲区是「词出现在正文(如 message)里」,而工具无法替用户
+ *      判断自己搜的词属于哪一种 —— 就把这句如实说出来。
+ */
+export function indexWarning(service: string, v: BodyVerdict, grep?: string): Msg[] {
   if (v.state !== 'body-not-indexed') return []; // 'unknown' 不告警也不背书
+  const indexed = v.indexedKeys ?? [];
+  const scoped = keyScopedQuery(grep);
+  if (scoped.fullyScoped && scoped.keys.every((k) => indexed.includes(k))) {
+    return [{
+      level: 'info',
+      text: `# ${service} 的正文未进 SLS 索引,但本次 --grep 只按索引键(${scoped.keys.join(', ')})过滤 ⇒ 命中数不受影响。`,
+    }];
+  }
   const out: Msg[] = [
-    { level: 'warn', text: `⚠ ${service} 的日志正文**没进 SLS 索引**(${v.reason}) —— --grep 在这个 logstore 上搜不到正文。` },
-    { level: 'warn', text: '  这意味着:零命中不代表「没有报错」,非零命中也**不是**真实出现次数。要按正文过滤请去掉 --grep 拉原始行 + 本地管道过滤。见 optima-dev-skills#75。' },
+    { level: 'warn', text: `⚠ ${service} 的日志正文**没进 SLS 索引**(${v.reason}) —— --grep 搜不到正文里的词。` },
+    { level: 'warn', text: '  只有索引键的**值**进了索引:搜的词若出现在正文(如 message),零命中不代表「没有报错」、非零命中也**不是**真实出现次数;若它正好是某个索引键的值(如 userId/sessionId),命中数才是准的 —— 本工具替你判断不了是哪种。要按正文过滤请去掉 --grep 拉原始行 + 本地管道过滤。见 optima-dev-skills#75。' },
   ];
-  if (v.indexedKeys?.length) {
-    out.push({ level: 'warn', text: `  可搜的键只有:${v.indexedKeys.join(', ')} —— 按键查是好的,如 --grep 'content.level: error'。` });
+  if (indexed.length) {
+    out.push({ level: 'warn', text: `  索引键:${indexed.join(', ')} —— 按键查不受这个盲区影响,如 --grep 'content.level: error'。` });
   }
   return out;
 }
@@ -237,6 +312,8 @@ export interface ReportInput {
   cov: { count: number; from?: number; to?: number };
   truncated: boolean;
   incomplete: boolean;
+  /** 响应里读不到 meta.progress ⇒ 「扫完没有」未知,不能当成扫完了。 */
+  progressUnknown?: boolean;
   body: BodyIndex;
 }
 
@@ -250,6 +327,9 @@ export function reportLines(inp: ReportInput): Msg[] {
   // 那正是最容易被读成「窗内没有」的时候。
   if (inp.incomplete) {
     out.push({ level: 'warn', text: '⚠ SLS 自报本次查询未扫完(progress != Complete),结果偏少且**不是**「窗内就这么多」 —— 请缩窄 --since 重跑' });
+  } else if (inp.progressUnknown) {
+    // 「没读到」和「读到了 Complete」是两回事。默认当成扫完了 = 悄悄退回 V1 盲区。
+    out.push({ level: 'warn', text: '⚠ 响应里没有 meta.progress —— 「本次查询扫完没有」**读不到**(不等于扫完了)。结果可能偏少,别当「窗内就这么多」' });
   }
 
   if (inp.cov.count === 0) {
@@ -257,7 +337,7 @@ export function reportLines(inp: ReportInput): Msg[] {
     // 只在证据真的支持时才多说一句,且**只说到证据支持的那一步**:
     // 「正文进了索引」不等于「这个词不存在」——SLS 按完整 token 匹配,搜子串必然零命中
     // (实测 gateway-core:`reconciler` 0 条,而 `session-reconciler` 100+ 条)。
-    if (inp.grep && inp.body === 'searchable' && !inp.incomplete && !inp.analytic) {
+    if (inp.grep && inp.body === 'searchable' && !inp.incomplete && !inp.progressUnknown && !inp.analytic) {
       out.push({ level: 'info', text: '# 该 logstore 正文已进全文索引 ⇒ 这不是「索引搜不到」那一类零命中。' });
       out.push({ level: 'info', text: `#   但 SLS 按**完整 token** 匹配(分词表不含 - _ .),搜子串必然零命中 —— 如 "reconciler" 命不中 "session-reconciler"。` });
       out.push({ level: 'info', text: '#   要断定「真没有」,请换成完整 token,或去掉 --grep 拉原始行本地过滤复核。' });
@@ -355,10 +435,19 @@ export function slsRequestBody(
   return body;
 }
 
-/** 解 GetLogsV2 响应。字段名写错会让工具恒返 0 条,同样要能被钉住。 */
+/**
+ * 解 GetLogsV2 响应。字段名写错会让工具恒返 0 条,同样要能被钉住。
+ * `raw || '{}'` 只挡得住空串:`JSON.parse('null')` 是 null、`JSON.parse('5')` 是数字,
+ * 直接取 `.data` 会抛 TypeError。slsIndex 那边已经用 null 检查防住了同一个坑,
+ * 这边漏了属非故意的不对称。
+ */
 export function parseSlsResponse(raw: string): SlsPage {
-  const res = JSON.parse(raw || '{}');
-  return { rows: res.data ?? [], progress: res.meta?.progress ?? '' };
+  const parsed = JSON.parse(raw || '{}');
+  const res = isObj(parsed) ? parsed : {};
+  return {
+    rows: Array.isArray(res.data) ? res.data : [],
+    progress: typeof res.meta?.progress === 'string' ? res.meta.progress : '',
+  };
 }
 
 /** 发一次 GetLogsV2。用 V2 而不是 V1:只有 V2 透出 meta.progress —— SLS 对重查询
@@ -405,11 +494,11 @@ function fetchCn(args: Args): void {
   const from = to - sec;
   process.stderr.write(`${C.d}# 阿里云 SLS ${project}/${args.service} (since ${args.since}${args.grep ? `, query "${args.grep}"` : ''})${C.n}\n`);
 
-  // --grep 之前先查索引:正文没进索引的 logstore 上,命中数(**含非零命中**)与真实
-  // 出现次数无关。实测 cn-stage/agent-runtime `--grep warm` 只回 4 条,而同窗 100 行
-  // 原始日志里有 24 行含 warm(其中 22 行只出现在 message 字段)。
+  // --grep 之前先查索引:正文没进索引的 logstore 上,搜正文里的词会静默少回
+  // (已知 cn-stage/agent-runtime)。实测数字与复跑命令**只维护在**
+  // `.claude/commands/logs.md` 第 3 节「读数纪律」——同一组数曾在三处手抄、已经漂了。
   const verdict = args.grep ? bodySearchable(slsIndex(project, args.service)) : { state: 'unknown' as const };
-  emit(indexWarning(args.service, verdict));
+  emit(indexWarning(args.service, verdict, args.grep));
 
   const analytic = isAnalyticQuery(args.grep);
   if (analytic) {
@@ -431,6 +520,11 @@ function fetchCn(args: Args): void {
     if (/LogStoreNotExist|ProjectNotExist/.test(msg)) {
       throw new Error(`SLS logstore 不存在: ${project}/${args.service}\n  确认服务名对,或该服务未接 SLS。列全部:\n  aliyun sls ListLogStores --project ${project} --region ${ALIYUN_REGION} --profile ${ALIYUN_PROFILE}`);
     }
+    // 把 `--grep 'a|b'` 撞上的这条 SLS 报错翻译成人话。写 | 的人几乎都是当「或」用的,
+    // 而 SLS 把它当「检索|分析(SQL)」的分隔符 —— 说清楚,别让人对着 parse fail 猜。
+    if (args.grep?.includes('|') && /parse fail|SELECT/i.test(msg)) {
+      throw new Error(`${msg}\n  --grep 里的 | 是 SLS「检索|分析(SQL)」的分隔符,不是「或」。\n  要「或」:--grep '${args.grep.split('|').map((s) => s.trim()).filter(Boolean).join(' or ')}'\n  要整串当一个短语:--grep '"${args.grep}"'`);
+    }
     throw new Error(msg);
   }
 
@@ -439,7 +533,8 @@ function fetchCn(args: Args): void {
   emit(reportLines({
     service: args.service, lines: args.lines, grep: args.grep, analytic,
     from, to, cov: coverage(rows),
-    truncated: got.truncated, incomplete: got.incomplete, body: verdict.state,
+    truncated: got.truncated, incomplete: got.incomplete,
+    progressUnknown: got.progressUnknown, body: verdict.state,
   }));
 
   if (args.json) {

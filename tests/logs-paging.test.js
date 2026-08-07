@@ -1,11 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
 
 // Test the compiled dist artifacts (package bin points at dist/), not the
 // .ts source — run `npm run build` first.
 const {
-  SLS_PAGE_MAX, pageSizes, isAnalyticQuery, coverage, fmtCn,
+  SLS_PAGE_MAX, pageSizes, isAnalyticQuery, keyScopedQuery, coverage, fmtCn,
   bodySearchable, collectPages, indexWarning, reportLines, slsRequestBody, parseSlsResponse,
 } = require(
   path.resolve(__dirname, '..', 'dist', 'bin', 'helpers', 'logs.js'),
@@ -48,6 +49,52 @@ test('isAnalyticQuery 识别含分析语句(|)的 query', () => {
   assert.equal(isAnalyticQuery(''), false);
 });
 
+test('🔴 isAnalyticQuery 不把 --grep "a|b" 误判成 SQL(误判 = 单页封顶 + 编造的解释)', () => {
+  // 给一个叫 --grep 的参数传 timeout|error 是最自然的写法。误判成分析语句会连着
+  // 三件事一起错:只发一次请求(封顶 100)、打「请在 SQL 里加 LIMIT」这条**编造的**
+  // 诊断、并抑制「实际覆盖窗」——正好是本 PR 立项要杀的形状。
+  assert.equal(isAnalyticQuery('timeout|error'), false);
+  assert.equal(isAnalyticQuery('a | b'), false);
+  // 实测 SLS:query="timeout|error"(带引号)返回 meta.hasSQL=false,是合法的短语检索。
+  assert.equal(isAnalyticQuery('"timeout|error"'), false);
+  assert.equal(isAnalyticQuery('content.message: "a|b"'), false);
+  // 引号内的 select 是值、不是 SQL 段。
+  assert.equal(isAnalyticQuery('"a | select b"'), false);
+  // 真的 SQL 仍要认出来,大小写与空白都不能挑食。
+  assert.equal(isAnalyticQuery('* |select count(*)'), true);
+  assert.equal(isAnalyticQuery('"x|y" | select count(*)'), true);
+});
+
+// ── keyScopedQuery：整条 query 只按索引键过滤时,「正文没进索引」与它无关 ──────
+test('keyScopedQuery 认出纯按键过滤的 query', () => {
+  assert.deepEqual(keyScopedQuery('content.level: error'), { keys: ['level'], fullyScoped: true });
+  assert.deepEqual(keyScopedQuery('content.level: error and content.service: api'),
+    { keys: ['level', 'service'], fullyScoped: true });
+  assert.deepEqual(keyScopedQuery('content.message: "a b"'), { keys: ['message'], fullyScoped: true });
+});
+
+test('keyScopedQuery 对混了全文检索项的 query 不算「纯按键」(安全方向)', () => {
+  // 混进来的裸词照样吃「正文没进索引」的亏,不能因为带了个键子句就整条放行。
+  assert.equal(keyScopedQuery('content.level: error and warm').fullyScoped, false);
+  assert.equal(keyScopedQuery('warm').fullyScoped, false);
+  assert.equal(keyScopedQuery('').fullyScoped, false);
+  assert.equal(keyScopedQuery(undefined).fullyScoped, false);
+});
+
+test('keyScopedQuery 一个键都没限定时不算「纯按键」(哪怕剔完算子后空空如也)', () => {
+  // `*` / 裸算子剔完 rest 也是空 —— 但一个键都没限定,谈不上「只按键过滤」。
+  // 少了 keys.length>0 这一半,`--grep '*'` 会让 keys=[] 而 every() 对空数组恒真,
+  // 于是白名单校验被整条绕过、告警被静默吞掉。
+  for (const q of ['*', '( )', 'and or', '  ']) {
+    assert.equal(keyScopedQuery(q).fullyScoped, false, `q=${JSON.stringify(q)}`);
+  }
+  assert.equal(
+    indexWarning('agent-runtime', bodySearchable(IDX_JSON_WHITELIST), '*').filter((m) => m.level === 'warn').length,
+    3,
+    '没限定任何键就不该跳过告警',
+  );
+});
+
 // ── coverage：从 __time__ 反算真实覆盖窗(#57 的「24h 其实只有 1.2h」) ────────
 test('coverage 从 __time__ 反算真实覆盖窗', () => {
   const rows = [
@@ -65,6 +112,16 @@ test('coverage 对空结果不编造时间窗', () => {
 test('coverage 忽略缺失/非法 __time__,但仍如实计数', () => {
   const rows = [{ content: 'no time' }, { __time__: 'abc' }, { __time__: '1786031058' }];
   assert.deepEqual(coverage(rows), { count: 3, from: 1786031058, to: 1786031058 });
+});
+
+test('🔴 coverage 不把空/空白 __time__ 算成 epoch 0(会把覆盖窗打成 01-01 08:00)', () => {
+  // Number('') 和 Number('  ') 都是 0,直接喂 Number 会编出一个 1970 年的起点。
+  // 而文档正让人「以实际覆盖窗为准、别以 --since 为准」——这个数是被要求信任的。
+  for (const bad of ['', '   ', null, undefined, '0', '-5']) {
+    const cov = coverage([{ __time__: bad }, { __time__: '1786031058' }]);
+    assert.deepEqual(cov, { count: 2, from: 1786031058, to: 1786031058 }, `__time__=${JSON.stringify(bad)}`);
+    assert.notEqual(fmtCn(cov.from), '01-01 08:00:00');
+  }
 });
 
 test('coverage 计的是记录数,不是 JSON 排版行数', () => {
@@ -139,6 +196,26 @@ test("bodySearchable: 拿不到索引 → 'unknown',绝不退化成 'searchable'
   assert.deepEqual(bodySearchable(undefined), { state: 'unknown' });
 });
 
+test("🔴 bodySearchable: 认不出的形状一律 'unknown' —— 两个方向都不许下结论", () => {
+  // 往 body-not-indexed 掉 = 诬告一个健康 logstore,每次 --grep 白喷三行 ⚠;
+  // 往 searchable 掉 = 把没验证过的形状变成正面背书,解锁「正文已进全文索引」那句。
+  const weird = [[], 'str', 42, true, {}, { data: {} }, { line: {}, keys: [] }];
+  for (const w of weird) {
+    assert.equal(bodySearchable(w).state, 'unknown', `形状 ${JSON.stringify(w)} 不该被下结论`);
+  }
+  // 字段级索引项本身残缺(没有 type)同样是没验证过的形状。
+  assert.equal(bodySearchable({ line: {}, keys: { content: {} } }).state, 'unknown');
+  assert.equal(bodySearchable({ line: {}, keys: { content: 'text' } }).state, 'unknown');
+});
+
+test('bodySearchable: 真实响应形状仍判对(防上一条把好库一起收成 unknown)', () => {
+  // 2026-08-07 实取:cn-prod/agent-runtime 只有 line、根本没有 keys 段。
+  const CN_PROD_REAL = { index_mode: 'v2', lastModifyTime: 1784703439, line: { token: [' '] }, log_reduce: false, storage: 'pg', ttl: 30 };
+  assert.deepEqual(bodySearchable(CN_PROD_REAL), { state: 'searchable' });
+  assert.equal(bodySearchable(IDX_TEXT).state, 'searchable');
+  assert.equal(bodySearchable(IDX_JSON_WHITELIST).state, 'body-not-indexed');
+});
+
 // ── collectPages：翻页/截断判定 —— 上一版的假「已取满」bug 就长在这段 ─────────
 /** 造一个假 SLS:窗内共 total 条,可选 incompleteOn 让第 k 次请求自报未扫完。 */
 function fakeSls(total, opts = {}) {
@@ -211,7 +288,24 @@ test('collectPages 透传 SLS 自报的「未扫完」,哪怕它出现在中间�
 });
 
 test('collectPages 全部 Complete 时不报未扫完', () => {
-  assert.equal(collectPages(fakeSls(1000).fetch, 300).incomplete, false);
+  const got = collectPages(fakeSls(1000).fetch, 300);
+  assert.equal(got.incomplete, false);
+  assert.equal(got.progressUnknown, false);
+});
+
+test('🔴 collectPages 把「读不到 progress」判 unknown,不静默当成 Complete', () => {
+  // 换 V2 的**全部理由**就是能读到这个信号。读不到时默认当扫完了,等于悄悄退回
+  // V1 盲区 —— 与本工具「unknown 必须与 searchable 分开」是同一条原则。
+  const noProgress = () => ({ rows: [{ __time__: '1786030000' }], progress: '' });
+  const got = collectPages(noProgress, 1);
+  assert.equal(got.progressUnknown, true);
+  assert.equal(got.incomplete, false, 'unknown 不是 incomplete,两个信号不能混');
+});
+
+test('collectPages: Incomplete 与 progress 缺失是两条独立信号', () => {
+  const got = collectPages(fakeSls(1000, { incompleteOn: 1 }).fetch, 100);
+  assert.equal(got.incomplete, true);
+  assert.equal(got.progressUnknown, false);
 });
 
 // ── 接线层：决定「该响的告警响不响」的那一层,本工具的全部价值所在 ─────────────
@@ -224,7 +318,7 @@ const REPORT = {
 };
 
 test('indexWarning: 正文不可搜时告警,并列出可搜的键', () => {
-  const m = indexWarning('agent-runtime', bodySearchable(IDX_JSON_WHITELIST));
+  const m = indexWarning('agent-runtime', bodySearchable(IDX_JSON_WHITELIST), 'warm');
   assert.equal(warns(m).length, 3);
   assert.match(all(m), /没进 SLS 索引/);
   assert.match(all(m), /非零命中也\*\*不是\*\*真实出现次数/);
@@ -232,8 +326,42 @@ test('indexWarning: 正文不可搜时告警,并列出可搜的键', () => {
 });
 
 test('indexWarning: 可搜 / 未知都不告警(不能因为查不到索引就报警)', () => {
-  assert.deepEqual(indexWarning('gateway-core', { state: 'searchable' }), []);
-  assert.deepEqual(indexWarning('gateway-core', { state: 'unknown' }), []);
+  assert.deepEqual(indexWarning('gateway-core', { state: 'searchable' }, 'x'), []);
+  assert.deepEqual(indexWarning('gateway-core', { state: 'unknown' }, 'x'), []);
+});
+
+test('🔴 indexWarning: 按索引键查时不告警 —— 不许先说这个查询不可信、下一行又推荐它', () => {
+  // 实测 cn-stage/agent-runtime:`content.level: info` 回 59 条,同窗原始行本地统计
+  // 也是 59,分毫不差。这个工具的全部价值是告警的可信度,在自己推荐的用法上喊狼来了,
+  // 用户很快会学会整体无视它。
+  const v = bodySearchable(IDX_JSON_WHITELIST);
+  const m = indexWarning('agent-runtime', v, 'content.level: error');
+  assert.deepEqual(warns(m), [], '按白名单键查是准的,不该有任何 ⚠');
+  assert.match(all(m), /只按索引键/);
+  // 工具推荐的那句写法,必须真的不触发它自己的告警(拿告警文案原样回灌)。
+  const recommended = all(indexWarning('agent-runtime', v, 'warm')).match(/--grep '([^']+)'/);
+  assert.ok(recommended, '告警里应给出一个可照抄的按键查范例');
+  assert.deepEqual(warns(indexWarning('agent-runtime', v, recommended[1])), [],
+    `工具推荐的写法 ${recommended[1]} 触发了它自己的告警`);
+});
+
+test('indexWarning: 按键查但键不在白名单里 → 照样告警', () => {
+  const m = indexWarning('agent-runtime', bodySearchable(IDX_JSON_WHITELIST), 'content.message: warm');
+  assert.equal(warns(m).length, 3, 'message 不在白名单里,这条查询确实搜不到');
+});
+
+test('indexWarning: 键子句混了裸词 → 照样告警(裸词仍吃正文没进索引的亏)', () => {
+  const m = indexWarning('agent-runtime', bodySearchable(IDX_JSON_WHITELIST), 'content.level: error and warm');
+  assert.equal(warns(m).length, 3);
+});
+
+test('🔴 indexWarning: 不许断言「非零命中一定不是真实次数」—— 索引键的值是准的', () => {
+  // 实测 cn-stage/agent-runtime:`--grep <userId>` 回 8 条 == 同窗本地统计 8 条
+  // (userId 在 26 键白名单里)。真实盲区是「词出现在正文(如 message)里」,
+  // 而工具替用户判断不了他搜的词属于哪一种 —— 就把这句如实说出来。
+  const m = indexWarning('agent-runtime', bodySearchable(IDX_JSON_WHITELIST), 'some-user-id');
+  assert.match(all(m), /若它正好是某个索引键的值/);
+  assert.match(all(m), /替你判断不了/);
 });
 
 test('reportLines: 取满 -n 必须打截断 ⚠', () => {
@@ -304,6 +432,17 @@ test('slsRequestBody 有 --grep 就必须把它放进 query(漏了会静默返�
   assert.equal(slsRequestBody(100, 200, 50, 0, 'error').query, 'error');
 });
 
+// ── fetchCn 的接线：这两处漏传都是**静默**回归 —— 纯函数全绿而 CLI 退回修复前 ──
+test('🔴 接线层: --grep 必须传进 indexWarning、progressUnknown 必须传进 reportLines', () => {
+  // fetchCn 要发真请求,没法在单测里跑;但漏传的后果是确定的:
+  //   · 漏 args.grep       ⇒ indexWarning 判不出「纯按键查」,又开始对自己推荐的
+  //                          写法喷 ⚠(实测变异存活:125 个测试全绿,行为却退回去了);
+  //   · 漏 progressUnknown ⇒ 「响应里没有 meta.progress」那条 ⚠ 永远打不出来。
+  const src = fs.readFileSync(path.resolve(__dirname, '..', 'bin', 'helpers', 'logs.ts'), 'utf8');
+  assert.match(src, /indexWarning\(\s*args\.service\s*,\s*verdict\s*,\s*args\.grep\s*\)/);
+  assert.match(src, /progressUnknown:\s*got\.progressUnknown/);
+});
+
 test('parseSlsResponse 认 data / meta.progress 这两个字面名', () => {
   assert.deepEqual(
     parseSlsResponse('{"data":[{"__time__":"1"}],"meta":{"progress":"Complete"}}'),
@@ -315,4 +454,26 @@ test('parseSlsResponse 认 data / meta.progress 这两个字面名', () => {
 test('parseSlsResponse 对空/畸形响应退化成空结果而不是抛错', () => {
   assert.deepEqual(parseSlsResponse(''), { rows: [], progress: '' });
   assert.deepEqual(parseSlsResponse('{}'), { rows: [], progress: '' });
+});
+
+test('🔴 parseSlsResponse 不因非对象 JSON 抛 TypeError(raw || "{}" 只挡得住空串)', () => {
+  // slsIndex 那边用 `|| 'null'` + null 检查防住了同一个坑,这边漏了,属非故意的不对称。
+  for (const raw of ['null', '5', '"s"', 'true', '[]']) {
+    assert.deepEqual(parseSlsResponse(raw), { rows: [], progress: '' }, `raw=${raw}`);
+  }
+  // data 不是数组时也不能当行用(rows.push(...非数组) 会炸或塞进垃圾)。
+  assert.deepEqual(parseSlsResponse('{"data":{"a":1}}'), { rows: [], progress: '' });
+  assert.deepEqual(parseSlsResponse('{"data":[],"meta":{"progress":123}}'), { rows: [], progress: '' });
+});
+
+test('🔴 reportLines: progress 读不到时要说出来,且不给零命中背书', () => {
+  const m = reportLines({ ...REPORT, progressUnknown: true });
+  assert.match(warns(m).join('\n'), /没有 meta\.progress/);
+  const zero = reportLines({ ...REPORT, grep: 'x', body: 'searchable', cov: { count: 0 }, progressUnknown: true });
+  assert.doesNotMatch(all(zero), /已进全文索引/, 'progress 都没读到,凭什么说这个零命中说明了什么');
+});
+
+test('reportLines: Incomplete 已经说了就不再重复说 progress 读不到', () => {
+  const m = reportLines({ ...REPORT, incomplete: true, progressUnknown: true });
+  assert.equal(warns(m).filter((t) => /未扫完|没有 meta\.progress/.test(t)).length, 1);
 });
