@@ -218,7 +218,7 @@ aws logs get-log-events --log-group-name /ecs/commerce-backend-prod --log-stream
 **访问方式**: ✅ **用 `optima-logs` CLI 直连阿里云 SLS**，不再经 buildbox。
 
 > ✅ 现状更新（2026-06-16）：cn-prod / cn-stage 全部服务**已接 SLS**（含 ECI 的 `agent-runtime`）。
-> SLS `GetLogs` 是公网控制面 API，本机 `aliyun-optima` profile 直连即可，支持**历史检索 + 时间窗 + 关键词**——
+> SLS `GetLogsV2` 是公网控制面 API，本机 `aliyun-optima` profile 直连即可，支持**历史检索 + 时间窗 + 关键词**——
 > 旧的「SSH buildbox → SAE `DescribeInstanceLog` 取当前缓冲」流程已弃用（缓冲式、重启即丢、不能检索）。
 
 **推荐用法（首选）**:
@@ -238,7 +238,7 @@ optima-logs gateway-core --since 30m --json | jq .   # 机器可读
 
 前三条都属于「**看起来拿到了全部，其实只拿到一角**」——不是查错了，是**看不出被截断**；第 4 条是同一病根的另一面：查询被悄悄换了语义：
 
-1. **`-n` 取满 ≠ 窗内只有这么多。** SLS `GetLogs` 单次请求服务端硬顶 **100 条**（`--line 3000` 也只回 100）。`optima-logs` 已自动 `--offset` 翻页到 `-n` 要的条数，但**取满 `-n` 时会打 ⚠**：此时真实总数未知。
+1. **`-n` 取满 ≠ 窗内只有这么多。** SLS 单次请求服务端硬顶 **100 条**（`GetLogs` / `GetLogsV2` 都是）（`--line 3000` 也只回 100）。`optima-logs` 已自动 `--offset` 翻页到 `-n` 要的条数，但**取满 `-n` 时会打 ⚠**：此时真实总数未知。
    **两个都返回上限的查询相除，比值是纯噪声**——实测拿 30d 的 `timed out` / `dispatching` 相除得「100/100」，看着像 100% 失败率，缩窄到两边都 <100 后真数是 7/60 与 16/70。要计数就缩窄 `--since` 直到不再报 ⚠。
 2. **请求 `--since 24h` ≠ 覆盖了 24h。** 取满 `-n` 时窗口被截在最新那一段。每次运行 stderr 都会打**实际覆盖窗**（由 `__time__` 反算，北京时间），以它为准，别以 `--since` 为准。
 3. **`--grep` 走 SLS 索引，不是本地正则**——正文没进索引的 logstore 上，搜正文里的词会**静默少回**：零命中不代表「没有报错」，非零命中也不是真实出现次数。

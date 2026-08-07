@@ -65,12 +65,46 @@ test('🔴 isAnalyticQuery 不把 --grep "a|b" 误判成 SQL(误判 = 单页封�
   assert.equal(isAnalyticQuery('"x|y" | select count(*)'), true);
 });
 
+test('isAnalyticQuery 认 WITH(CTE)起头的分析语句 —— 漏判会编出一个假的「实际覆盖窗」', () => {
+  // 实测 SLS:`* | with t as (select count(*) as c from log) select * from t`
+  // 返回 meta.hasSQL=true。判 false 就会走翻页路径,并拿聚合行的 __time__
+  // (恒等于 from)反算出一个零宽覆盖窗打给用户看 —— 编造,正是本工具要杀的。
+  assert.equal(isAnalyticQuery('* | with t as (select count(*) as c from log) select * from t'), true);
+  assert.equal(isAnalyticQuery('* |WITH t AS (select 1) select * from t'), true);
+  // 「with」出现在检索段里不算(它在 | 左边)。
+  assert.equal(isAnalyticQuery('with'), false);
+  assert.equal(isAnalyticQuery('start with error'), false);
+});
+
 // ── keyScopedQuery：整条 query 只按索引键过滤时,「正文没进索引」与它无关 ──────
 test('keyScopedQuery 认出纯按键过滤的 query', () => {
   assert.deepEqual(keyScopedQuery('content.level: error'), { keys: ['level'], fullyScoped: true });
   assert.deepEqual(keyScopedQuery('content.level: error and content.service: api'),
     { keys: ['level', 'service'], fullyScoped: true });
   assert.deepEqual(keyScopedQuery('content.message: "a b"'), { keys: ['message'], fullyScoped: true });
+});
+
+test('🔴 keyScopedQuery: 独立的引号短语是全文检索项,不是某个键的值', () => {
+  // 引号只能在**值的位置**被吃掉。先全局 stripQuoted 再匹配键子句的写法,会把
+  // `and "warm"` 这个独立短语一并抹掉 ⇒ rest 变空 ⇒ 误判「纯按键查」⇒ 吞掉告警、
+  // 还反过来发正面背书。实测(cn-stage/agent-runtime,钉死窗 1786066795..1786073995):
+  // `content.level: info and "warm"` SLS 实回 2 条,而窗内真实是 12 条。
+  for (const q of [
+    'content.level: info and "warm"',
+    '"warm" and content.level: info',
+    'content.userId: U123 "timeout"',
+  ]) {
+    assert.equal(keyScopedQuery(q).fullyScoped, false, `q=${q} 混了引号短语,不该算纯按键`);
+  }
+  // 反向:引号真在值的位置时仍要被吃掉,别把好的也判死。
+  assert.deepEqual(keyScopedQuery('content.message: "a b"'), { keys: ['message'], fullyScoped: true });
+  assert.deepEqual(keyScopedQuery('content.a: "x" and content.b: "y"'), { keys: ['a', 'b'], fullyScoped: true });
+  // 端到端:这条 query 必须照常打三行 ⚠。
+  assert.equal(
+    indexWarning('agent-runtime', bodySearchable(IDX_JSON_WHITELIST), 'content.level: info and "warm"')
+      .filter((m) => m.level === 'warn').length,
+    3,
+  );
 });
 
 test('keyScopedQuery 对混了全文检索项的 query 不算「纯按键」(安全方向)', () => {

@@ -7,12 +7,12 @@
  *
  * cn 的关键改进:旧流程要 SSH 进 buildbox 再调 SAE `DescribeInstanceLog`,
  * 只能看实例**当前缓冲**(重启即丢、不能检索)。现在 cn-prod/cn-stage 全部
- * 服务已接 SLS,GetLogs 是公网控制面 API,本机 `aliyun-optima` profile 直连即可:
+ * 服务已接 SLS,GetLogsV2 是公网控制面 API,本机 `aliyun-optima` profile 直连即可:
  *   - 免 buildbox 跳板
  *   - 支持时间窗(--since)+ 关键词检索(--grep)+ 历史(重启不丢)
  *
  * cn 侧两个已知坑(#75 / #57,都曾把排障带偏),本工具的应对:
- *   1. GetLogs 单次最多回 100 条(服务端硬上限)→ 用 --offset 自动翻页到 -n 要的条数;
+ *   1. 单次最多回 100 条(服务端硬上限,V1/V2 皆然)→ 用 --offset 自动翻页到 -n 要的条数;
  *      仍取满、或 SLS 自报未扫完(meta.progress)时,打 ⚠ 明说「总数未知、别拿来计数」。
  *   2. --grep 走 SLS 索引,logstore 正文未入索引时命中数与真实出现次数无关
  *      (零命中 ≠ 没有报错,非零命中也 ≠ 真实次数)→ 用 GetIndex 直查索引配置,
@@ -56,7 +56,7 @@ interface Args {
 }
 
 /**
- * SLS GetLogs 单次请求的服务端硬上限:`--line` 传 300/3000 也只回 100 条
+ * SLS 单次请求的服务端硬上限(GetLogs / GetLogsV2 皆然):`--line` 传 300/3000 也只回 100 条
  * (实测 aliyun CLI 直连同样如此,不是本工具的限制)。要拿更多必须 --offset 翻页。
  * 见 optima-dev-skills#75。
  */
@@ -127,12 +127,14 @@ function stripQuoted(q: string): string {
  * 后果是**单页封顶 + 一条编造的「请在 SQL 里加 LIMIT」+ 覆盖窗被抑制** ——
  * 正是本工具要消灭的形状。故两道收窄(都由 SLS 实测行为定):
  *   · 引号内的 `|` 不算分隔符 —— `"timeout|error"` 实测返回 meta.hasSQL=false,是普通检索;
- *   · SLS 规定分析段是标准 SQL,必须以 SELECT 起头 —— 不带 SELECT 的 `a|b`
- *     SLS 直接报 `parse fail, please check your query,if it has (SELECT)`,
- *     让它照常翻页、把 SLS 自己的报错原样透出去,比我们编一个解释准。
+ *   · SLS 规定分析段是标准 SQL —— 不带 SQL 起头词的 `a|b` SLS 直接报
+ *     `parse fail, please check your query,if it has (SELECT)`,让它照常翻页、
+ *     把 SLS 自己的报错原样透出去,比我们编一个解释准。
+ *     起头词 select **和** with 都要认:实测 `* | with t as (select …) select * from t`
+ *     返回 meta.hasSQL=true,漏判它就会照聚合行反算出一个**假的**「实际覆盖窗」。
  */
 export function isAnalyticQuery(q?: string): boolean {
-  return !!q && /\|\s*select\b/i.test(stripQuoted(q));
+  return !!q && /\|\s*(select|with)\b/i.test(stripQuoted(q));
 }
 
 /**
@@ -143,9 +145,15 @@ export function isAnalyticQuery(q?: string): boolean {
 export function keyScopedQuery(q?: string, field = 'content'): { keys: string[]; fullyScoped: boolean } {
   if (!q) return { keys: [], fullyScoped: false };
   const keys: string[] = [];
-  // 先剥引号:`content.msg: "a b"` 的值里可能有空格/冒号,不剥会被当成额外的正文词。
-  let rest = stripQuoted(q).replace(
-    new RegExp(`\\b${field}\\.([A-Za-z0-9_.-]+)\\s*:\\s*(\\S*)`, 'g'),
+  // 🔴 引号只能作为**键的值**被吃掉,绝不能全局剥。先 stripQuoted 再匹配的写法会把
+  // 独立的引号短语检索项(`content.level: info and "warm"`里的 "warm")一并抹掉,
+  // 剩下的 rest 变空 ⇒ 误判成「纯按键查」⇒ 吞掉告警、还反过来发正面背书。
+  // 实测(cn-stage/agent-runtime 钉死窗 1786066795..1786073995):这条 query
+  // SLS 实回 2 条,而窗内 level=info 且含 warm 的真实是 12 条,工具却说「不受影响」。
+  // 故把值并进键子句的正则:引号在值的位置才被消费,在别处原样留在 rest 里。
+  const VAL = '("(?:[^"\\\\]|\\\\.)*"|\\S*)';
+  let rest = q.replace(
+    new RegExp(`\\b${field}\\.([A-Za-z0-9_.-]+)\\s*:\\s*${VAL}`, 'g'),
     (_m, k: string) => { keys.push(k); return ' '; },
   );
   // 布尔算子/括号/通配符不是「正文词」,剔掉后还剩东西就说明混了全文检索项。
@@ -522,8 +530,10 @@ function fetchCn(args: Args): void {
     }
     // 把 `--grep 'a|b'` 撞上的这条 SLS 报错翻译成人话。写 | 的人几乎都是当「或」用的,
     // 而 SLS 把它当「检索|分析(SQL)」的分隔符 —— 说清楚,别让人对着 parse fail 猜。
+    // 不再把 msg 拼进来:execFileSync 默认已把 aliyun 的报错块透给父进程 stderr,
+    // 再拼一遍就是同一段打两次,把下面这条真正有用的提示埋在第二份底下。
     if (args.grep?.includes('|') && /parse fail|SELECT/i.test(msg)) {
-      throw new Error(`${msg}\n  --grep 里的 | 是 SLS「检索|分析(SQL)」的分隔符,不是「或」。\n  要「或」:--grep '${args.grep.split('|').map((s) => s.trim()).filter(Boolean).join(' or ')}'\n  要整串当一个短语:--grep '"${args.grep}"'`);
+      throw new Error(`--grep 里的 | 是 SLS「检索|分析(SQL)」的分隔符,不是「或」(SLS 原始报错见上)。\n  要「或」:--grep '${args.grep.split('|').map((s) => s.trim()).filter(Boolean).join(' or ')}'\n  要整串当一个短语:--grep '"${args.grep}"'`);
     }
     throw new Error(msg);
   }
