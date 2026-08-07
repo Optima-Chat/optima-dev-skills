@@ -455,8 +455,18 @@ function sq(s: string): string {
  * 把它写进签名,这个坑就不可能再犯。
  */
 export function pipeQueryHint(grep: string | undefined, childStderr: string): string | null {
-  if (!grep?.includes('|')) return null;
+  // `|` 必须出现在引号**外**才谈得上「被当成分隔符」。引号里的 `|` 是短语内容,
+  // SLS 根本不当它是语法 —— 这种 query 出错必然是**别的**原因(参数非法、别处语法
+  // 手滑),此时指着 | 骂就是编造诊断。实测两例:
+  //   --since 99999d --grep '"a|b"'                    → from 变负数,SLS 报
+  //     `The parameter from must be a positive integer`,而 "a|b" 本身合法(直连 200);
+  //   --grep '"timeout|error" and content.level:'      → SLS 明确指出错在 `and` 附近。
+  // 更坏的是给出的处方会**改变检索语义**('"a or b"' 查的是短语 a or b)。
+  if (!grep || !stripQuoted(grep).includes('|')) return null;
   // 真的分析语句(`| select …` / `| with …`)出错是 SQL 本身的问题,不是「把 | 当或用」。
+  // 代价:`a|with` 这类「with 恰好是 | 后最后一个 token」的输入也会被挡掉,拿不到提示
+  // (SLS 对它回 parse fail)。留着不修 —— 换来的是不对 `* | select conut(*)` 这类
+  // 真实的 SQL 手滑乱插嘴,后者常见得多。
   if (isAnalyticQuery(grep)) return null;
   // 实测:带裸 `|` 的非分析 query,SLS 一律以 Code=ParameterInvalid 拒绝,但 Message
   // 有四种形状 —— `parse fail…(SELECT)` / `syntax error…` / `invalid pipe line operator`

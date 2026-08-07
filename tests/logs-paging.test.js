@@ -513,6 +513,28 @@ test('🔴 pipeQueryHint 覆盖 SLS 全部四种 | 误用报错(只认 parse fai
   assert.equal(pipeQueryHint('a|b', 'Code: LogStoreNotExist'), null);
 });
 
+test('🔴 pipeQueryHint: 引号里的 | 不是分隔符 —— 别拿同一个 Code 去指认无关的错', () => {
+  // 判据锚在 Code 上就必须自己挡住「Code 相同、成因不同」的那批,否则就是编造诊断。
+  // 上一版只钉了 Code 不同的 LogStoreNotExist,把这个洞留在了盲区里。实测两例:
+  //   optima-logs … --since 99999d --grep '"a|b"'
+  //     → from 算成负数,SLS 报 `The parameter from must be a positive integer`,
+  //       而 "a|b" 本身完全合法(直连 SLS 返回 200、hasSQL=false);
+  //   optima-logs … --grep '"timeout|error" and content.level:'
+  //     → SLS 明确指出错在 `and` 附近。
+  // 两例旧版都会打出「你把 | 当或用了」,处方还把语义改了('"a or b"' 是另一个短语)。
+  const unrelated = [
+    'Code: ParameterInvalid Message: The parameter from must be a positive integer',
+    'Code: ParameterInvalid Message: parse search query error,...error near < and >',
+  ];
+  for (const err of unrelated) {
+    assert.equal(pipeQueryHint('"a|b"', err), null, `引号内的 | 不该被指认: ${err.slice(0, 50)}`);
+    assert.equal(pipeQueryHint('"timeout|error" and content.level:', err), null);
+  }
+  // 引号外确有裸 | 时照常提示(别把收窄做成一刀切)。
+  assert.ok(pipeQueryHint('timeout|error', unrelated[0]));
+  assert.ok(pipeQueryHint('"a|b" or c|d', unrelated[0]), '引号外还有一个裸 | ,仍算');
+});
+
 test('pipeQueryHint: 真的 SLS 拒绝才给提示,且把两种正确写法都算出来', () => {
   const real = 'ERROR: SDKError:\n  Code: ParameterInvalid\n  Message: parse fail, please check your query,if it has (SELECT)';
   const hint = pipeQueryHint('timeout|error', real);
