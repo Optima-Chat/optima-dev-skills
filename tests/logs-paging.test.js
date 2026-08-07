@@ -469,22 +469,51 @@ test('slsRequestBody 有 --grep 就必须把它放进 query(漏了会静默返�
 
 // ── `--grep 'a|b'` 的人话提示：它自称「原始报错见上」,那句必须由构造保证为真 ──
 test('🔴 pipeQueryHint: 子进程没打过 stderr 时不许顶替 —— 否则吞掉唯一的诊断还谎称「见上」', () => {
-  // e.stderr 为空(非零退出无输出 / 被信号杀死)时,调用方的兜底串是 e.message =
-  // `Command failed: <完整 argv>`,而 argv 里**回显着用户的 query**。若拿这个合并串
-  // 做判据,任何分析型查询(必然含 `| select`)都会让 /SELECT/ 命中被回显的 query
-  // 自己 ⇒ 提示顶替掉唯一的诊断,而它说的「见上」上面根本什么都没有。
-  // 两道保险各钉一条:
+  // 提示的措辞是「SLS 原始报错见上」,而那句只有在子进程确实打过东西时才成立
+  // (execFileSync 默认把子进程 stderr 透传给父进程)。调用方的兜底串是
+  // e.message = `Command failed: <完整 argv>`,argv 里**回显着用户的 query** ——
+  // 拿它做判据就会吞掉唯一的诊断,再附一句假的「见上」。两道保险各钉一条:
   // ① 调用点只传 raw ⇒ 子进程没打过东西时 childStderr 是空串,不该顶替;
-  assert.equal(pipeQueryHint('* | select count(*)', ''), null, '上面什么都没有,不许说「见上」');
-  assert.equal(pipeQueryHint('timeout|error', ''), null);
-  // ② 判据只认 SLS 真实报错的 `parse fail`,不认裸 SELECT ⇒ 即便哪天被喂了合并串,
-  //    被回显的 query 自己也不会让它误触发。
-  const echoed = 'Command failed: aliyun sls GetLogsV2 --body {"query":"* | select count(*)"}';
-  assert.equal(pipeQueryHint('* | select count(*)', echoed), null, '被回显的 query 不算子进程报错');
+  assert.equal(pipeQueryHint('timeout|error', ''), null, '上面什么都没有,不许说「见上」');
   assert.equal(pipeQueryHint('timeout|error', 'spawnSync aliyun ENOBUFS'), null);
+  // ② 判据锚在 SLS 的 Code 上,而 `Command failed: <argv>` 里只有被回显的 query、
+  //    没有 SLS 的 Code ⇒ 即便哪天调用点又退回去传合并串,也不会误顶替。
+  const echoed = 'Command failed: aliyun sls GetLogsV2 --project p --logstore agent-runtime'
+    + ' --body {"from":1,"to":2,"line":5,"offset":0,"reverse":true,"query":"timeout|error"}';
+  assert.equal(pipeQueryHint('timeout|error', echoed), null, '被回显的 argv 不是子进程报错');
 });
 
-test('pipeQueryHint: 真的 parse fail 才给提示,且把两种正确写法都算出来', () => {
+test('🔴 pipeQueryHint 给的处方必须能被 bash 原样照抄 —— 错的处方比不给更坏', () => {
+  // 裸拼单引号会出**无声**的错:`--grep 'a'b'c or timeout'` 被 bash 静默拼成
+  // `abc or timeout`,不报错、照跑、查的却是另一条 query。
+  const err = 'Code: ParameterInvalid Message: parse fail';
+  const line = (g) => pipeQueryHint(g, err).split('\n')[1];
+  assert.match(line("a'b'c|timeout"), /--grep 'a'\\''b'\\''c or timeout'/);
+  assert.match(line("'a'|error"), /--grep ''\\''a'\\'' or error'/);
+  // 不含单引号时不该多加转义,保持可读。
+  assert.match(line('timeout|error'), /--grep 'timeout or error'$/);
+});
+
+test('🔴 pipeQueryHint 覆盖 SLS 全部四种 | 误用报错(只认 parse fail 会漏掉一半)', () => {
+  // 实测 SLS:带裸 | 的非分析 query 一律 Code=ParameterInvalid,但 Message 有四种,
+  // 取决于最后一个 | 后面是什么 —— 只认 `parse fail` 就漏掉 a|b|c 这类常见写法。
+  const shapes = [
+    'Code: ParameterInvalid Message: parse fail, please check your query,if it has (SELECT)',
+    'Code: ParameterInvalid Message: syntax error error position is from column:3 to column:4,error near < c >',
+    'Code: ParameterInvalid Message: invalid pipe line operator',
+    'Code: ParameterInvalid Message: unclosed string quote',
+  ];
+  for (const err of shapes) {
+    assert.ok(pipeQueryHint('a|b|c', err), `这条报错该给提示: ${err.slice(0, 60)}`);
+  }
+  // 真的分析语句出 SQL 错,不是「把 | 当或用」,别乱插嘴。
+  assert.equal(pipeQueryHint('* | select conut(*)', 'Code: ParameterInvalid Message: Function conut not registered'), null);
+  assert.equal(pipeQueryHint('* | with t as (select 1) select * from t', 'Code: ParameterInvalid'), null);
+  // 与 | 无关的 SLS 错误不触发。
+  assert.equal(pipeQueryHint('a|b', 'Code: LogStoreNotExist'), null);
+});
+
+test('pipeQueryHint: 真的 SLS 拒绝才给提示,且把两种正确写法都算出来', () => {
   const real = 'ERROR: SDKError:\n  Code: ParameterInvalid\n  Message: parse fail, please check your query,if it has (SELECT)';
   const hint = pipeQueryHint('timeout|error', real);
   assert.match(hint, /要「或」:--grep 'timeout or error'/);
@@ -505,6 +534,9 @@ test('🔴 接线层: --grep 必须传进 indexWarning、progressUnknown 必须�
   assert.match(src, /progressUnknown:\s*got\.progressUnknown/);
   // 第三处同型:pipeQueryHint 必须收到**子进程 stderr**(raw),不是退化过的合并串。
   assert.match(src, /pipeQueryHint\(\s*args\.grep\s*,\s*raw\s*\)/);
+  // 同型第四处:LogStoreNotExist 也必须判 raw —— 真的库不存在只会来自 aliyun stderr,
+  // 用合并串会在空 stderr 时命中 e.message 里被回显的 --logstore/--grep 参数。
+  assert.match(src, /LogStoreNotExist\|ProjectNotExist\/\.test\(raw\)/);
   assert.match(src, /const raw = typeof e\.stderr === 'string' \? e\.stderr : ''/);
 });
 

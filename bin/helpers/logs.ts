@@ -435,6 +435,15 @@ function fetchAws(args: Args): void {
 }
 
 /**
+ * 包成一个 bash 单引号串(内部的 ' 转义成 '\\''),用于任何**要给人照抄**的命令。
+ * 裸拼会出无声的错:`--grep 'a'b'c or timeout'` 在 bash 里被静默拼成
+ * `abc or timeout` —— 不报错、照跑、查的却是另一条 query。错的处方比不给更坏。
+ */
+function sq(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
  * `--grep 'a|b'` 撞上 SLS 的 parse fail 时给一句人话。返回 null = 这条错误不归它管。
  *
  * 参数刻意要 **childStderr(子进程真正写出来的那份)**,不是「stderr 退化到 message」
@@ -447,12 +456,15 @@ function fetchAws(args: Args): void {
  */
 export function pipeQueryHint(grep: string | undefined, childStderr: string): string | null {
   if (!grep?.includes('|')) return null;
-  // 只认 SLS 真实报错里的 `parse fail`,不认裸 `SELECT` —— 后者会命中任何**回显了
-  // 用户 query 的字符串**(如 `Command failed: <argv>`),而分析型查询必然含 select。
-  // 判据收窄后,这个函数即便被喂了合并串也不会误顶替;调用点仍只传 raw,两道保险。
-  if (!/parse fail/i.test(childStderr)) return null;
+  // 真的分析语句(`| select …` / `| with …`)出错是 SQL 本身的问题,不是「把 | 当或用」。
+  if (isAnalyticQuery(grep)) return null;
+  // 实测:带裸 `|` 的非分析 query,SLS 一律以 Code=ParameterInvalid 拒绝,但 Message
+  // 有四种形状 —— `parse fail…(SELECT)` / `syntax error…` / `invalid pipe line operator`
+  // / `unclosed string quote`,取决于最后一个 | 后面是什么。只认 `parse fail` 会漏掉
+  // `a|b|c`、`timeout|connection refused` 这些同样常见的写法,故锚在 Code 上。
+  if (!/ParameterInvalid/.test(childStderr)) return null;
   const asOr = grep.split('|').map((s) => s.trim()).filter(Boolean).join(' or ');
-  return `--grep 里的 | 是 SLS「检索|分析(SQL)」的分隔符,不是「或」(SLS 原始报错见上)。\n  要「或」:--grep '${asOr}'\n  要整串当一个短语:--grep '"${grep}"'`;
+  return `--grep 里的 | 是 SLS「检索|分析(SQL)」的分隔符,不是「或」(SLS 原始报错见上)。\n  要「或」:--grep ${sq(asOr)}\n  要整串当一个短语:--grep ${sq(`"${grep}"`)}`;
 }
 
 /** GetLogsV2 请求体。提成纯函数:query / reverse 之类漏传是静默失真,必须能被钉住。 */
@@ -550,7 +562,11 @@ function fetchCn(args: Args): void {
     // 两者必须分开,理由见 pipeQueryHint 的注释。
     const raw = typeof e.stderr === 'string' ? e.stderr : '';
     const msg = raw || e.message || '';
-    if (/LogStoreNotExist|ProjectNotExist/.test(msg)) {
+    // 判 raw 不判 msg:真的 LogStoreNotExist 只可能来自 aliyun 的 stderr(已实测)。
+    // 用合并串会在「子进程空 stderr」时命中 e.message 里**被回显的 argv** ——
+    // `optima-logs agent-runtime --grep 'LogStoreNotExist'` 就会被诬告成「库不存在」,
+    // 与 pipeQueryHint 那条是同型缺陷。
+    if (/LogStoreNotExist|ProjectNotExist/.test(raw)) {
       throw new Error(`SLS logstore 不存在: ${project}/${args.service}\n  确认服务名对,或该服务未接 SLS。列全部:\n  aliyun sls ListLogStores --project ${project} --region ${ALIYUN_REGION} --profile ${ALIYUN_PROFILE}`);
     }
     // 只在 aliyun 确实打过报错块时才用提示顶替(那种情况下 msg 拼进来就是同一段
