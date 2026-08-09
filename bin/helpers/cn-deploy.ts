@@ -111,7 +111,8 @@ async function main() {
     console.error(`✗ vtag 格式必须 cn-vX.Y.Z(得到 ${vtag});裸 v* 会误触 AWS prod,绝不放行`); process.exit(1);
   }
   if (envName === 'prod') {
-    // prod = vtag 制:先 stage 同 tag 验证,再发 prod;流水线内还有人工卡点
+    // prod = vtag 制:先 stage 同 tag 验证,再发 prod。🔴 流水线内**没有**人工卡点,
+    // 下面这道 vtag 校验就是最后一道闸(实测见文件头注)。
     if (!vtag) { console.error('✗ --env prod 必须带 --vtag cn-vX.Y.Z(先 stage 同 tag 验证)'); process.exit(1); }
     if (branch !== 'main') { console.error('✗ prod 发布按 vtag,不接受 --branch'); process.exit(1); }
   }
@@ -158,7 +159,8 @@ async function main() {
   console.log(`▶ ${svcName} run#${runId} 已启动 (ref=${ref}, env=${envName})`);
   console.log(`  https://flow.aliyun.com/pipelines/${pipelineId}/current`);
   if (envName === 'prod') {
-    console.log('⏸ 构建完成后会停在『发布审批』人工卡点 —— 需 xbfool/svenyang 在云效控制台通过,之后迁移+digest 部署自动走完');
+    console.log('🔴 cn-prod:流水线**没有**人工卡点 —— 构建→迁移→digest 部署会一路自动走完,');
+    console.log('   不要去云效控制台等『发布审批』(那一步不存在)。要中止只能在上面的链接里手动取消 run。');
   }
   if (noWait) return;
 
