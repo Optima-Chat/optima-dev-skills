@@ -38,11 +38,11 @@ optima-cn-deploy <service> --env prod --vtag cn-v1.2.3    # prod 发版
 ```
 
 - prod 是 vtag 制：必须先 `git tag cn-vX.Y.Z && git push`，工具拒绝无 vtag / 裸 v* / 带 --branch 的 prod 请求
-- prod 流水线构建后**停在人工卡点**（xbfool/svenyang 在云效控制台审批），之后 DB 迁移 + digest 钉死部署自动走完
+- 🔴 prod 流水线**没有人工卡点**：构建 → DB 迁移 → digest 钉死部署一路自动走完，不会停下来等谁审批。**敲下命令那一刻就是最终决策点**；触发后要中止只能去云效 run 页面手动取消（实测 2026-08-09，见 #89）
 - 成功标准：prod SAE ImageUrl 为 `@sha256:` digest 寻址（工具最后一行校验）
 - ⚠️ **老路径会盖掉 digest**：云效 prod 钉的是 `@sha256:` digest，buildbox `cn-deploy.sh` 发的是 `:<sha>` tag，后发的覆盖先发的。发版后隔天复查一次 SAE ImageUrl：已从 digest 变回 tag 形态即为被老路径覆盖，需重跑云效 prod 流水线（2026-07-31 一天内见 3 例，`cn-deploy.sh` 下线前一直存在）
 - 用户请求发 cn-prod 时：确认已有 stage 验证过的 cn-v tag；没有则先引导走 stage
-- **已发过 prod 的服务**（2026-07-14 起，截至 2026-07-31）：`commerce-backend`、`optima-scout`、`optima-generation`、`optima-generation-worker`、`browser-backend`（最近一次 2026-07-30 browser-backend cn-v1.0.0 全绿）。**不在此列的一律当首发处理**：避开业务高峰、卡点前后找 xbfool/svenyang 人工确认、发完立刻校验 ImageUrl
+- **已发过 prod 的服务**（2026-07-14 起，截至 2026-07-31）：`commerce-backend`、`optima-scout`、`optima-generation`、`optima-generation-worker`、`browser-backend`（最近一次 2026-07-30 browser-backend cn-v1.0.0 全绿）。**不在此列的一律当首发处理**：避开业务高峰、**触发之前**找 xbfool/svenyang 人工确认（没有卡点可以事后补，见上条）、发完立刻校验 ImageUrl
 
 ## 前置依赖
 
@@ -51,5 +51,5 @@ optima-cn-deploy <service> --env prod --vtag cn-v1.2.3    # prod 发版
 
 ## 边界
 
-- cn-prod 仅走 vtag 制（见上），且有人工卡点闸门；日常无 vtag 的构建只发 cn-stage。
+- cn-prod 仅走 vtag 制（见上）；**没有人工卡点闸门** —— 工具侧那道 vtag 校验（拒绝无 vtag / 裸 `v*` / 带 `--branch` 的 prod 请求）就是最后一道闸。日常无 vtag 的构建只发 cn-stage。
 - 服务注册表是 optima-terraform `alicloud/stacks/cn-prod-buildbox/yunxiao/` 的快照；新增服务先在那边 gen-pipelines 建好流水线，再同步本工具的 SERVICES 表。
