@@ -20,7 +20,12 @@
  *   optima-cn-deploy --list                       # 列出全部可发服务
  *   optima-cn-deploy billing --vtag cn-v1.2.3     # stage 按版本 tag 构建(发版前验证)
  *   optima-cn-deploy billing --env prod --vtag cn-v1.2.3
- *       # cn-prod vtag 发版:构建→停在人工卡点(云效控制台审批)→迁移→digest 钉死部署
+ *       # cn-prod vtag 发版:构建→迁移→digest 钉死部署。🔴 **中间没有人工卡点**——
+ *       # 触发即一路跑到 cn-prod 部署完,没有"到云效控制台再审批一次"这一步。
+ *       # 实测 2026-08-09:gateway-core / billing / user-auth / commerce-backend /
+ *       # optima-scout 五条 *-cn-prod 流水线 stages 均为 build→migrate→deploy,
+ *       # 无任何审批任务(aliyun devops GetPipeline 查 pipelineConfig.flow 可复核)。
+ *       # ⇒ 唯一的决策点是敲下这条命令之前。
  *
  * 前置: aliyun CLI(profile 默认 aliyun-optima,可用 OPTIMA_ALIYUN_PROFILE 覆盖)+ gh 已登录。
  * 流水线定义的单一信源在 optima-terraform yunxiao/(gen-pipelines.py)。本表只快照
