@@ -20,11 +20,17 @@
  *   optima-cn-deploy --list                       # 列出全部可发服务
  *   optima-cn-deploy billing --vtag cn-v1.2.3     # stage 按版本 tag 构建(发版前验证)
  *   optima-cn-deploy billing --env prod --vtag cn-v1.2.3
- *       # cn-prod vtag 发版:构建→停在人工卡点(云效控制台审批)→迁移→digest 钉死部署
+ *       # cn-prod vtag 发版:构建→迁移→digest 钉死部署。🔴 **中间没有人工卡点**——
+ *       # 触发即一路跑到 cn-prod 部署完,没有"到云效控制台再审批一次"这一步。
+ *       # 实测 2026-08-09:gateway-core / billing / user-auth / commerce-backend /
+ *       # optima-scout 五条 *-cn-prod 流水线 stages 均为 build→migrate→deploy,
+ *       # 无任何审批任务(aliyun devops GetPipeline 查 pipelineConfig.flow 可复核)。
+ *       # ⇒ 唯一的决策点是敲下这条命令之前。
  *
  * 前置: aliyun CLI(profile 默认 aliyun-optima,可用 OPTIMA_ALIYUN_PROFILE 覆盖)+ gh 已登录。
- * 流水线定义的单一信源在 optima-terraform yunxiao/(gen-pipelines.py);本表为其快照,
- * 新增服务后同步(pipelineId 稳定,不常变)。
+ * 流水线定义的单一信源在 optima-terraform yunxiao/(gen-pipelines.py)。本表只快照
+ * repo / SAE appId;pipelineId 不在此表 —— stage/prod 均按流水线名 ${svc}-cn-${env}
+ * 从云效 ListPipelines 实时解析,不再手工同步(见 #84)。
  */
 import { execFileSync } from 'node:child_process';
 
@@ -33,33 +39,34 @@ const ENDPOINT = 'devops.cn-hangzhou.aliyuncs.com';
 const PROFILE = process.env.OPTIMA_ALIYUN_PROFILE || 'aliyun-optima';
 const CODEUP_BASE = `https://codeup.aliyun.com/${ORG}`;
 
-// 服务注册表(快照自 optima-terraform services.stage.env + gen-pipelines.py,2026-07-13)
-interface Svc { pipelineId: number; repo: string; saeAppId?: string; prodSaeAppId?: string; buildOnly?: boolean; }
+// 服务注册表:repo / SAE appId 快照自 optima-terraform services.stage.env(2026-07-13)。
+// pipelineId 不再硬编码 —— 按名 ${svc}-cn-${env} 从云效实时解析,根除与 cn-run.py 手工表漂移(#84)。
+interface Svc { repo: string; saeAppId?: string; prodSaeAppId?: string; buildOnly?: boolean; }
 const SERVICES: Record<string, Svc> = {
-  'agent-portal':             { pipelineId: 5118519, repo: 'optima-portals',     saeAppId: 'fe757f78-d18d-4480-9402-fe59d4721055', prodSaeAppId: '9211db38-a255-4393-ae92-7a7bb41b583d' },
+  'agent-portal':             { repo: 'optima-portals',     saeAppId: 'fe757f78-d18d-4480-9402-fe59d4721055', prodSaeAppId: '9211db38-a255-4393-ae92-7a7bb41b583d' },
   // build-only:非 SAE 常驻(gateway-core 按 session 拉起的镜像)。release 段=解析 ACR digest
   // → 回写 Infisical /services/gateway-core/ALIYUN_AGENT_RUNTIME_IMAGE(#807)→ 滚动重启 gateway-core。
-  // 无自身 saeAppId;prod 流水线(agent-runtime-cn-prod,5124970)按名实时解析(见下方 ListPipelines 逻辑)。
-  'agent-runtime':            { pipelineId: 5124962, repo: 'optima-gateway',     buildOnly: true },
-  'agentic-chat':             { pipelineId: 5118520, repo: 'agentic-chat',       saeAppId: '6aea1ce1-f813-4e1c-8e97-d1ecb5398e37', prodSaeAppId: '6e290c73-a646-43ef-9da5-ad0b2e7eff73' },
-  'billing':                  { pipelineId: 5118521, repo: 'optima-billing',     saeAppId: '09d8e292-dc64-4af8-bce5-0a56cb666921', prodSaeAppId: '6c31cf82-8802-4d45-b6a2-e9d7c83ccce9' },
-  'browser-backend':          { pipelineId: 5118522, repo: 'optima-browser-use', saeAppId: '1fced3f6-a80a-41a4-8f23-e4d5a467f8eb', prodSaeAppId: 'eb782ed9-c468-4e81-a0fe-87e5b4264192' },
-  'commerce-backend':         { pipelineId: 5107005, repo: 'commerce-backend',   saeAppId: '49d09808-508c-471a-9560-553c49a67f72', prodSaeAppId: 'd40597b6-a98c-4063-9297-8b9fdfa8add4' },
-  'commerce-rq-scheduler':    { pipelineId: 5118523, repo: 'commerce-backend',   saeAppId: '1d2810ef-889e-4675-b6e6-a299e4722e68', prodSaeAppId: '762dd7a5-7fe8-41ed-9332-cfd31b0e087e' },
-  'commerce-rq-worker':       { pipelineId: 5118524, repo: 'commerce-backend',   saeAppId: 'd661da87-6d24-40b8-93ed-e1c967d8abe2', prodSaeAppId: '2c9ee19a-5062-4205-9f5b-6ae3f8062a23' },
-  'gateway-core':             { pipelineId: 5118525, repo: 'optima-gateway',     saeAppId: '9326b7ff-da52-48d6-86db-9c4a884be108', prodSaeAppId: 'a08ce23f-3d3e-4d89-a2cf-53c8adba614e' },
-  'gw-admin':                 { pipelineId: 5118526, repo: 'optima-gateway',     saeAppId: '90e0daf7-7910-46b8-b5bf-a0b8bcc60859', prodSaeAppId: 'c6bc5a78-b27f-46e2-825a-eaa338c23645' },
-  'kb-backend':               { pipelineId: 5118527, repo: 'kb-skills',          saeAppId: 'c7f65160-9d9e-416e-9e36-5439010d2b2d', prodSaeAppId: '732dfc8c-ed78-43f7-a722-c614359ff1a1' },
-  'ops-portal':               { pipelineId: 5118529, repo: 'optima-portals',     saeAppId: '41d0ee66-8402-4e72-bfda-8eba75d1270c', prodSaeAppId: '69e513fd-29bf-4355-a275-5eba82b21136' },
-  'optima-generation':        { pipelineId: 5118530, repo: 'optima-gen',         saeAppId: '327856d5-8b18-4e15-bfd8-b8bd3b807ffa', prodSaeAppId: '868d1a69-12c9-4bb7-868b-3e89c26784b5' },
-  'optima-generation-worker': { pipelineId: 5118531, repo: 'optima-gen',         saeAppId: 'ad75b3b0-9ff4-443d-b0ef-81886bc7aa60', prodSaeAppId: '2adc941e-374b-406a-9863-e53d40bc9500' },
-  'optima-scout':             { pipelineId: 5117336, repo: 'optima-scout',       saeAppId: 'bac2c3a4-90ce-49a6-81d5-caa38cb5c807', prodSaeAppId: 'f5bb7e82-e57c-4bd4-83ae-2c25f8d38647' },
-  'optima-sentinel':          { pipelineId: 5118532, repo: 'optima-sentinel',    saeAppId: '3759db7b-4640-4a04-8436-4f241f0ec9d9', prodSaeAppId: 'e120e70c-b2c1-49ef-a66c-9016fd2d807d' },
-  'optima-sentinel-worker':   { pipelineId: 5118533, repo: 'optima-sentinel',    saeAppId: '7c975caf-ebfb-4bb3-91c4-2a8c83d1d2e5', prodSaeAppId: 'e0f9b92c-00af-4ade-9b07-15bba48c14cc' },
-  'optima-skills':            { pipelineId: 5118534, repo: 'optima-skills',      saeAppId: '90457be3-5eb3-4efc-a362-1788dcc51921', prodSaeAppId: '55a63ee7-fb75-46e4-99f3-20854a699237' },
-  'user-auth':                { pipelineId: 5118510, repo: 'user-auth',          saeAppId: '36efc3a6-5b42-49fa-8db2-0865aa0c25d2', prodSaeAppId: 'd6fbf9de-fed6-4165-978f-7b3a0a456acc' },
-  'user-auth-admin':          { pipelineId: 5118535, repo: 'user-auth',          saeAppId: '7feb9cc3-4731-4ea8-964c-4870a9e63afb', prodSaeAppId: '54093f99-37bf-4354-abd7-f6e76abdbcb6' },
-  'yzsgo-api':                { pipelineId: 5118536, repo: 'yzsgo',              saeAppId: 'd0af7f66-ef66-4587-9e93-250d01ee3cf6', prodSaeAppId: '5a820992-e11b-404a-9e58-8f607d8e0c5f' },
+  // 无自身 saeAppId(build-only 不跑 SAE ImageUrl 校验)。
+  'agent-runtime':            { repo: 'optima-gateway',     buildOnly: true },
+  'agentic-chat':             { repo: 'agentic-chat',       saeAppId: '6aea1ce1-f813-4e1c-8e97-d1ecb5398e37', prodSaeAppId: '6e290c73-a646-43ef-9da5-ad0b2e7eff73' },
+  'billing':                  { repo: 'optima-billing',     saeAppId: '09d8e292-dc64-4af8-bce5-0a56cb666921', prodSaeAppId: '6c31cf82-8802-4d45-b6a2-e9d7c83ccce9' },
+  'browser-backend':          { repo: 'optima-browser-use', saeAppId: '1fced3f6-a80a-41a4-8f23-e4d5a467f8eb', prodSaeAppId: 'eb782ed9-c468-4e81-a0fe-87e5b4264192' },
+  'commerce-backend':         { repo: 'commerce-backend',   saeAppId: '49d09808-508c-471a-9560-553c49a67f72', prodSaeAppId: 'd40597b6-a98c-4063-9297-8b9fdfa8add4' },
+  'commerce-rq-scheduler':    { repo: 'commerce-backend',   saeAppId: '1d2810ef-889e-4675-b6e6-a299e4722e68', prodSaeAppId: '762dd7a5-7fe8-41ed-9332-cfd31b0e087e' },
+  'commerce-rq-worker':       { repo: 'commerce-backend',   saeAppId: 'd661da87-6d24-40b8-93ed-e1c967d8abe2', prodSaeAppId: '2c9ee19a-5062-4205-9f5b-6ae3f8062a23' },
+  'gateway-core':             { repo: 'optima-gateway',     saeAppId: '9326b7ff-da52-48d6-86db-9c4a884be108', prodSaeAppId: 'a08ce23f-3d3e-4d89-a2cf-53c8adba614e' },
+  'gw-admin':                 { repo: 'optima-gateway',     saeAppId: '90e0daf7-7910-46b8-b5bf-a0b8bcc60859', prodSaeAppId: 'c6bc5a78-b27f-46e2-825a-eaa338c23645' },
+  'kb-backend':               { repo: 'kb-skills',          saeAppId: 'c7f65160-9d9e-416e-9e36-5439010d2b2d', prodSaeAppId: '732dfc8c-ed78-43f7-a722-c614359ff1a1' },
+  'ops-portal':               { repo: 'optima-portals',     saeAppId: '41d0ee66-8402-4e72-bfda-8eba75d1270c', prodSaeAppId: '69e513fd-29bf-4355-a275-5eba82b21136' },
+  'optima-generation':        { repo: 'optima-gen',         saeAppId: '327856d5-8b18-4e15-bfd8-b8bd3b807ffa', prodSaeAppId: '868d1a69-12c9-4bb7-868b-3e89c26784b5' },
+  'optima-generation-worker': { repo: 'optima-gen',         saeAppId: 'ad75b3b0-9ff4-443d-b0ef-81886bc7aa60', prodSaeAppId: '2adc941e-374b-406a-9863-e53d40bc9500' },
+  'optima-scout':             { repo: 'optima-scout',       saeAppId: 'bac2c3a4-90ce-49a6-81d5-caa38cb5c807', prodSaeAppId: 'f5bb7e82-e57c-4bd4-83ae-2c25f8d38647' },
+  'optima-sentinel':          { repo: 'optima-sentinel',    saeAppId: '3759db7b-4640-4a04-8436-4f241f0ec9d9', prodSaeAppId: 'e120e70c-b2c1-49ef-a66c-9016fd2d807d' },
+  'optima-sentinel-worker':   { repo: 'optima-sentinel',    saeAppId: '7c975caf-ebfb-4bb3-91c4-2a8c83d1d2e5', prodSaeAppId: 'e0f9b92c-00af-4ade-9b07-15bba48c14cc' },
+  'optima-skills':            { repo: 'optima-skills',      saeAppId: '90457be3-5eb3-4efc-a362-1788dcc51921', prodSaeAppId: '55a63ee7-fb75-46e4-99f3-20854a699237' },
+  'user-auth':                { repo: 'user-auth',          saeAppId: '36efc3a6-5b42-49fa-8db2-0865aa0c25d2', prodSaeAppId: 'd6fbf9de-fed6-4165-978f-7b3a0a456acc' },
+  'user-auth-admin':          { repo: 'user-auth',          saeAppId: '7feb9cc3-4731-4ea8-964c-4870a9e63afb', prodSaeAppId: '54093f99-37bf-4354-abd7-f6e76abdbcb6' },
+  'yzsgo-api':                { repo: 'yzsgo',              saeAppId: 'd0af7f66-ef66-4587-9e93-250d01ee3cf6', prodSaeAppId: '5a820992-e11b-404a-9e58-8f607d8e0c5f' },
 };
 
 function sh(cmd: string, args: string[]): string {
@@ -104,7 +111,8 @@ async function main() {
     console.error(`✗ vtag 格式必须 cn-vX.Y.Z(得到 ${vtag});裸 v* 会误触 AWS prod,绝不放行`); process.exit(1);
   }
   if (envName === 'prod') {
-    // prod = vtag 制:先 stage 同 tag 验证,再发 prod;流水线内还有人工卡点
+    // prod = vtag 制:先 stage 同 tag 验证,再发 prod。🔴 流水线内**没有**人工卡点,
+    // 下面这道 vtag 校验就是最后一道闸(实测见文件头注)。
     if (!vtag) { console.error('✗ --env prod 必须带 --vtag cn-vX.Y.Z(先 stage 同 tag 验证)'); process.exit(1); }
     if (branch !== 'main') { console.error('✗ prod 发布按 vtag,不接受 --branch'); process.exit(1); }
   }
@@ -130,14 +138,12 @@ async function main() {
   if (!synced) { console.error('✗ 300s 内 Codeup mirror 未追平 GitHub,中止(检查 mirror 凭证)'); process.exit(1); }
   console.log(`✓ mirror 已追平 ${svc.repo}@${ref} = ${ghSha.slice(0, 10)}`);
 
-  // 2. 触发(凭证由云效变量组供给,无需注入)。prod 流水线 id 按名实时解析(不硬编码)。
-  let pipelineId = svc.pipelineId;
-  if (envName === 'prod') {
-    const lp = devops('ListPipelines', { maxResults: '100' });
-    const hit = (lp.pipelines || []).find((p: any) => p.pipelineName === `${svcName}-cn-prod`);
-    if (!hit) { console.error(`✗ 云效无 ${svcName}-cn-prod 流水线`); process.exit(1); }
-    pipelineId = hit.pipelineId;
-  }
+  // 2. 触发(凭证由云效变量组供给,无需注入)。stage/prod 流水线 id 均按名 `${svc}-cn-${env}`
+  //    从云效实时解析、不硬编码,根除与 optima-terraform cn-run.py 手工 PIPELINES 表漂移(#84)。
+  const lp = devops('ListPipelines', { maxResults: '100' });
+  const hit = (lp.pipelines || []).find((p: any) => p.pipelineName === `${svcName}-cn-${envName}`);
+  if (!hit) { console.error(`✗ 云效无 ${svcName}-cn-${envName} 流水线`); process.exit(1); }
+  const pipelineId = hit.pipelineId;
   const kv: Record<string, string> = { pipelineId: String(pipelineId) };
   if (vtag) {
     kv.params = JSON.stringify({
@@ -153,7 +159,8 @@ async function main() {
   console.log(`▶ ${svcName} run#${runId} 已启动 (ref=${ref}, env=${envName})`);
   console.log(`  https://flow.aliyun.com/pipelines/${pipelineId}/current`);
   if (envName === 'prod') {
-    console.log('⏸ 构建完成后会停在『发布审批』人工卡点 —— 需 xbfool/svenyang 在云效控制台通过,之后迁移+digest 部署自动走完');
+    console.log('🔴 cn-prod:流水线**没有**人工卡点 —— 构建→迁移→digest 部署会一路自动走完,');
+    console.log('   不要去云效控制台等『发布审批』(那一步不存在)。要中止只能在上面的链接里手动取消 run。');
   }
   if (noWait) return;
 

@@ -161,19 +161,27 @@ test('optima-logs is wired as a bin and routes cn envs to SLS, aws envs to Cloud
   assert.doesNotMatch(source, /'DescribeInstanceLog'/, 'must not call DescribeInstanceLog (buffer-only)');
 });
 
-test('cn-deploy registers build-only agent-runtime and SKILL.md count matches the table', () => {
-  // The cn-deploy SERVICES table is a hand-kept snapshot of the yunxiao pipeline
-  // generator; nothing else guards it. agent-runtime is the one build-only entry
-  // (no SAE app of its own — gateway-core pulls its image per session), so it must
-  // NOT carry a saeAppId, or the deploy would run a bogus SAE ImageUrl check
-  // against an app that doesn't exist. The "N 个服务" figure in the SKILL.md docs
-  // is also manual, and the .claude/.codex mirror pair already drifted once — pin
-  // both copies to the real table size so the count can't silently rot again.
+test('cn-deploy resolves pipeline id by name (no hard-coded table); agent-runtime build-only + SKILL.md count aligned', () => {
+  // The cn-deploy SERVICES table snapshots repo / SAE appId from Terraform's
+  // services.stage.env. pipelineId is NO LONGER in the table — stage/prod both
+  // resolve it by pipeline name `${svc}-cn-${env}` from 云效 at runtime, so the one
+  // field that used to drift against optima-terraform cn-run.py can't rot anymore
+  // (#84). This test still guards what stays hand-kept: agent-runtime is the one
+  // build-only entry (no SAE app of its own — gateway-core pulls its image per
+  // session), so it must NOT carry a saeAppId, or the deploy would run a bogus SAE
+  // ImageUrl check against an app that doesn't exist. The "N 个服务" figure in the
+  // SKILL.md docs is also manual, and the .claude/.codex mirror pair already drifted
+  // once — pin both copies to the real table size so the count can't silently rot.
   const source = fs.readFileSync(path.join(repoRoot, 'bin/helpers/cn-deploy.ts'), 'utf8');
   const block = source.match(/const SERVICES[^{]*\{(.*?)\n\};/s);
   assert.ok(block, 'Could not find SERVICES table in cn-deploy.ts');
   const entries = [...block[1].matchAll(/^\s*'([^']+)':\s*\{([^}]*)\}/gm)];
   const names = entries.map((m) => m[1]);
+
+  // #84: no hard-coded pipeline id may return to the table, and both envs must
+  // resolve it by name — either regression re-opens the cn-run.py drift this closed.
+  assert.doesNotMatch(block[1], /pipelineId/, 'SERVICES table must not hard-code pipelineId (resolved by name at runtime, #84)');
+  assert.match(source, /pipelineName === `\$\{svcName\}-cn-\$\{envName\}`/, 'stage/prod must resolve pipeline id by name ${svcName}-cn-${envName}, not a static table');
 
   assert.ok(names.includes('agent-runtime'), 'cn-deploy must register agent-runtime');
   const agentRuntime = entries.find((m) => m[1] === 'agent-runtime')[2];
