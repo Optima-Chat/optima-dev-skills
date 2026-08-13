@@ -91,14 +91,24 @@ async function httpRequest<T>(url: string, options: RequestInit = {}): Promise<T
 /**
  * 判定「账号/商户已存在」——吃 httpRequest 抛出的 `HTTP <status>: <body>` message。
  *
- * #78: AWS user-auth 返 409 + "already exists"，cn user-auth(FastAPI) 返的却是
- * 400 + detail "Email already registered"（app/services/user.py），措辞与状态码
- * 都不同,旧判定两条腿都不命中 ⇒ `--email` 复用已有账号在 cn 侧必挂。
+ * 两条腿各自对应一个真实来源（user-auth / commerce-backend 是同一套代码跑在 AWS 与
+ * cn 两侧，响应形态一致；下列均为 2026-08-13 直查 origin/main 坐实）：
  *
- * 状态码那条腿锚 `^HTTP 409` 而不是 issue 建议的 `\b(409|400)\b`:后者会把 body 里
- * 夹带的数字当状态码,把真故障（如 500 但 body 提到 409）静默吞成「已存在」;而 400
- * 本身太泛（参数校验失败也是 400）,单凭它放行等于吞掉一切请求错误——400 一律交给
- * 文案那条腿判。
+ * - **文案腿** `already (exists|registered)`
+ *   · user-auth 注册已注册邮箱 → 400 "Email already registered"
+ *     （user-auth `app/services/user.py`）。**这就是 #78 的病灶**：旧判定只认
+ *     "already exists"，措辞对不上 ⇒ cn 侧 `--email` 复用已有账号必挂。
+ *     实测 cn-prod 响应体：{"error":"Email already registered","status_code":400}
+ *   · commerce-backend 重复建 merchant profile → 400 "Merchant profile already
+ *     exists. Use PUT ..."（commerce-backend `src/api/merchants.py`）
+ * - **状态码腿** `^HTTP 409`
+ *   · user-auth 唯一会返 409 的路径是企业席位：account_type == ENTERPRISE_SEAT
+ *     → 409 detail "email_bound_to_seat"。🔴 **该文案既不含 exists 也不含
+ *     registered，所以这条腿不是历史遗留、是席位场景的唯一命中路径，别删。**
+ *
+ * 锚 `^HTTP 409` 而不是 issue 建议的 `\b(409|400)\b`：后者会把 body 里夹带的数字当
+ * 状态码，把真故障（500 而 body 里提到 409）静默吞成「已存在」；而 400 本身太泛
+ * （参数校验失败也是 400），单凭它放行等于吞掉一切请求错误 —— 400 一律交给文案腿判。
  */
 export function isAlreadyExistsError(message: string): boolean {
   return /^HTTP 409\b/.test(message) || /already (exists|registered)/i.test(message);

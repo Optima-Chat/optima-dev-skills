@@ -27,10 +27,23 @@ test('cn user-auth 的 400 + "Email already registered" 判为已存在（#78，
   );
 });
 
-test('AWS 侧 409 Conflict 仍判为已存在（不回归）', () => {
-  assert.equal(isAlreadyExistsError('HTTP 409: {"detail":"User already exists"}'), true);
-  // 409 但 body 措辞不同 —— 旧行为靠状态码单独命中，必须保住。
+// user-auth 唯一会返 409 的路径是企业席位（app/services/user.py：
+// account_type == ENTERPRISE_SEAT → 409 detail "email_bound_to_seat"）。
+// 🔴 这条文案既不含 exists 也不含 registered —— 状态码腿是它的唯一命中路径。
+// 把它钉在这里，是为了防止后人以为「409 从没真出现过」而删掉那条腿。
+test('企业席位的 409 email_bound_to_seat 判为已存在（状态码腿的真实用途）', () => {
+  assert.equal(isAlreadyExistsError('HTTP 409: {"detail":"email_bound_to_seat"}'), true);
+  // 状态码腿对任何 409 放行（措辞无关），这是它区别于文案腿的意义所在。
   assert.equal(isAlreadyExistsError('HTTP 409: {"detail":"Conflict"}'), true);
+});
+
+// commerce-backend 重复建 merchant profile（第二处 catch 覆盖的场景）。
+// 原文见 commerce-backend src/api/merchants.py：user.merchant_id 已存在时的分支。
+test('commerce-backend 的 400 "Merchant profile already exists" 判为已存在', () => {
+  assert.equal(
+    isAlreadyExistsError('HTTP 400: {"detail":"Merchant profile already exists. Use PUT /api/merchants/me to update"}'),
+    true,
+  );
 });
 
 test('任意状态码 + already exists/registered 文案仍判为已存在（不回归）', () => {
