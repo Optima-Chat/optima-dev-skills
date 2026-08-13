@@ -36,10 +36,15 @@ interface SvcCfg { path: string; stage?: string; prod?: string; cn?: string; cn_
 // cn-prod 真实 subdomain 抄自 optima-terraform alicloud/stacks/cn-prod-ingress-sae/main.tf。
 // #201 (2026-06-12): yzsgo.com 全量迁移完成,旧 *-cn.optima.chat 路由已下线。
 // cn-stage（阿里云预发）域名 *.stage.optima.chat，抄自 cn-stage-ingress-sae services map。
+// #83 (2026-08-13): AWS stage 是 *.stage.optima.onl（点号），旧的连字符形式 *-stage.optima.onl
+// 已不再路由到服务——三项实测 301 → www.optima.onl，探测恒红并误报成「疑似未部署」。
 const SERVICES: Record<string, SvcCfg> = {
-  'user-auth':        { path: '/health',     stage: 'auth-stage.optima.onl', prod: 'auth.optima.onl', cn: 'auth.yzsgo.com', 'cn-stage': 'auth.stage.optima.chat' },
-  'agentic-chat':     { path: '/api/health', stage: 'ai-stage.optima.onl',   prod: 'ai.optima.onl',   cn: 'app.yzsgo.com', 'cn-stage': 'app.stage.optima.chat' },
-  'commerce-backend': { path: '/health',     stage: 'api-stage.optima.onl',  prod: 'api.optima.onl',  cn: 'commerce.yzsgo.com', cn_path: '/health/live', 'cn-stage': 'commerce.stage.optima.chat', 'cn-stage_path': '/health/live' },
+  'user-auth':        { path: '/health',     stage: 'auth.stage.optima.onl', prod: 'auth.optima.onl', cn: 'auth.yzsgo.com', 'cn-stage': 'auth.stage.optima.chat' },
+  'agentic-chat':     { path: '/api/health', stage: 'ai.stage.optima.onl',   prod: 'ai.optima.onl',   cn: 'app.yzsgo.com', 'cn-stage': 'app.stage.optima.chat' },
+  'commerce-backend': { path: '/health',     stage: 'api.stage.optima.onl',  prod: 'api.optima.onl',  cn: 'commerce.yzsgo.com', cn_path: '/health/live', 'cn-stage': 'commerce.stage.optima.chat', 'cn-stage_path': '/health/live' },
+  // #83: mcp-host 的两侧都探不到真 health,故本轮保持原值不动、待 owner 确认真实端点:
+  // stage 点号形式 mcp.stage.optima.onl 是前端 locale 路由(307 → /en-US/health),连字符
+  // 形式与 prod 的 mcp.optima.onl 均 301 → www。改成任一个都只是把红换个姿势。
   'mcp-host':         { path: '/health',     stage: 'mcp-stage.optima.onl',  prod: 'mcp.optima.onl' },
   'gateway-core':     { path: '/health',     cn: 'gw.yzsgo.com', 'cn-stage': 'gw.stage.optima.chat' },
   'optima-scout':     { path: '/health',     cn: 'scout.yzsgo.com', 'cn-stage': 'scout.stage.optima.chat' },
