@@ -10,10 +10,17 @@ const { isAlreadyExistsError } = require(
 
 const repoRoot = path.resolve(__dirname, '..');
 
-// #78: cn-prod 上 `--email` 复用已有账号会失败。cn user-auth 是 FastAPI，
-// 返 400 + detail "Email already registered"（app/services/user.py），既不是 409
-// 也不含 "already exists" —— 旧判定两个条件都不命中，于是 throw、整条命令挂掉。
-test('cn user-auth 的 400 + "Email already registered" 判为已存在（#78）', () => {
+// #78: cn-prod 上 `--email` 复用已有账号会失败。下面这条是 2026-08-13 直接
+// curl cn-prod 注册端点拿到的**响应原文**（对已存在的邮箱）：既不是 409、也不含
+// "already exists" —— 旧判定两个条件都不命中，于是 throw、整条命令挂掉。
+//   POST https://auth.yzsgo.com/api/v1/auth/register/merchant
+//   → HTTP 400 {"error":"Email already registered","status_code":400}
+test('cn user-auth 的 400 + "Email already registered" 判为已存在（#78，实测原文）', () => {
+  assert.equal(
+    isAlreadyExistsError('HTTP 400: {"error":"Email already registered","status_code":400}'),
+    true,
+  );
+  // 后端若换回 FastAPI 默认的 detail 包装，同样要命中（判定锚文案不锚字段名）。
   assert.equal(
     isAlreadyExistsError('HTTP 400: {"detail":"Email already registered"}'),
     true,
