@@ -27,10 +27,13 @@ test('cn user-auth 的 400 + "Email already registered" 判为已存在（#78，
   );
 });
 
-// user-auth 唯一会返 409 的路径是企业席位（app/services/user.py：
-// account_type == ENTERPRISE_SEAT → 409 detail "email_bound_to_seat"）。
+// 本工具调的 register/merchant 那条路径上，唯一的 409 是企业席位
+// （user-auth app/services/user.py：account_type == ENTERPRISE_SEAT →
+// 409 detail "email_bound_to_seat"）。
 // 🔴 这条文案既不含 exists 也不含 registered —— 状态码腿是它的唯一命中路径。
 // 把它钉在这里，是为了防止后人以为「409 从没真出现过」而删掉那条腿。
+// ⚠️ 注意限定是「这条路径」：user-auth 全仓 409 有 20+ 处（referral / sms /
+// teams / admin），语义完全不同，接新端点时别沿用本判定。
 test('企业席位的 409 email_bound_to_seat 判为已存在（状态码腿的真实用途）', () => {
   assert.equal(isAlreadyExistsError('HTTP 409: {"detail":"email_bound_to_seat"}'), true);
   // 状态码腿对任何 409 放行（措辞无关），这是它区别于文案腿的意义所在。

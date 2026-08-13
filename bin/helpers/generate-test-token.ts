@@ -102,9 +102,15 @@ async function httpRequest<T>(url: string, options: RequestInit = {}): Promise<T
  *   · commerce-backend 重复建 merchant profile → 400 "Merchant profile already
  *     exists. Use PUT ..."（commerce-backend `src/api/merchants.py`）
  * - **状态码腿** `^HTTP 409`
- *   · user-auth 唯一会返 409 的路径是企业席位：account_type == ENTERPRISE_SEAT
- *     → 409 detail "email_bound_to_seat"。🔴 **该文案既不含 exists 也不含
- *     registered，所以这条腿不是历史遗留、是席位场景的唯一命中路径，别删。**
+ *   · 本工具只调 `POST /api/v1/auth/register/merchant` 与 `POST /api/merchants/me`
+ *     两个端点。**register/merchant 这条路径上唯一的 409** 是企业席位：
+ *     account_type == ENTERPRISE_SEAT → 409 detail "email_bound_to_seat"。
+ *     🔴 **该文案既不含 exists 也不含 registered，所以这条腿不是历史遗留、
+ *     是席位场景的唯一命中路径，别删。**
+ *     ⚠️ 「这条路径上唯一」的限定不是废话：user-auth 全仓有 20+ 处 409
+ *     （referral / internal-sms / teams / admin），措辞各异且语义完全不同
+ *     （如 `claim_in_progress` 是并发冲突）。给本工具接新端点时别想当然沿用本判定，
+ *     否则会把并发冲突静默吞成「已存在」。
  *
  * 锚 `^HTTP 409` 而不是 issue 建议的 `\b(409|400)\b`：后者会把 body 里夹带的数字当
  * 状态码，把真故障（500 而 body 里提到 409）静默吞成「已存在」；而 400 本身太泛
