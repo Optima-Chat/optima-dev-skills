@@ -1,6 +1,6 @@
 # /query-db - 查询数据库
 
-执行 SQL 查询，支持 CI/Stage/Prod 三个环境。
+执行 SQL 查询，支持 CI/Stage/Prod/cn-prod/cn-stage 五个环境。
 
 **版本**: v0.7.0
 
@@ -23,6 +23,9 @@ optima-query-db user-auth "SELECT COUNT(*) FROM users" stage
 
 # 查询 Prod 环境
 optima-query-db commerce-backend "SELECT * FROM products LIMIT 5" prod
+
+# 查询阿里云 cn 环境（cn-prod / cn-stage）
+optima-query-db user-auth "SELECT COUNT(*) FROM users" cn-stage
 ```
 
 **优点**：
@@ -60,6 +63,8 @@ optima-query-db commerce-backend "SELECT * FROM products LIMIT 5" prod
   - `ci` - CI 持续集成环境（开发环境，默认）
   - `stage` - Stage 预发布环境
   - `prod` - Prod 生产环境（⚠️ 谨慎使用）
+  - `cn-prod` - 阿里云 cn-prod 生产环境（别名 `cn`，⚠️ 谨慎使用）
+  - `cn-stage` - 阿里云 cn-stage 预发环境
 
 ## 示例
 

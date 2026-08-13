@@ -1,6 +1,6 @@
 ---
 name: "show-env"
-description: "当用户请求查看环境变量、查看配置、查看服务配置、环境变量是什么、env 变量、服务环境变量、查看 Infisical 配置时，使用此技能。支持查看当前 shell 环境变量，以及 Stage、Prod 环境的服务配置。"
+description: "当用户请求查看环境变量、查看配置、查看服务配置、环境变量是什么、env 变量、服务环境变量、查看 Infisical 配置、cn 配置、阿里云配置时，使用此技能。支持查看当前 shell 环境变量，以及 Stage、Prod、cn-prod、cn-stage 四个环境的服务配置。"
 allowed-tools: ["Bash", "SlashCommand"]
 ---
 

@@ -63,6 +63,8 @@ optima-generate-test-token \
 | ci | `auth.optima.chat` | `api.optima.chat` |
 | stage | `auth.stage.optima.onl` | `api.stage.optima.onl` |
 | prod | `auth.optima.onl` | `api.optima.onl` |
+| cn-prod | `auth.yzsgo.com` | `commerce.yzsgo.com` |
+| cn-stage | `auth.stage.optima.chat` | `commerce.stage.optima.chat` |
 
 ### 使用生成的 Token
 
