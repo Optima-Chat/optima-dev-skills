@@ -1,6 +1,6 @@
 ---
 name: "generate-test-token"
-description: "当用户请求生成测试 token、创建测试账户、获取 access token、需要测试 API、API 测试、测试账户时，使用此技能。自动完成账户注册、token 获取和 merchant 设置。"
+description: "当用户请求生成测试 token、创建测试账户、获取 access token、需要测试 API、API 测试、测试账户时，使用此技能。自动完成账户注册、token 获取和 merchant 设置。支持 CI、Stage、Prod、cn-prod、cn-stage 五个环境。"
 allowed-tools: ["Bash", "SlashCommand"]
 ---
 
@@ -227,15 +227,17 @@ OPTIMA_TOKEN=$(cat /tmp/optima-test-token-xxx.txt)  # 必需，读取 token
 
 ### 支持的环境
 
-工具支持三个环境，使用 `--env` 参数指定：
+工具支持五个环境，使用 `--env` 参数指定：
 
 | 环境 | Auth API | Commerce API |
 |------|----------|--------------|
 | ci (默认) | `https://auth.optima.chat` | `https://api.optima.chat` |
 | stage | `https://auth.stage.optima.onl` | `https://api.stage.optima.onl` |
 | prod | `https://auth.optima.onl` | `https://api.optima.onl` |
+| cn-prod | `https://auth.yzsgo.com` | `https://commerce.yzsgo.com` |
+| cn-stage | `https://auth.stage.optima.chat` | `https://commerce.stage.optima.chat` |
 
-⚠️ **注意**：Prod 环境创建的账户会出现在生产系统中，请谨慎使用。
+⚠️ **注意**：Prod / cn-prod 环境创建的账户会出现在生产系统中，请谨慎使用。
 
 ## 💡 最佳实践
 
