@@ -88,6 +88,22 @@ async function httpRequest<T>(url: string, options: RequestInit = {}): Promise<T
   return response.json() as Promise<T>;
 }
 
+/**
+ * 判定「账号/商户已存在」——吃 httpRequest 抛出的 `HTTP <status>: <body>` message。
+ *
+ * #78: AWS user-auth 返 409 + "already exists"，cn user-auth(FastAPI) 返的却是
+ * 400 + detail "Email already registered"（app/services/user.py），措辞与状态码
+ * 都不同,旧判定两条腿都不命中 ⇒ `--email` 复用已有账号在 cn 侧必挂。
+ *
+ * 状态码那条腿锚 `^HTTP 409` 而不是 issue 建议的 `\b(409|400)\b`:后者会把 body 里
+ * 夹带的数字当状态码,把真故障（如 500 但 body 提到 409）静默吞成「已存在」;而 400
+ * 本身太泛（参数校验失败也是 400）,单凭它放行等于吞掉一切请求错误——400 一律交给
+ * 文案那条腿判。
+ */
+export function isAlreadyExistsError(message: string): boolean {
+  return /^HTTP 409\b/.test(message) || /already (exists|registered)/i.test(message);
+}
+
 async function registerMerchant(
   email: string,
   password: string,
@@ -112,7 +128,7 @@ async function registerMerchant(
     console.log(`✓ Merchant registered successfully (ID: ${result.user_id ?? (result as any).id})`);
     return result;
   } catch (error: any) {
-    if (error.message.includes('409') || error.message.includes('already exists')) {
+    if (isAlreadyExistsError(error.message)) {
       console.log(`ℹ Merchant already exists, proceeding to login...`);
       return { email, user_id: '', role: 'merchant', is_active: true, created_at: '', updated_at: '' };
     }
@@ -167,7 +183,7 @@ async function setupMerchantProfile(token: string, businessName: string, config:
     console.log(`✓ Merchant profile setup complete (ID: ${result.merchant_id})`);
     return result;
   } catch (error: any) {
-    if (error.message.includes('409') || error.message.includes('already exists')) {
+    if (isAlreadyExistsError(error.message)) {
       console.log(`ℹ Merchant profile already exists`);
       return { merchant_id: '', business_name: businessName, user_id: '' };
     }
@@ -311,4 +327,6 @@ Example:
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
