@@ -38,13 +38,22 @@ interface SvcCfg { path: string; stage?: string; prod?: string; cn?: string; cn_
 // cn-stage（阿里云预发）域名 *.stage.optima.chat，抄自 cn-stage-ingress-sae services map。
 // #83 (2026-08-13): AWS stage 是 *.stage.optima.onl（点号），旧的连字符形式 *-stage.optima.onl
 // 已不再路由到服务——三项实测 301 → www.optima.onl，探测恒红并误报成「疑似未部署」。
+// 🔴 别只看 stage 列：agentic-chat 的 prod 也踩同一个坑（见下面那行的注释）。
 const SERVICES: Record<string, SvcCfg> = {
   'user-auth':        { path: '/health',     stage: 'auth.stage.optima.onl', prod: 'auth.optima.onl', cn: 'auth.yzsgo.com', 'cn-stage': 'auth.stage.optima.chat' },
-  'agentic-chat':     { path: '/api/health', stage: 'ai.stage.optima.onl',   prod: 'ai.optima.onl',   cn: 'app.yzsgo.com', 'cn-stage': 'app.stage.optima.chat' },
+  // agentic-chat 的 prod 入口是 www 不是 ai：prod-ecs/variables.tf 里它的 subdomain = "www"，
+  // 且 main.tf 有一条 ai_to_www_redirect(priority 309) 专门把 ai.optima.onl 301 到 www。
+  // 实测 ai.optima.onl/api/health → 301；www.optima.onl/api/health → 200 service=agentic-chat。
+  'agentic-chat':     { path: '/api/health', stage: 'ai.stage.optima.onl',   prod: 'www.optima.onl',  cn: 'app.yzsgo.com', 'cn-stage': 'app.stage.optima.chat' },
   'commerce-backend': { path: '/health',     stage: 'api.stage.optima.onl',  prod: 'api.optima.onl',  cn: 'commerce.yzsgo.com', cn_path: '/health/live', 'cn-stage': 'commerce.stage.optima.chat', 'cn-stage_path': '/health/live' },
-  // #83: mcp-host 的两侧都探不到真 health,故本轮保持原值不动、待 owner 确认真实端点:
-  // stage 点号形式 mcp.stage.optima.onl 是前端 locale 路由(307 → /en-US/health),连字符
-  // 形式与 prod 的 mcp.optima.onl 均 301 → www。改成任一个都只是把红换个姿势。
+  // 🔴 #83: mcp-host 这一项**大概率该整条删掉**,本轮保留仅因为「摘服务」是产品决策、留给 owner 拍板。
+  // 证据:optima-terraform origin/main(f97adbb) 的 stage-ecs/variables.tf:146 与
+  // prod-ecs/variables.tf:508 都写着「mcp-host 已移除 (2025-12-18) / MCP 工具服务不再使用」,
+  // 两个 ecs stack 的 services map 里均无该条目。实测四个候选主机名全是壳:
+  // mcp.stage.optima.onl 307 → /en-US/health(前端 locale 路由)、mcp-stage.optima.onl 与
+  // prod 的 mcp.optima.onl 均 301 → www。**没有活的 mcp-host,换哪个值都只是把红换个姿势。**
+  // ⚠️ 后果:worstOk 是全局单标志(见下面 :200 附近),所以只要这行还在,
+  // `--all --env stage` / `--all --env prod` 就恒 exit 1 —— 接 CI 卡口前必须先摘掉它。
   'mcp-host':         { path: '/health',     stage: 'mcp-stage.optima.onl',  prod: 'mcp.optima.onl' },
   'gateway-core':     { path: '/health',     cn: 'gw.yzsgo.com', 'cn-stage': 'gw.stage.optima.chat' },
   'optima-scout':     { path: '/health',     cn: 'scout.yzsgo.com', 'cn-stage': 'scout.stage.optima.chat' },
