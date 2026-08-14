@@ -41,7 +41,7 @@ switch (command) {
     log('  /restart-ecs <service> [env]                         Restart ECS service (skill)', 'cyan');
 
     log('\nSupported Services:', 'yellow');
-    log('  commerce-backend  user-auth  mcp-host  agentic-chat  optima-logistics', 'cyan');
+    log('  commerce-backend  user-auth  agentic-chat  optima-logistics', 'cyan');
     log('  session-gateway  optima-scout  billing  browser-backend  optima-generation', 'cyan');
 
     log('\nEnvironments:', 'yellow');

@@ -51,15 +51,13 @@ const SERVICES: Record<string, SvcCfg> = {
   // 实测 ai.optima.onl/api/health → 301；www.optima.onl/api/health → 200 service=agentic-chat。
   'agentic-chat':     { path: '/api/health', stage: 'ai.stage.optima.onl',   prod: 'www.optima.onl',  'cn-prod': 'app.yzsgo.com', 'cn-stage': 'app.stage.optima.chat' },
   'commerce-backend': { path: '/health',     stage: 'api.stage.optima.onl',  prod: 'api.optima.onl',  'cn-prod': 'commerce.yzsgo.com', 'cn-prod_path': '/health/live', 'cn-stage': 'commerce.stage.optima.chat', 'cn-stage_path': '/health/live' },
-  // 🔴 #83: mcp-host 这一项**大概率该整条删掉**,本轮保留仅因为「摘服务」是产品决策、留给 owner 拍板。
-  // 证据:optima-terraform origin/main(f97adbb) 的 stage-ecs/variables.tf:146 与
-  // prod-ecs/variables.tf:508 都写着「mcp-host 已移除 (2025-12-18) / MCP 工具服务不再使用」,
-  // 两个 ecs stack 的 services map 里均无该条目。实测四个候选主机名全是壳:
-  // mcp.stage.optima.onl 307 → /en-US/health(前端 locale 路由)、mcp-stage.optima.onl 与
-  // prod 的 mcp.optima.onl 均 301 → www。**没有活的 mcp-host,换哪个值都只是把红换个姿势。**
-  // ⚠️ 后果:worstOk 是全局单标志(见下面 :200 附近),所以只要这行还在,
-  // `--all --env stage` / `--all --env prod` 就恒 exit 1 —— 接 CI 卡口前必须先摘掉它。
-  'mcp-host':         { path: '/health',     stage: 'mcp-stage.optima.onl',  prod: 'mcp.optima.onl' },
+  // #83: mcp-host 已于 2025-12-18 下线,故不在表内 —— optima-terraform origin/main(f97adbb) 的
+  // stage-ecs/variables.tf:146 与 prod-ecs/variables.tf:508 都写着「MCP 工具服务已移除」,
+  // 两个 ecs stack 的 services map 里均无该条目;实测四个候选主机名全是壳(mcp.stage.optima.onl
+  // 307 → /en-US/health 前端 locale 路由,mcp-stage.optima.onl 与 prod 的 mcp.optima.onl 均
+  // 301 → www)。🔴 别再把它加回来:worstOk 是全局单标志(:221),留着它会让 `--all --env stage`
+  // 与 `--all --env prod` 恒 exit 1,而那个退出码正是接 CI 卡口时唯一被读的东西。
+  // 同一约束在 tests/service-matrix-alignment.test.js 里对 show-env 的清单也钉着。
   'gateway-core':     { path: '/health',     'cn-prod': 'gw.yzsgo.com', 'cn-stage': 'gw.stage.optima.chat' },
   'optima-scout':     { path: '/health',     'cn-prod': 'scout.yzsgo.com', 'cn-stage': 'scout.stage.optima.chat' },
   'optima-skills':    { path: '/health',     'cn-prod': 'skills.yzsgo.com', 'cn-stage': 'skills.stage.optima.chat' },
