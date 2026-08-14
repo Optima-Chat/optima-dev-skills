@@ -30,7 +30,8 @@ Use the local shell and follow the environment-specific workflow:
 
 ## Guidance
 
-- Default to `ci` unless the user clearly requests another environment.
+- Default to `ci` unless the user clearly requests another environment — note `ci` is the SSH + Docker Compose path, **not** `optima-logs`.
+- 🔴 `optima-logs` with no `--env` defaults to **`cn-prod` (Alibaba Cloud production)**, not `ci` (see `bin/helpers/logs.ts`). Always pass `--env` explicitly, or you will be reading production logs while believing you are reading CI.
 - For `prod`, keep the query narrow and use the exact service the user asked for.
 - When investigating an error, read enough context around the failure instead of only grepping a single line.
 

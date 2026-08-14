@@ -209,7 +209,7 @@ curl -H "Authorization: Bearer $(cat /tmp/optima-test-token-xxx.txt)" \
 
 使用 commerce CLI 时**必须**设置环境变量：
 ```bash
-OPTIMA_ENV=ci  # 必需，指定环境 (ci/stage/prod)
+OPTIMA_ENV=ci  # 必需，与上面 --env 取同一个值 (ci/stage/prod/cn-prod/cn-stage)
 OPTIMA_TOKEN=$(cat /tmp/optima-test-token-xxx.txt)  # 必需，读取 token
 ```
 
