@@ -13,5 +13,13 @@ class TestDrift(unittest.TestCase):
         self.assertIn("chat_driver.py", files)   # 来自 store-skills
         self.assertIn("judge_workflow.js", files) # 来自 gateway
 
+    def test_mixed_presence_maps_per_repo(self):
+        checks = plan_drift_checks({"store-skills": True, "gateway": False})
+        by_file = {c["file"]: c["checkable"] for c in checks}
+        self.assertTrue(by_file["chat_driver.py"])       # store-skills present
+        self.assertTrue(by_file["pull_wire.py"])          # store-skills present
+        self.assertFalse(by_file["prep_conversation.py"]) # gateway absent
+        self.assertFalse(by_file["judge_workflow.js"])    # gateway absent
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """比对 vendored 文件与上游是否漂移。上游 repo 不在本机则跳过（不破坏自包含）。"""
-import os, subprocess, sys
+import os, subprocess
 
 VENDORED = [
     {"file": "chat_driver.py", "repo": "store-skills",

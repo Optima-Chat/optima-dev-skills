@@ -31,12 +31,14 @@ allowed-tools: ["Bash", "Read", "Write", "Agent", "Workflow"]
 判定要核对**前端渲染的** vs **wire 里 agent 真实产出的**：前端丢内容/半截/报错但 wire 成功（或反之）= 缺陷。
 
 ## vendor 同步纪律
-`chat_driver.py`/`pull_wire.py` 上游权威 = optima-store-skills；`prep_conversation.py`/`judge_workflow.js` 改编自 optima-gateway conversation-iq。见 `SYNC.md`。驱动异常先怀疑前端 DOM 漂移 → 去上游同步。可跑 `python3 verify_drift.py` 比对。
+`chat_driver.py`/`pull_wire.py` 上游权威 = optima-store-skills；`prep_conversation.py`/`judge_workflow.js` 改编自 optima-gateway conversation-iq。见 `SYNC.md`。驱动异常先怀疑前端 DOM 漂移 → 去上游同步。可跑 `python3 verify_drift.py` 比对。`prep_conversation.py`/`judge_workflow.js` 是改编而非全等拷贝，`verify_drift.py` 对它们标 ⚠️ 是提醒去看上游有无新变更，非「必须一致」。
 
 ## 两环境
 `--env cn-prod`（已打通）/ `cn-stage`（wire 取法待核实，脚本会告警）。
 
 ## 真机 smoke（改完先跑这个验管道通）
+```bash
 python3 run_e2e.py --env cn-prod --user <测试账号userId> --message "你好" --out /tmp/yzsgo-smoke
 # 期望：/tmp/yzsgo-smoke/prepped.md 含「前端所见」节 + wire transcript；meta.json 的 located 命中本次对话。
 # 只验四段接线通，不追判定质量。
+```
