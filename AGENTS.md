@@ -35,6 +35,7 @@ After `npm install -g @optima-chat/dev-skills`, this package installs skills und
 - `restart-ecs`
 - `show-env`
 - `use-commerce-cli`
+- `yzsgo-e2e`
 
 `discount-codes` and `gateway-admin` exist under `.claude/skills/` only, so they are not installed for Codex.
 
