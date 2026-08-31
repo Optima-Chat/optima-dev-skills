@@ -31,6 +31,17 @@ def _parse_answers(pairs):
             out.append({"match": k, "answer": v})
     return out
 
+def select_conversation_in_session(convs, deref, hit):
+    """在同一 session 的 convs 里按 (ts, prompt) 重新定位本次对话；找不到回退末个。
+    不能用跨 session 的全局 gidx 去索引 session-local 列表。"""
+    import pull_wire
+    for c in convs:
+        if not c:
+            continue
+        if c[0].get("ts", "") == hit.get("ts") and pull_wire.first_user_text(c[0], deref) == hit.get("prompt"):
+            return c
+    return convs[-1] if convs else None
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--env", default="cn-prod", choices=["cn-prod", "cn-stage"])
@@ -54,17 +65,20 @@ def main():
     started_ts = _utc_now()
     answers = _parse_answers(args.answer)
     d = chat_driver.ChatDriver().attach()
-    d.new_conversation()
-    turns = []
-    for msg in args.message:
-        r = d.send_and_wait(msg, answers=answers)
-        turns.append({"sent": msg, "state": r.get("state"), "transcript": r.get("transcript", ""),
-                      "tool_trace": r.get("tool_trace"), "timed_out": r.get("timed_out", False)})
-    d.close()
+    try:
+        d.new_conversation()
+        turns = []
+        for msg in args.message:
+            r = d.send_and_wait(msg, answers=answers)
+            turns.append({"sent": msg, "state": r.get("state"), "transcript": r.get("transcript", ""),
+                          "tool_trace": r.get("tool_trace"), "timed_out": r.get("timed_out", False)})
+    finally:
+        d.close()
 
     wire_root = pull_wire.pull(args.user, since_days=1, out=args.out)
     meta = {"env": args.env, "started_ts": started_ts, "first_message": args.message[0],
             "expect": args.expect, "issue_repo": args.issue_repo, "turns": turns}
+    wrote_prepped = False
     if wire_root:
         index = pull_wire.emit_conversation_index(wire_root)
         hit = pull_wire.locate_conversation(index, started_ts, args.message[0])
@@ -72,17 +86,27 @@ def main():
         if hit:
             sdir = os.path.join(wire_root, hit["sid"])
             deref = pull_wire.make_deref(sdir)
-            recs = [json.loads(l) for l in open(os.path.join(sdir, "records.jsonl"), encoding="utf-8") if l.strip()]
+            with open(os.path.join(sdir, "records.jsonl"), encoding="utf-8") as f:
+                recs = [json.loads(l) for l in f if l.strip()]
             reqs = [x for x in recs if x.get("kind") == "request"]
             resps = {x.get("callId"): x for x in recs if x.get("kind") in ("response", "error")}
             convs = pull_wire.segment(reqs, deref)
-            conv = convs[hit["gidx"] - 1] if hit["gidx"] - 1 < len(convs) else convs[-1]
-            _, _, _, _, wire_md = pull_wire.render_conversation(conv, resps, deref, hit["gidx"])
-            prepped = prep_conversation.merge_browser_evidence(wire_md, turns)
-            open(os.path.join(args.out, "prepped.md"), "w", encoding="utf-8").write(prepped)
-    open(os.path.join(args.out, "meta.json"), "w", encoding="utf-8").write(json.dumps(meta, ensure_ascii=False, indent=2))
-    print(f"[done] 备料稿 → {args.out}/prepped.md  元数据 → {args.out}/meta.json")
-    print("下一步：Claude 用 judge_workflow.js 判定，confirmed 提 issue 到", args.issue_repo)
+            conv = select_conversation_in_session(convs, deref, hit)
+            if conv is not None:
+                _, _, _, _, wire_md = pull_wire.render_conversation(conv, resps, deref, hit["gidx"])
+                prepped = prep_conversation.merge_browser_evidence(wire_md, turns)
+                with open(os.path.join(args.out, "prepped.md"), "w", encoding="utf-8") as f:
+                    f.write(prepped)
+                wrote_prepped = True
+    with open(os.path.join(args.out, "meta.json"), "w", encoding="utf-8") as f:
+        f.write(json.dumps(meta, ensure_ascii=False, indent=2))
+    if wrote_prepped:
+        print(f"[done] 备料稿 → {args.out}/prepped.md  元数据 → {args.out}/meta.json")
+        print("下一步：Claude 用 judge_workflow.js 判定，confirmed 提 issue 到", args.issue_repo)
+    else:
+        reason = "未拉到本账号 wire session（TTL/该窗口没跑过）" if not wire_root else "未能在 wire 里定位到本次对话（ts/prompt 未匹配）"
+        print(f"[warn] 只写了 {args.out}/meta.json，未生成 prepped.md：{reason}")
+        print("       检查测试账号 userId / --since 窗口 / 前端是否真落 wire。")
 
 if __name__ == "__main__":
     main()
