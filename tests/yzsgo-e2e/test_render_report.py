@@ -21,18 +21,17 @@ class TestReport(unittest.TestCase):
         self.assertIn("blocked: 积分不足", md)
 
     def test_select_by_ts_prompt_not_position(self):
-        """全局 gidx 不能拿去索引 session-local 列表；应按 (ts,prompt) 定位。"""
         deref = lambda v: v
         def mk(ts, text):
             return [{"ts": ts, "callId": "c", "seq": 1,
                      "body": {"messages": [{"role": "user", "content": text}]}}]
-        convs = [mk("2026-08-31T10:00:00Z", "早上的对话"),
-                 mk("2026-08-31T14:03:10Z", "我想做电商帮我看看")]
-        hit = {"gidx": 5, "sid": "s", "ts": "2026-08-31T14:03:10Z", "prompt": "我想做电商帮我看看"}
-        # 全局 gidx=5 若拿去索引会越界/错位；正确应按 ts+prompt 命中第 2 个
+        # 正确对话在 index 0；hit.gidx=2 若按位置会选 convs[1]（错）。正确应按 ts+prompt 命中 index 0。
+        convs = [mk("2026-08-31T14:03:10Z", "我想做电商帮我看看"),
+                 mk("2026-08-31T15:00:00Z", "另一个对话")]
+        hit = {"gidx": 2, "sid": "s", "ts": "2026-08-31T14:03:10Z", "prompt": "我想做电商帮我看看"}
         got = select_conversation_in_session(convs, deref, hit)
-        self.assertIsNotNone(got)
         self.assertEqual(got[0]["ts"], "2026-08-31T14:03:10Z")
+        self.assertEqual(got[0]["body"]["messages"][0]["content"], "我想做电商帮我看看")
 
 if __name__ == "__main__":
     unittest.main()
