@@ -20,5 +20,9 @@ class TestLocate(unittest.TestCase):
         r = locate_conversation(IDX, "2026-08-31T23:00:00Z", "我想做电商帮我看看")
         self.assertEqual(r["gidx"], 2)  # 无 ts>=started 的候选 → 候选里 ts 最大
 
+    def test_empty_prompt_item_not_matched(self):
+        idx = [{"gidx": 1, "sid": "s1", "ts": "2026-08-31T14:04:00Z", "prompt": ""}]
+        self.assertIsNone(locate_conversation(idx, "2026-08-31T14:00:00Z", "我想做电商帮我看看"))
+
 if __name__ == "__main__":
     unittest.main()

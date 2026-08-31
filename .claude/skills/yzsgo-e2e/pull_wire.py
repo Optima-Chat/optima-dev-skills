@@ -247,15 +247,14 @@ def main():
 
 def emit_conversation_index(wire_root):
     """遍历 wire_root 下各 session，切分对话，产出与 render_all 同序的结构化索引。"""
-    import os as _os
     out = []
     gidx = 0
-    sessions = sorted(d for d in _os.listdir(wire_root)
-                      if _os.path.isdir(_os.path.join(wire_root, d)))
+    sessions = sorted(d for d in os.listdir(wire_root)
+                      if os.path.isdir(os.path.join(wire_root, d)))
     for sid in sessions:
-        sdir = _os.path.join(wire_root, sid)
-        recf = _os.path.join(sdir, "records.jsonl")
-        if not _os.path.exists(recf):
+        sdir = os.path.join(wire_root, sid)
+        recf = os.path.join(sdir, "records.jsonl")
+        if not os.path.exists(recf):
             continue
         deref = make_deref(sdir)
         recs = [json.loads(l) for l in open(recf, encoding="utf-8") if l.strip()]
@@ -274,6 +273,8 @@ def locate_conversation(index, started_ts, first_message):
     cands = []
     for it in index:
         p = (it.get("prompt") or "").strip()
+        if not p:
+            continue
         if not key:
             continue
         if p[:40].startswith(key) or key.startswith(p[:40]):
