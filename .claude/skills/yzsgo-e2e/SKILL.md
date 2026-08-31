@@ -20,7 +20,7 @@ allowed-tools: ["Bash", "Read", "Write", "Agent", "Workflow"]
 1. **preflight**：`python3 preflight.py <env>`；缺项按提示准备（一次性登录/充值见 store-skills `setting-up-yzsgo-test-env`，我不替做）。
 2. **驱动 + 拉 wire + 备料**：`python3 run_e2e.py --env <env> --user <测试账号userId> --message ... [--answer k=v] [--expect ...] --out <dir>` → 出 `prepped.md` + `meta.json`。
 3. **判定**：`gh issue list --repo Optima-Chat/optima-gateway --state open --json number,title` 拉已知 issue 文本，`Workflow({scriptPath:"<skill>/judge_workflow.js", args:{base:"<dir>", sids:["prepped"], knownIssues:"<文本>"}})`。
-4. **报告 + 提 issue**：出报告（`render_report`）。**confirmed 直接 `gh issue create --repo Optima-Chat/optima-gateway --label needs-triage`**（证据=前端输出+wire transcript+repro 对话），提错可改可删；**needs_review 不自动提**，报告单列待人工；**环境类标 blocked 不提**。
+4. **报告 + 提 issue**：出报告（`render_report`）。**confirmed 直接 `gh issue create --repo Optima-Chat/optima-gateway --label needs-triage`**（证据=前端输出+wire transcript+repro 对话），提错可改可删；判定为纯前端缺陷（前端渲染问题、非 agent/网关逻辑）→ 提到对应前端 repo（而非 gateway）；拿不准就默认 gateway。**needs_review 不自动提**，报告单列待人工；**环境类标 blocked 不提**。
 
 ## 诚实边界（照搬 conversation-iq）
 - 「0 confirmed」≠「没问题」；needs_review 绝不静默毙。
@@ -35,3 +35,8 @@ allowed-tools: ["Bash", "Read", "Write", "Agent", "Workflow"]
 
 ## 两环境
 `--env cn-prod`（已打通）/ `cn-stage`（wire 取法待核实，脚本会告警）。
+
+## 真机 smoke（改完先跑这个验管道通）
+python3 run_e2e.py --env cn-prod --user <测试账号userId> --message "你好" --out /tmp/yzsgo-smoke
+# 期望：/tmp/yzsgo-smoke/prepped.md 含「前端所见」节 + wire transcript；meta.json 的 located 命中本次对话。
+# 只验四段接线通，不追判定质量。
