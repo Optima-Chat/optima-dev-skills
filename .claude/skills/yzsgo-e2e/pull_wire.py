@@ -243,5 +243,49 @@ def main():
         render_all(wire_root, a.out)
 
 
+# ── yzsgo-e2e 增补：结构化对话索引 + 本次对话定位 ──
+
+def emit_conversation_index(wire_root):
+    """遍历 wire_root 下各 session，切分对话，产出与 render_all 同序的结构化索引。"""
+    import os as _os
+    out = []
+    gidx = 0
+    sessions = sorted(d for d in _os.listdir(wire_root)
+                      if _os.path.isdir(_os.path.join(wire_root, d)))
+    for sid in sessions:
+        sdir = _os.path.join(wire_root, sid)
+        recf = _os.path.join(sdir, "records.jsonl")
+        if not _os.path.exists(recf):
+            continue
+        deref = make_deref(sdir)
+        recs = [json.loads(l) for l in open(recf, encoding="utf-8") if l.strip()]
+        reqs = [r for r in recs if r.get("kind") == "request"]
+        for conv in segment(reqs, deref):
+            gidx += 1
+            out.append({"gidx": gidx, "sid": sid,
+                        "ts": conv[0].get("ts", ""),
+                        "prompt": first_user_text(conv[0], deref)})
+    return out
+
+
+def locate_conversation(index, started_ts, first_message):
+    """按 (started_ts, first_message) 定位本次对话；禁用 ls -t。规则见 plan Task 3 Interfaces。"""
+    key = (first_message or "").strip()[:40]
+    cands = []
+    for it in index:
+        p = (it.get("prompt") or "").strip()
+        if not key:
+            continue
+        if p[:40].startswith(key) or key.startswith(p[:40]):
+            cands.append(it)
+    if not cands:
+        return None
+    cands.sort(key=lambda x: x.get("ts", ""))
+    after = [c for c in cands if c.get("ts", "") >= started_ts]
+    if after:
+        return after[0]
+    return cands[-1]
+
+
 if __name__ == "__main__":
     main()
