@@ -51,6 +51,7 @@ Optima Dev Skills 让 Claude Code 能够直接在 **ci、stage、prod、cn-stage
 - **restart-ecs** - 重启 ECS 服务（stage / prod）
 - **show-env** - 查看服务环境变量，从 Infisical 取（stage / prod / cn-stage / cn-prod）
 - **use-commerce-cli** - 用 Commerce CLI 管理电商店铺（商品、订单、库存、运费、集合、首页、国际化）
+- **yzsgo-e2e** - 鸭嘴兽通用端到端测试：浏览器真机驱对话 + 拉 wire + 语义判定 + 提 issue（cn-prod；cn-stage 待核实）
 
 ## 👤 用户故事
 

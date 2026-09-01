@@ -32,6 +32,10 @@ build/
 coverage/
 .nyc_output/
 
+# Python
+__pycache__/
+*.pyc
+
 # Temporary files
 tmp/
 temp/
