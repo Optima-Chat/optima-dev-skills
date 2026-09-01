@@ -21,5 +21,13 @@ class TestDrift(unittest.TestCase):
         self.assertFalse(by_file["prep_conversation.py"]) # gateway absent
         self.assertFalse(by_file["judge_workflow.js"])    # gateway absent
 
+    def test_adapted_flags(self):
+        # 只有 chat_driver 是逐字 vendored；pull_wire 追加了函数、prep/judge 改编 → adapted，永久 ⚠️ 属预期
+        by = {c["file"]: c.get("adapted") for c in plan_drift_checks({"store-skills": True, "gateway": True})}
+        self.assertFalse(by["chat_driver.py"])
+        self.assertTrue(by["pull_wire.py"])
+        self.assertTrue(by["prep_conversation.py"])
+        self.assertTrue(by["judge_workflow.js"])
+
 if __name__ == "__main__":
     unittest.main()

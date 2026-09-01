@@ -267,22 +267,42 @@ def emit_conversation_index(wire_root):
     return out
 
 
+def _ts_key(ts):
+    """把 wire 的 ...Z 与 datetime.isoformat 的 ...+00:00 归一成可比较的 aware datetime；解析不了回 None。"""
+    from datetime import datetime
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
 def locate_conversation(index, started_ts, first_message):
-    """按 (started_ts, first_message) 定位本次对话；禁用 ls -t。规则见 plan Task 3 Interfaces。"""
+    """按 (started_ts, first_message) 定位本次对话；禁用 ls -t。规则见 plan Task 3 Interfaces。
+    时间比较先把两侧 ISO（Z / +00:00、小数位宽不同）归一成 datetime，避免依赖字典序=数值序的脆弱假设。"""
     key = (first_message or "").strip()[:40]
     cands = []
     for it in index:
         p = (it.get("prompt") or "").strip()
-        if not p:
-            continue
-        if not key:
+        if not p or not key:
             continue
         if p[:40].startswith(key) or key.startswith(p[:40]):
             cands.append(it)
     if not cands:
         return None
-    cands.sort(key=lambda x: x.get("ts", ""))
-    after = [c for c in cands if c.get("ts", "") >= started_ts]
+    from datetime import datetime, timezone
+    FAR = datetime.max.replace(tzinfo=timezone.utc)
+    cands.sort(key=lambda x: _ts_key(x.get("ts", "")) or FAR)
+    st = _ts_key(started_ts)
+    after = []
+    for c in cands:
+        ck = _ts_key(c.get("ts", ""))
+        if st is not None and ck is not None:
+            if ck >= st:
+                after.append(c)
+        elif c.get("ts", "") >= (started_ts or ""):   # 任一解析不了 → 退字符串比较保底
+            after.append(c)
     if after:
         return after[0]
     return cands[-1]

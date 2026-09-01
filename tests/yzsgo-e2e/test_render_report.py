@@ -1,8 +1,16 @@
 import os, sys, unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".claude", "skills", "yzsgo-e2e"))
-from run_e2e import render_report, select_conversation_in_session
+from run_e2e import render_report, select_conversation_in_session, _parse_answers
 
 class TestReport(unittest.TestCase):
+    def test_parse_answers_drops_malformed_with_warning(self):
+        import io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            got = _parse_answers(["k=v", "bad", "x=y=z"])
+        self.assertEqual(got, [{"match": "k", "answer": "v"}, {"match": "x", "answer": "y=z"}])
+        self.assertIn("bad", buf.getvalue())  # 缺 = 的项被丢弃且有告警
+
     def test_confirmed_and_needs_review_rows(self):
         md = render_report({
             "env": "cn-prod", "started_ts": "2026-08-31T14:00:00Z", "first_message": "你好",

@@ -24,5 +24,14 @@ class TestLocate(unittest.TestCase):
         idx = [{"gidx": 1, "sid": "s1", "ts": "2026-08-31T14:04:00Z", "prompt": ""}]
         self.assertIsNone(locate_conversation(idx, "2026-08-31T14:00:00Z", "我想做电商帮我看看"))
 
+    def test_mixed_iso_format_and_subsecond(self):
+        # started_ts 是 datetime.isoformat 风格(+00:00, 微秒)，wire 是 Z；归一后按数值序比较，不靠字典序
+        idx = [
+            {"gidx": 1, "sid": "s", "ts": "2026-09-01T02:19:47.900Z", "prompt": "你好"},
+            {"gidx": 2, "sid": "s", "ts": "2026-09-01T02:19:48.100Z", "prompt": "你好"},
+        ]
+        r = locate_conversation(idx, "2026-09-01T02:19:48.000000+00:00", "你好")
+        self.assertEqual(r["gidx"], 2)  # 47.9 在 started(48.0) 之前排除，命中 48.1
+
 if __name__ == "__main__":
     unittest.main()
