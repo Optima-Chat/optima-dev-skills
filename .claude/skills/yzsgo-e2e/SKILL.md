@@ -16,9 +16,20 @@ allowed-tools: ["Bash", "Read", "Write", "Agent", "Workflow"]
 - 用户提到「遇到它问 X 就答 Y / 测某个反问」→ `--answer "X=Y"`。
 - 用户说「重点看有没有 Z」→ `--expect "Z"`。
 
+## 环境自举（第一步，自包含——别外链别的仓库）
+脚本都在本 skill 目录（记为 `$S`，就是本 SKILL.md 所在目录）。托管 venv = `~/.cache/yzsgo-e2e/venv`（记 `$VENV`），不碰系统 python。
+
+1. **体检**：`python3 $S/preflight.py <env>`。缺项分两类：
+   - 🅰️ **auto（能自动装）**：`venv+playwright`、`sshpass`。
+   - ✋ **manual（凭据/登录，装不了）**：`chrome-9222`（登了测试账号的调试 Chrome）、`buildbox-pw`、`test-user-id`。
+2. **逐个补缺**（🔴 全绿才往下；不绿就停下、别硬跑半残）：
+   - 每个 🅰️ 缺项：**先问用户「要我装 `<name>` 吗？」，用户同意了**再跑 `python3 $S/bootstrap.py setup`（装 venv+playwright）或 `python3 $S/bootstrap.py install-sshpass`。别不问就装。
+   - 每个 ✋ 缺项：引导用户——`chrome-9222`：`python3 $S/bootstrap.py launch-chrome` 起窗口、让用户**手动登测试账号**（登一次长期免登）；`buildbox-pw`：让用户把口令放 `~/.buildbox_pw`（内部拉 wire 用，向团队要）；`test-user-id`：让用户登录 Optima（run_e2e 自动从 `~/.optima/token.json` 读 userId）。
+   - 补完 `python3 $S/preflight.py <env>` 复检，直到全 ✅ 才进四段。
+
 ## 四段流程
-1. **preflight**：`python3 preflight.py <env>`；缺项按提示准备（一次性登录/充值见 store-skills `setting-up-yzsgo-test-env`，我不替做）。
-2. **驱动 + 拉 wire + 备料**：`python3 run_e2e.py --env <env> --user <测试账号userId> --message ... [--answer k=v] [--expect ...] --out <dir>` → 出 `prepped.md` + `meta.json`。
+1. **preflight + 自举**：见上「环境自举」，**全绿**才继续。
+2. **驱动 + 拉 wire + 备料**：`$VENV/bin/python $S/run_e2e.py --env <env> --message ... [--answer k=v] [--expect ...] --out <dir>` → 出 `prepped.md` + `meta.json`。🔑 用 **venv 的 python**（playwright 在那儿）；`--user` 不给则自动读 `~/.optima/token.json`。
 3. **判定**：`gh issue list --repo Optima-Chat/optima-gateway --state open --json number,title` 拉已知 issue 文本，`Workflow({scriptPath:"<skill>/judge_workflow.js", args:{base:"<dir>", sids:["prepped"], knownIssues:"<文本>"}})`。
 4. **报告 + 提 issue**：
    判定跑完后，先把 judge_workflow 输出 + meta.json 组装成 render_report 的入参（两者字段形状不同，别直接传）：
@@ -45,7 +56,8 @@ allowed-tools: ["Bash", "Read", "Write", "Agent", "Workflow"]
 
 ## 真机 smoke（改完先跑这个验管道通）
 ```bash
-python3 run_e2e.py --env cn-prod --user <测试账号userId> --message "你好" --out /tmp/yzsgo-smoke
+python3 $S/preflight.py cn-prod          # 先体检，缺项按「环境自举」补齐到全绿
+$VENV/bin/python $S/run_e2e.py --env cn-prod --message "你好" --out /tmp/yzsgo-smoke
 # 期望：/tmp/yzsgo-smoke/prepped.md 含「前端所见」节 + wire transcript；meta.json 的 located 命中本次对话。
-# 只验四段接线通，不追判定质量。
+# 只验四段接线通，不追判定质量。（--user 自动读 token.json）
 ```
