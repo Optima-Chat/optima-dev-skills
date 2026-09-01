@@ -23,6 +23,14 @@ def render_report(result: dict) -> str:
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+def _read_user_from_token(path: str = None) -> str:
+    path = path or os.path.expanduser("~/.optima/token.json")
+    try:
+        d = json.load(open(path))
+        return (d.get("user") or {}).get("userId")
+    except Exception:
+        return None
+
 def _parse_answers(pairs):
     out = []
     for p in pairs or []:
@@ -50,13 +58,21 @@ def main():
     ap.add_argument("--message", action="append", required=True, help="逐轮发送的消息（可多次）")
     ap.add_argument("--answer", action="append", help="反问预设答案 关键词=答案（可多次）")
     ap.add_argument("--expect", default="", help="关注点，喂给判定层")
-    ap.add_argument("--user", required=True, help="测试账号 userId（拉 wire 用）")
+    ap.add_argument("--user", default=None,
+                    help="测试账号 userId（拉 wire 用）；不给则从 ~/.optima/token.json 自动读")
     ap.add_argument("--out", default="e2e-out")
     ap.add_argument("--timeout", type=int, default=180,
                     help="每轮等回复超时秒；长任务（简报/多工具）调大到 500+")
     ap.add_argument("--since", type=int, default=1, help="拉 wire 的天数窗口（默认 1）")
     ap.add_argument("--issue-repo", default="Optima-Chat/optima-gateway")
     args = ap.parse_args()
+
+    if not args.user:
+        args.user = _read_user_from_token()
+    if not args.user:
+        print("[error] 没给 --user 且 ~/.optima/token.json 读不到 userId；先登录 Optima 或显式传 --user。",
+              file=sys.stderr)
+        sys.exit(2)
 
     if args.env == "cn-stage":
         print("[warn] cn-stage 的 wire 取法未验证（spec §8 待核实）；仅 cn-prod 全链路已打通。", file=sys.stderr)

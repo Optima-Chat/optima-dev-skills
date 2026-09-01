@@ -1,8 +1,19 @@
 import os, sys, unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".claude", "skills", "yzsgo-e2e"))
-from run_e2e import render_report, select_conversation_in_session, _parse_answers
+from run_e2e import render_report, select_conversation_in_session, _parse_answers, _read_user_from_token
 
 class TestReport(unittest.TestCase):
+    def test_read_user_from_token(self):
+        import json, tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({"user": {"userId": "u-123"}}, f)
+            p = f.name
+        try:
+            self.assertEqual(_read_user_from_token(p), "u-123")
+        finally:
+            os.unlink(p)
+        self.assertIsNone(_read_user_from_token("/no/such/token.json"))  # 读不到回 None，由 main 报错
+
     def test_parse_answers_drops_malformed_with_warning(self):
         import io, contextlib
         buf = io.StringIO()

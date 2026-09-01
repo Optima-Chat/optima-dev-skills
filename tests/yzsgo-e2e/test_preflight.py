@@ -4,17 +4,22 @@ from preflight import summarize_preflight
 
 class TestPreflight(unittest.TestCase):
     def test_all_ok(self):
-        r = summarize_preflight([{"name": "chrome-9222", "ok": True, "hint": "x"}])
-        self.assertTrue(r["ok"]); self.assertEqual(r["missing"], [])
-        self.assertIn("✅ chrome-9222", r["report"])
+        r = summarize_preflight([{"name": "x", "ok": True, "category": "auto", "fix": "f"}])
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["missing"], [])
+        self.assertIn("✅ x", r["report"])
 
-    def test_missing_lists_and_hints(self):
+    def test_missing_carries_category_and_fix(self):
         r = summarize_preflight([
-            {"name": "chrome-9222", "ok": True, "hint": "x"},
-            {"name": "buildbox-pw", "ok": False, "hint": "创建 ~/.buildbox_pw"},
+            {"name": "venv+playwright", "ok": False, "category": "auto", "fix": "python3 bootstrap.py setup"},
+            {"name": "buildbox-pw", "ok": False, "category": "manual", "fix": "放 ~/.buildbox_pw"},
         ])
-        self.assertFalse(r["ok"]); self.assertEqual(r["missing"], ["buildbox-pw"])
-        self.assertIn("❌ buildbox-pw", r["report"]); self.assertIn("创建 ~/.buildbox_pw", r["report"])
+        self.assertFalse(r["ok"])
+        self.assertEqual({m["name"] for m in r["missing"]}, {"venv+playwright", "buildbox-pw"})
+        cats = {m["name"]: m["category"] for m in r["missing"]}
+        self.assertEqual(cats["venv+playwright"], "auto")   # 可自动装
+        self.assertEqual(cats["buildbox-pw"], "manual")     # 只能引导
+        self.assertIn("bootstrap.py setup", r["report"])    # 修法进报告
 
 if __name__ == "__main__":
     unittest.main()
