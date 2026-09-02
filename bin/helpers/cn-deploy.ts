@@ -64,6 +64,8 @@ const SERVICES: Record<string, Svc> = {
   'optima-sentinel':          { repo: 'optima-sentinel',    saeAppId: '3759db7b-4640-4a04-8436-4f241f0ec9d9', prodSaeAppId: 'e120e70c-b2c1-49ef-a66c-9016fd2d807d' },
   'optima-sentinel-worker':   { repo: 'optima-sentinel',    saeAppId: '7c975caf-ebfb-4bb3-91c4-2a8c83d1d2e5', prodSaeAppId: 'e0f9b92c-00af-4ade-9b07-15bba48c14cc' },
   'optima-skills':            { repo: 'optima-skills',      saeAppId: '90457be3-5eb3-4efc-a362-1788dcc51921', prodSaeAppId: '55a63ee7-fb75-46e4-99f3-20854a699237' },
+  // prodSaeAppId 待 cn-prod 首发后补(流水线 tiktok-backend-cn-prod 亦未生成,prod 请求会在找流水线一步失败,符合预期)
+  'tiktok-backend':           { repo: 'tiktok-api-integration', saeAppId: 'd34e8e25-1eab-473b-a01e-8df1375f7330' },
   'user-auth':                { repo: 'user-auth',          saeAppId: '36efc3a6-5b42-49fa-8db2-0865aa0c25d2', prodSaeAppId: 'd6fbf9de-fed6-4165-978f-7b3a0a456acc' },
   'user-auth-admin':          { repo: 'user-auth',          saeAppId: '7feb9cc3-4731-4ea8-964c-4870a9e63afb', prodSaeAppId: '54093f99-37bf-4354-abd7-f6e76abdbcb6' },
   'yzsgo-api':                { repo: 'yzsgo',              saeAppId: 'd0af7f66-ef66-4587-9e93-250d01ee3cf6', prodSaeAppId: '5a820992-e11b-404a-9e58-8f607d8e0c5f' },
