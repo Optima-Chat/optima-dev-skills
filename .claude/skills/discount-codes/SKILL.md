@@ -1,6 +1,6 @@
 ---
 name: "discount-codes"
-description: "当用户请求创建优惠码、发优惠码、生成折扣码、promo code、discount code、批量生成优惠码、停用优惠码、查看优惠码时，使用此技能。支持 Stage、Prod 两个环境。"
+description: "当用户请求创建优惠码、发优惠码、生成折扣码、promo code、discount code、批量生成优惠码、停用优惠码、查看优惠码时，使用此技能。支持 Stage、Prod、cn-prod、cn-stage 四个环境。"
 allowed-tools: ["Bash"]
 ---
 
@@ -45,13 +45,13 @@ optima-discount disable  --code LAUNCH20 --env prod
 | `--campaign` | 分组标签（generate 时也是码前缀） |
 | `--count` | generate 生成数量 1-1000 |
 | `--limit` | list 返回上限（默认 500，最大 1000） |
-| `--env` | `stage` / `prod`（默认 `stage`） |
-| `--yes` | 跳过 prod 二次确认 |
+| `--env` | `stage` / `prod` / `cn-prod` / `cn-stage`（默认 `stage`） |
+| `--yes` | 跳过生产环境二次确认 |
 
 ## 安全提醒
 
 1. **Stage 优先**：默认 `stage`。
-2. **Prod 谨慎**：`create` / `generate` / `disable` 在 prod 会要求输入 "yes" 确认（`--yes` 跳过）。
+2. **生产环境谨慎**：`create` / `generate` / `disable` 在 `prod` 与 `cn-prod` 会要求输入 "yes" 确认（`--yes` 跳过）。
 3. **唯一码写文件**：`generate` 的码写入当前目录文件（`mode 0600`），不打屏——避免复制时被终端 padding 破坏。
 4. 依赖 billing 已部署对应环境（admin 端点存在）。越界值（如 `--percent 0`）由 billing 服务端校验返 400。
 

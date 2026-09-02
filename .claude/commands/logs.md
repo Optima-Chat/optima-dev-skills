@@ -1,6 +1,6 @@
 # /logs - 查看服务日志
 
-快速查看服务日志，支持 CI/Stage/Prod 三个环境。
+快速查看服务日志，支持 CI/Stage/Prod/cn-prod/cn-stage 五个环境。
 
 **版本**: v0.3.0
 

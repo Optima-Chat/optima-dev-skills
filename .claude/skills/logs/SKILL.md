@@ -1,6 +1,6 @@
 ---
 name: "logs"
-description: "当用户请求查看日志、查看服务日志、排查问题、看看日志、检查日志、商品服务日志、后端日志、API日志、正式环境日志、生产环境日志、CI环境日志、开发环境日志、阿里云日志、cn-prod 日志、SAE 日志时，使用此技能。支持 CI、Stage、Prod（AWS ECS/CloudWatch）以及 cn-prod（阿里云 SAE/SLS）四个环境的 commerce-backend、user-auth、agentic-chat、gateway-core、optima-scout、optima-skills 等服务。"
+description: "当用户请求查看日志、查看服务日志、排查问题、看看日志、检查日志、商品服务日志、后端日志、API日志、正式环境日志、生产环境日志、CI环境日志、开发环境日志、阿里云日志、cn-prod 日志、cn-stage 日志、SAE 日志时，使用此技能。支持 CI、Stage、Prod（AWS ECS/CloudWatch）以及 cn-prod、cn-stage（阿里云 SAE/SLS）五个环境的 commerce-backend、user-auth、agentic-chat、gateway-core、optima-scout、optima-skills 等服务。"
 allowed-tools: ["Bash", "SlashCommand"]
 ---
 
@@ -175,16 +175,17 @@ INFO - Database query took 3200ms: SELECT * FROM products WHERE...
 - 通过 CloudWatch Logs 查看
 - 日志保留 7 天
 
-### cn-prod 环境（阿里云）
+### cn-prod / cn-stage 环境（阿里云）
 
 ```
 /logs gateway-core 100 cn-prod
 /logs agentic-chat 80 cn
+/logs gateway-core 100 cn-stage
 ```
 
 **特点**：
 - 阿里云 **SLS**（日志服务，cn-beijing），不是 AWS CloudWatch
-- ✅ 用 `optima-logs <svc> --env cn-prod` **直连 SLS**（`aliyun sls GetLogsV2`，公网控制面 API）——免 buildbox 跳板，支持历史检索 + 时间窗（`--since`）+ 关键词（`--grep`）
+- ✅ 用 `optima-logs <svc> --env cn-prod|cn-stage` **直连 SLS**（`aliyun sls GetLogsV2`，公网控制面 API）——免 buildbox 跳板，支持历史检索 + 时间窗（`--since`）+ 关键词（`--grep`）
 - 前置：本机需装 `aliyun` CLI + `aliyun-optima` profile（cn-beijing）
 - 旧的「buildbox → SAE `DescribeInstanceLog` 取当前缓冲」已弃用（缓冲式、重启即丢、不能检索）；技术细节见 `.claude/commands/logs.md`（即 `/logs` 命令文档）第 3 节
 

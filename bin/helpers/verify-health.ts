@@ -17,8 +17,8 @@
  *
  * 用法:
  *   optima-verify-health user-auth                  # 默认 cn-prod
- *   optima-verify-health user-auth --env prod        # 环境 stage|prod|cn|all
- *   optima-verify-health --all --env all             # stage/prod/cn 三环境矩阵
+ *   optima-verify-health user-auth --env prod        # 环境 stage|prod|cn-prod|cn-stage|all
+ *   optima-verify-health --all --env all             # stage/prod/cn-prod/cn-stage 四环境矩阵
  *   optima-verify-health gateway-core --expect-commit a1b2c3d
  *   optima-verify-health --url https://auth.yzsgo.com/health
  *   optima-verify-health --all --json                # 机器可读,接 CI
@@ -29,23 +29,40 @@ import { promises as dns } from 'node:dns';
 import * as tls from 'node:tls';
 import * as https from 'node:https';
 
-type Env = 'stage' | 'prod' | 'cn' | 'cn-stage';
-interface SvcCfg { path: string; stage?: string; prod?: string; cn?: string; cn_path?: string; 'cn-stage'?: string; 'cn-stage_path'?: string; }
+// 环境名与全仓保持一致（logs.ts 的 CN_ENVS、query-db.ts 的 VALID_ENVS、show-env、
+// billing-http 的 validateEnvCnProd）：阿里云生产叫 cn-prod，不叫 cn。
+// 🔴 名字对不上时 resolve() 会把每个 SvcCfg 键查成 undefined，于是走到「无目标」分支，
+// 把「环境名打错」报成「该服务无部署」—— 与 #83 那批 301 被报成「疑似未部署」同一个病：
+// 探针在不确定的时候撒了一个确定的谎。
+type Env = 'stage' | 'prod' | 'cn-prod' | 'cn-stage';
+interface SvcCfg { path: string; stage?: string; prod?: string; 'cn-prod'?: string; 'cn-prod_path'?: string; 'cn-stage'?: string; 'cn-stage_path'?: string; }
 
 // 服务 × 环境 FQDN 表。某服务某环境没部署 → 该 env 键缺省,探时跳过。
 // cn-prod 真实 subdomain 抄自 optima-terraform alicloud/stacks/cn-prod-ingress-sae/main.tf。
 // #201 (2026-06-12): yzsgo.com 全量迁移完成,旧 *-cn.optima.chat 路由已下线。
 // cn-stage（阿里云预发）域名 *.stage.optima.chat，抄自 cn-stage-ingress-sae services map。
+// #83 (2026-08-13): AWS stage 是 *.stage.optima.onl（点号），旧的连字符形式 *-stage.optima.onl
+// 已不再路由到服务——三项实测 301 → www.optima.onl，探测恒红并误报成「疑似未部署」。
+// 🔴 别只看 stage 列：agentic-chat 的 prod 也踩同一个坑（见下面那行的注释）。
 const SERVICES: Record<string, SvcCfg> = {
-  'user-auth':        { path: '/health',     stage: 'auth-stage.optima.onl', prod: 'auth.optima.onl', cn: 'auth.yzsgo.com', 'cn-stage': 'auth.stage.optima.chat' },
-  'agentic-chat':     { path: '/api/health', stage: 'ai-stage.optima.onl',   prod: 'ai.optima.onl',   cn: 'app.yzsgo.com', 'cn-stage': 'app.stage.optima.chat' },
-  'commerce-backend': { path: '/health',     stage: 'api-stage.optima.onl',  prod: 'api.optima.onl',  cn: 'commerce.yzsgo.com', cn_path: '/health/live', 'cn-stage': 'commerce.stage.optima.chat', 'cn-stage_path': '/health/live' },
-  'mcp-host':         { path: '/health',     stage: 'mcp-stage.optima.onl',  prod: 'mcp.optima.onl' },
-  'gateway-core':     { path: '/health',     cn: 'gw.yzsgo.com', 'cn-stage': 'gw.stage.optima.chat' },
-  'optima-scout':     { path: '/health',     cn: 'scout.yzsgo.com', 'cn-stage': 'scout.stage.optima.chat' },
-  'optima-skills':    { path: '/health',     cn: 'skills.yzsgo.com', 'cn-stage': 'skills.stage.optima.chat' },
+  'user-auth':        { path: '/health',     stage: 'auth.stage.optima.onl', prod: 'auth.optima.onl', 'cn-prod': 'auth.yzsgo.com', 'cn-stage': 'auth.stage.optima.chat' },
+  // agentic-chat 的 prod 入口是 www 不是 ai：prod-ecs/variables.tf 里它的 subdomain = "www"，
+  // 且 main.tf 有一条 ai_to_www_redirect(priority 309) 专门把 ai.optima.onl 301 到 www。
+  // 实测 ai.optima.onl/api/health → 301；www.optima.onl/api/health → 200 service=agentic-chat。
+  'agentic-chat':     { path: '/api/health', stage: 'ai.stage.optima.onl',   prod: 'www.optima.onl',  'cn-prod': 'app.yzsgo.com', 'cn-stage': 'app.stage.optima.chat' },
+  'commerce-backend': { path: '/health',     stage: 'api.stage.optima.onl',  prod: 'api.optima.onl',  'cn-prod': 'commerce.yzsgo.com', 'cn-prod_path': '/health/live', 'cn-stage': 'commerce.stage.optima.chat', 'cn-stage_path': '/health/live' },
+  // #83: mcp-host 已于 2025-12-18 下线,故不在表内 —— optima-terraform origin/main(f97adbb) 的
+  // stage-ecs/variables.tf:146 与 prod-ecs/variables.tf:508 都写着「MCP 工具服务已移除」,
+  // 两个 ecs stack 的 services map 里均无该条目;实测四个候选主机名全是壳(mcp.stage.optima.onl
+  // 307 → /en-US/health 前端 locale 路由,mcp-stage.optima.onl 与 prod 的 mcp.optima.onl 均
+  // 301 → www)。🔴 别再把它加回来:worstOk 是全局单标志(:221),留着它会让 `--all --env stage`
+  // 与 `--all --env prod` 恒 exit 1,而那个退出码正是接 CI 卡口时唯一被读的东西。
+  // 同一约束在 tests/service-matrix-alignment.test.js 里对 show-env 的清单也钉着。
+  'gateway-core':     { path: '/health',     'cn-prod': 'gw.yzsgo.com', 'cn-stage': 'gw.stage.optima.chat' },
+  'optima-scout':     { path: '/health',     'cn-prod': 'scout.yzsgo.com', 'cn-stage': 'scout.stage.optima.chat' },
+  'optima-skills':    { path: '/health',     'cn-prod': 'skills.yzsgo.com', 'cn-stage': 'skills.stage.optima.chat' },
 };
-const ENVS: Env[] = ['stage', 'prod', 'cn', 'cn-stage'];
+const ENVS: Env[] = ['stage', 'prod', 'cn-prod', 'cn-stage'];
 
 const G = '\x1b[32m', R = '\x1b[31m', Y = '\x1b[33m', B = '\x1b[34m', N = '\x1b[0m';
 const MARK: Record<string, string> = { ok: `${G}✅${N}`, fail: `${R}❌${N}`, warn: `${Y}⚠️ ${N}`, na: `${B}··${N}` };
@@ -171,7 +188,17 @@ async function main() {
   const val = (f: string) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined; };
   const asJson = has('--json'), strict = has('--strict');
   const expect = val('--expect-commit');
-  const env = (val('--env') || 'cn') as Env | 'all';
+  // 🔴 必须先校验再转型：不校验的话任何不认识的 env 都会让 resolve() 把每个 SvcCfg 键查成
+  // undefined，于是落到下面的「无目标」分支，把「环境名打错」报成「该服务无部署」——
+  // 一个活着的服务被说成没上线，正是 #83 要根治的那类静默误报。
+  let envArg = val('--env') || 'cn-prod';
+  // 'cn' 是本文件的历史叫法，继续放行但不在 usage 里宣传（同 query-db.ts 的 ENV_ALIASES）。
+  if (envArg === 'cn') envArg = 'cn-prod';
+  if (envArg !== 'all' && !ENVS.includes(envArg as Env)) {
+    console.error(`❌ 未知环境:${envArg}(可选:${ENVS.join(' | ')} | all)`);
+    process.exit(2);
+  }
+  const env = envArg as Env | 'all';
   const envs: Env[] = env === 'all' ? ENVS : [env as Env];
   const positional = argv.filter((x, i) => !x.startsWith('--') && !(i > 0 && argv[i - 1].startsWith('--') && ['--env', '--expect-commit', '--url'].includes(argv[i - 1])));
 
