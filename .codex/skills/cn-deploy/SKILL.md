@@ -1,6 +1,6 @@
 ---
 name: cn-deploy
-description: 当用户请求把服务发布/部署/构建到 cn-stage、跑云效流水线、cn-stage 发版、部署某个分支到 cn-stage、触发 cn 构建、yunxiao 部署、"把 xx 发到 cn"时，使用此技能。覆盖 cn-stage 全部 21 个服务（构建→DB迁移→SAE 发布一条龙；含 build-only 的 agent-runtime）。
+description: 当用户请求把服务发布/部署/构建到 cn-stage、跑云效流水线、cn-stage 发版、部署某个分支到 cn-stage、触发 cn 构建、yunxiao 部署、"把 xx 发到 cn"时，使用此技能。覆盖 cn-stage 全部 22 个服务（构建→DB迁移→SAE 发布一条龙；含 build-only 的 agent-runtime）。
 ---
 
 # cn-deploy - 云效 cn-stage 流水线发布
@@ -21,7 +21,7 @@ optima-cn-deploy --list                       # 列出全部可发服务
 
 ## 使用要点
 
-1. **先 `--list` 确认服务名**（21 个服务，含 commerce-backend / optima-scout / build-only 的 agent-runtime）。
+1. **先 `--list` 确认服务名**（22 个服务，含 commerce-backend / optima-scout / build-only 的 agent-runtime）。
 2. 全链约 3-8 分钟（agentic-chat 最重）。触发后会输出云效 run 链接，可发给用户自行围观。
 3. **凭证零配置**：构建凭证由云效变量组 `cn-stage-build-credentials`(41970) 供给，不需要注入任何 secret。
 4. 分支构建会把该分支代码部署到 cn-stage（替换现运行版本）——用户明确要求部署分支时才用。
