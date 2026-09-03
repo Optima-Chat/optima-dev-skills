@@ -11,6 +11,7 @@ import {
   getUserById,
   validateEnvCnProd,
 } from './billing-http';
+import { operatorActorId } from './operator';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -76,7 +77,7 @@ const PLANS_BY_ENV: Record<string, string[]> = {
   'cn-stage': ['trial', 'starter', 'pro', 'enterprise', 'free'],
 };
 
-function parseArgs(args: string[]): { identifier: string; plan: string; months: number; env: string } {
+function parseArgs(args: string[]): { identifier: string; plan: string; months: number; operator: string | null; env: string } {
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     console.log(`Usage: optima-grant-subscription <email|phone|userId> [options]
 
@@ -85,6 +86,7 @@ Options:
                     cn-prod/cn-stage additionally allow: free
                     (legacy *-cn ids are accepted and normalized to canonical)
   --months <n>      Duration in months (default: 1)
+  --operator <name>       Operator self-report for billing audit (default: local username)
   --env <env>       Environment: stage, prod, cn-prod, cn-stage (default: stage)
   -h, --help        Show this help`);
     process.exit(0);
@@ -93,11 +95,13 @@ Options:
   const identifier = args[0];
   let plan: string | null = null;
   let months = 1;
+  let operator: string | null = null;
   let env = 'stage';
 
   for (let i = 1; i < args.length; i++) {
     if (args[i] === '--plan' && args[i + 1]) { plan = args[++i]; }
     else if (args[i] === '--months' && args[i + 1]) { months = parseInt(args[++i], 10); }
+    else if (args[i] === '--operator' && args[i + 1]) { operator = args[++i]; }
     else if (args[i] === '--env' && args[i + 1]) { env = args[++i]; }
   }
 
@@ -113,7 +117,7 @@ Options:
   }
   if (months < 1) { console.error('Months must be >= 1'); process.exit(1); }
 
-  return { identifier, plan, months, env };
+  return { identifier, plan, months, operator, env };
 }
 
 /**
@@ -181,7 +185,7 @@ export async function resolveTargetUser(
 }
 
 async function main() {
-  const { identifier, plan, months, env } = parseArgs(process.argv.slice(2));
+  const { identifier, plan, months, operator, env } = parseArgs(process.argv.slice(2));
 
   console.log(`\n🎁 Granting ${plan} subscription to ${identifier} (${classifyIdentifier(identifier)}) for ${months} month(s) [${env.toUpperCase()}]\n`);
 
@@ -198,7 +202,7 @@ async function main() {
     weeklyTokenLimit: number;
     expiresAt: string;
     warning?: string;
-  }>(env, 'POST', '/api/billing/admin/grant-subscription', { userId, planId: plan, months });
+  }>(env, 'POST', '/api/billing/admin/grant-subscription', { userId, planId: plan, months, actorUserId: operatorActorId(operator) });
 
   console.log(`✓ Subscription ${body.subscriptionId} (${body.planId})`);
   console.log(`✓ Credits: ${body.credits.toLocaleString()} (expires ${body.expiresAt})`);

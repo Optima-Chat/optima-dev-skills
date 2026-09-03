@@ -1,12 +1,14 @@
 import { callBilling, validateEnvCnProd } from '../billing-http';
 import { confirmIfProd } from '../confirm-prompt';
 import { resolveTargetUser } from '../grant-subscription';
+import { operatorActorId } from '../operator';
 
 interface GrantArgs {
   identifier: string;
   productKey: string;
   justification: string;
   yes: boolean;
+  operator?: string;
   env: string;
 }
 
@@ -21,6 +23,7 @@ Required:
 
 Optional:
   --yes                            Skip prod/cn-prod confirmation prompt (no-op on stage / cn-stage)
+  --operator <name>       Operator self-report for billing audit (default: local username)
   --env stage|prod|cn-prod|cn-stage   (default: stage)
 
 Hardcoded server-side: source=ADMIN_GRANT, priceCents=0, currency=USD, grantedBy=<clientId>.`);
@@ -35,6 +38,7 @@ Hardcoded server-side: source=ADMIN_GRANT, priceCents=0, currency=USD, grantedBy
       case '--product-key': out.productKey = next; i++; break;
       case '--justification': out.justification = next; i++; break;
       case '--yes': out.yes = true; break;
+      case '--operator': out.operator = next; i++; break;
       case '--env': out.env = next; i++; break;
       default:
         if (a.startsWith('--')) throw new Error(`Unknown arg: ${a}`);
@@ -67,6 +71,7 @@ export async function runGrant(argv: string[]): Promise<void> {
     userId,
     productKey: args.productKey,
     justification: args.justification,
+    actorUserId: operatorActorId(args.operator ?? null),
   });
   console.log(`✓ Granted entitlement (HTTP ${res.status}):`);
   console.log(JSON.stringify(res.body, null, 2));
