@@ -1,12 +1,14 @@
 import { callBilling, validateEnvCnProd } from '../billing-http';
 import { confirmIfProd } from '../confirm-prompt';
 import { resolveTargetUser } from '../grant-subscription';
+import { operatorActorId } from '../operator';
 
 interface RevokeArgs {
   identifier: string;
   productKey: string;
   reason: string;
   yes: boolean;
+  operator?: string;
   env: string;
 }
 
@@ -28,6 +30,7 @@ Required:
 
 Optional:
   --yes                            Skip prod/cn-prod confirmation prompt (no-op on stage / cn-stage)
+  --operator <name>       Operator self-report for billing audit (default: local username)
   --env stage|prod|cn-prod|cn-stage   (default: stage)
 
 Refuses non-ADMIN_GRANT sources (PAYMENT, PARTNER) with source-specific
@@ -43,6 +46,7 @@ error pointing to the right reversal flow.`);
       case '--product-key': out.productKey = next; i++; break;
       case '--reason': out.reason = next; i++; break;
       case '--yes': out.yes = true; break;
+      case '--operator': out.operator = next; i++; break;
       case '--env': out.env = next; i++; break;
       default:
         if (a.startsWith('--')) throw new Error(`Unknown arg: ${a}`);
@@ -111,6 +115,7 @@ export async function runRevoke(argv: string[]): Promise<void> {
     entitlementId: target.id,
     refundReason: args.reason,
     refundAmountCents: 0,
+    actorUserId: operatorActorId(args.operator ?? null),
   });
   console.log(`✓ Revoked entitlement (HTTP ${res.status}):`);
   console.log(JSON.stringify(res.body, null, 2));

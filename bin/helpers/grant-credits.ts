@@ -10,6 +10,7 @@
 import { basename } from 'path';
 import { randomUUID } from 'crypto';
 import { callBilling, validateEnvCnProd } from './billing-http';
+import { operatorActorId } from './operator';
 import { resolveTargetUser } from './grant-subscription';
 
 const CREDITS_PER_USD = 700;
@@ -19,6 +20,7 @@ interface Parsed {
   credits: number | null;
   amountUsd: number | null;
   description: string | null;
+  operator: string | null;
   env: string;
 }
 
@@ -36,6 +38,7 @@ Options:
   --credits <n>         Credits to grant (integer >= 1). Primary unit.
   --amount <usd>        Alt: grant by USD ($1 = ${CREDITS_PER_USD} credits). Provide exactly one of --credits / --amount.
   --description <text>  Description for audit trail (optional)
+  --operator <name>       Operator self-report for billing audit (default: local username)
   --env <env>           Environment: stage, prod, cn-prod, cn-stage (default: stage)
   -h, --help            Show this help
 
@@ -50,12 +53,14 @@ Examples:
   let credits: number | null = null;
   let amountUsd: number | null = null;
   let description: string | null = null;
+  let operator: string | null = null;
   let env = 'stage';
 
   for (let i = 1; i < args.length; i++) {
     if (args[i] === '--credits' && args[i + 1]) { credits = parseInt(args[++i], 10); }
     else if (args[i] === '--amount' && args[i + 1]) { amountUsd = parseFloat(args[++i]); }
     else if (args[i] === '--description' && args[i + 1]) { description = args[++i]; }
+    else if (args[i] === '--operator' && args[i + 1]) { operator = args[++i]; }
     else if (args[i] === '--env' && args[i + 1]) { env = args[++i]; }
   }
 
@@ -74,7 +79,7 @@ Examples:
   }
   validateEnvCnProd(env);
 
-  return { identifier, credits, amountUsd, description, env };
+  return { identifier, credits, amountUsd, description, operator, env };
 }
 
 async function main() {
@@ -83,7 +88,7 @@ async function main() {
     console.warn('⚠️  optima-grant-balance 已更名为 optima-grant-credits（P15 钱包退役后回归积分）。请改用 `optima-grant-credits --credits <n>`；本别名仍可用，后续弃用。\n');
   }
 
-  const { identifier, credits, amountUsd, description, env } = parseArgs(process.argv.slice(2));
+  const { identifier, credits, amountUsd, description, operator, env } = parseArgs(process.argv.slice(2));
 
   const creditsDisplay = credits ?? Math.round((amountUsd as number) * CREDITS_PER_USD);
   console.log(`\n🎁 Granting ${creditsDisplay} credits${amountUsd !== null ? ` ($${amountUsd.toFixed(2)})` : ''} to ${identifier} [${env.toUpperCase()}]\n`);
@@ -105,6 +110,7 @@ async function main() {
       userId,
       ...amountField,
       description: description ?? undefined,
+      actorUserId: operatorActorId(operator),
       idempotencyKey: `dev-skills-grant:${randomUUID()}`,
     },
   );
