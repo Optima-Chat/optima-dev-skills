@@ -81,11 +81,14 @@ export function getInfisicalConfig(): InfisicalConfig {
 }
 
 export function getInfisicalToken(config: InfisicalConfig): string {
-  const response = execSync(
-    `curl -s -X POST "${config.url}/api/v1/auth/universal-auth/login" -H "Content-Type: application/json" -d '{"clientId": "${config.clientId}", "clientSecret": "${config.clientSecret}"}'`,
-    { encoding: 'utf-8' }
-  );
-  return JSON.parse(response).accessToken;
+  // 复用 curlJson（execFileSync + 参数数组、不经 shell）：Windows cmd.exe 不认单引号，
+  // 原来 shell 拼的 `-d '{...}'` JSON body 会被拆碎、curl 收垃圾参数直接退出（#92）。
+  // cn 路径早已用 curlJson，这里对齐；函数保持同步（调用方无需改 async）。
+  return curlJson([
+    '-X', 'POST', `${config.url}/api/v1/auth/universal-auth/login`,
+    '-H', 'Content-Type: application/json',
+    '-d', JSON.stringify({ clientId: config.clientId, clientSecret: config.clientSecret }),
+  ]).accessToken;
 }
 
 export function getInfisicalSecrets(config: InfisicalConfig, token: string, environment: string, secretPath: string): Record<string, string> {
