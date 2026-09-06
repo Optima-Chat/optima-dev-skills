@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { fetchInfisicalSecret } from './infisical-secrets';
 import { getInfisicalConfig, getInfisicalToken, getCnInfisicalToken, getCnSecrets, resolveUserId } from './db-utils';
 
@@ -149,8 +149,17 @@ export function getServiceToken(env: string, scope?: string): string {
   const effectiveScope = scope ?? (isCn ? CN_PROD_TOKEN_SCOPE : undefined);
   const scopeParam = effectiveScope ? `&scope=${encodeURIComponent(effectiveScope)}` : '';
   const body = `grant_type=client_credentials&client_id=${encodeURIComponent(clientId)}&client_secret=${encodeURIComponent(clientSecret)}${scopeParam}`;
-  const response = execSync(
-    `curl -s -X POST '${authUrl}/api/v1/oauth/token' -H 'Content-Type: application/x-www-form-urlencoded' -d '${body}'`,
+  // execFileSync + 参数数组（不经 shell）：Windows cmd.exe 不认单引号，shell 拼出的
+  // `-d '${body}'` 会被拆碎、curl 收到垃圾参数直接退出（#92）。数组传参绕开 shell、
+  // 跨平台一致；函数保持同步。
+  const response = execFileSync(
+    'curl',
+    [
+      '-s', '-X', 'POST',
+      `${authUrl}/api/v1/oauth/token`,
+      '-H', 'Content-Type: application/x-www-form-urlencoded',
+      '-d', body,
+    ],
     { encoding: 'utf-8' },
   );
 
