@@ -169,6 +169,19 @@ def render_conversation(conv, resps, deref, idx):
                         res_ids.add(b.get("tool_use_id"))
     dangling = [(u, n) for u, n in use_ids.items() if u not in res_ids]
 
+    # 末 response 状态：审查靠它判「最终回复能不能核」。缺失时**必须显式标注**，
+    # 否则 transcript 静默停在末条 user 消息（常是超长 tool_result 截断处），
+    # 会被误读成「响应被截断吞了」（上游 #102 真根因：不是截断，是末 req 无 response 记录）。
+    lastresp = resps.get(last["callId"])
+    if not lastresp:
+        last_state = "⚠️ 末 request 无 response 记录（生成中断/未落盘/末轮是 continuation）——最终回复不可核"
+    elif lastresp.get("kind") == "error":
+        last_state = "⚠️ 末 response 是 error：" + json.dumps(deref(lastresp.get("error") or {}), ensure_ascii=False)[:160]
+    elif (lastresp.get("finalMessage") or {}).get("stopReason") == "max_tokens":
+        last_state = "⚠️ 末 response stop_reason=max_tokens（回复被截断，可能未说完）"
+    else:
+        last_state = "有（正常 response）"
+
     L = [f"# 对话 #{idx}  {ts0}",
          "", f"**prompt**: {prompt[:200]}", "",
          "## 事实卡（代码算的确定信息）",
@@ -176,9 +189,9 @@ def render_conversation(conv, resps, deref, idx):
          f"- error 响应 {len(errs)}" + (f"：{[json.dumps(deref(e.get('error') or {}),ensure_ascii=False)[:120] for e in errs]}" if errs else ""),
          f"- stop_reason=max_tokens 的响应 {maxtok}",
          f"- 悬空 tool_use（无匹配 result）{len(dangling)}: {dangling[:5]}",
+         f"- 末 response: {last_state}",
          "", "## 完整 transcript（末 req 全历史 + 末 response）", ""]
-    # 末 response 拼到历史尾
-    lastresp = resps.get(last["callId"])
+    # 末 response 拼到历史尾（仅 response 类才有 finalMessage 内容可拼）
     if lastresp and lastresp.get("kind") == "response":
         fm = lastresp.get("finalMessage") or {}
         msgs.append({"role": "assistant", "content": fm.get("content", [])})
@@ -190,8 +203,15 @@ def render_conversation(conv, resps, deref, idx):
             L.append("    " + _clip(c, CAP_TEXT))
         elif isinstance(c, list):
             for b in c:
-                L.append(render_block(b, deref))
-    return prompt, ts0, len(errs), len(dangling), "\n".join(L)
+                try:
+                    L.append(render_block(b, deref))
+                except Exception as e:  # 单个块渲染失败不该中断后续消息（上游 #102 加固）
+                    L.append(f"    [渲染失败 {type(e).__name__}: {str(e)[:80]}]")
+    # transcript 结尾显式收口——末 response 非正常时补一行，让审查者绝不把静默结束当完整
+    resp_ok = bool(lastresp and lastresp.get("kind") == "response")
+    if not resp_ok:
+        L.append(f"\n--- [transcript 结束] {last_state} ---")
+    return prompt, ts0, len(errs), len(dangling), resp_ok, "\n".join(L)
 
 
 def render_all(wire_root, out):
@@ -214,10 +234,10 @@ def render_all(wire_root, out):
         index.append(f"\n## session `{sid}` — {len(convs)} 对话 / {len(reqs)} req\n")
         for conv in convs:
             gidx += 1
-            prompt, ts0, n_err, n_dang, md = render_conversation(conv, resps, deref, gidx)
+            prompt, ts0, n_err, n_dang, resp_ok, md = render_conversation(conv, resps, deref, gidx)
             fn = f"{gidx:03d}.md"
             open(os.path.join(conv_dir, fn), "w", encoding="utf-8").write(md)
-            flag = (" ⚠️err" if n_err else "") + (" ⚠️dangling" if n_dang else "")
+            flag = (" ⚠️err" if n_err else "") + (" ⚠️dangling" if n_dang else "") + ("" if resp_ok else " ⚠️无末response")
             index.append(f"- [{fn}](conversations/{fn}) [{len(conv):>2} req] {prompt[:64]}{flag}")
     idxpath = os.path.join(out, "index.md")
     open(idxpath, "w", encoding="utf-8").write("\n".join(index))
@@ -278,9 +298,20 @@ def _ts_key(ts):
         return None
 
 
-def locate_conversation(index, started_ts, first_message):
+def locate_conversation(index, started_ts, first_message, session_id=None):
     """按 (started_ts, first_message) 定位本次对话；禁用 ls -t。规则见 plan Task 3 Interfaces。
-    时间比较先把两侧 ISO（Z / +00:00、小数位宽不同）归一成 datetime，避免依赖字典序=数值序的脆弱假设。"""
+    时间比较先把两侧 ISO（Z / +00:00、小数位宽不同）归一成 datetime，避免依赖字典序=数值序的脆弱假设。
+
+    `session_id`（2026-09-09 起，鸭嘴兽支持并发任务后）：驱动侧现在知道自己跑在**哪个 gateway
+    session** 上（一 tab 一 session，wire 目录名就是 sessionId），传进来就先把候选缩到该 session。
+    这是**确定性**定位，比 (时间, 首句) 的启发式可靠得多 —— 同一句 prompt 重跑多次时，
+    启发式只能靠时间戳挑，而并发跑的多个会话时间戳本来就交叠。
+    传了但该 session 在索引里一条都没有（wire 还没落盘/TTL 过期/拉的账号不对）→ **不回退**到
+    全局启发式：那样会安静地定位到别的 session 的对话，比返回 None 更糟。"""
+    if session_id:
+        index = [it for it in index if it.get("sid") == session_id]
+        if not index:
+            return None
     key = (first_message or "").strip()[:40]
     cands = []
     for it in index:

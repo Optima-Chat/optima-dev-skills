@@ -33,5 +33,40 @@ class TestLocate(unittest.TestCase):
         r = locate_conversation(idx, "2026-09-01T02:19:48.000000+00:00", "你好")
         self.assertEqual(r["gidx"], 2)  # 47.9 在 started(48.0) 之前排除，命中 48.1
 
+class TestLocateBySession(unittest.TestCase):
+    """并发跑测（2026-09-09 起）：驱动侧知道自己跑在哪个 gateway session 上，
+    按 sid 定位是**确定性**的；启发式在「同 prompt 重跑 / 并发会话时间戳交叠」时会挑错。"""
+
+    # 同一句 prompt 在两个 session 里各跑了一次，时间戳交叠 —— 这正是并行跑的常态
+    IDX2 = [
+        {"gidx": 1, "sid": "sA", "ts": "2026-09-09T11:59:52Z", "prompt": "算一下保本 ROI"},
+        {"gidx": 2, "sid": "sB", "ts": "2026-09-09T11:59:54Z", "prompt": "算一下保本 ROI"},
+    ]
+
+    def test_session_id_pins_the_right_one_when_timestamps_interleave(self):
+        """不传 sid 只能按时间挑到 sA；传了 sB 就必须是 sB —— 这是并行归因的全部意义。"""
+        heuristic = locate_conversation(self.IDX2, "2026-09-09T11:59:00Z", "算一下保本 ROI")
+        self.assertEqual(heuristic["sid"], "sA")
+        pinned = locate_conversation(self.IDX2, "2026-09-09T11:59:00Z", "算一下保本 ROI",
+                                     session_id="sB")
+        self.assertEqual(pinned["sid"], "sB")
+
+    def test_unknown_session_returns_none_instead_of_silently_falling_back(self):
+        """传了 sid 但索引里没有该 session（wire 未落盘/TTL 过期/拉错账号）→ 必须 None。
+        回退到全局启发式会安静地定位到**别的 session** 的对话，比返回 None 危险得多。"""
+        self.assertIsNone(locate_conversation(self.IDX2, "2026-09-09T11:59:00Z",
+                                              "算一下保本 ROI", session_id="sZZZ"))
+
+    def test_session_id_none_keeps_old_behaviour(self):
+        """串行/降级路径（拿不到 sid）行为不变，老用例不受影响。"""
+        r = locate_conversation(IDX, "2026-08-31T14:00:00Z", "我想做电商帮我看看", session_id=None)
+        self.assertEqual(r["gidx"], 2)
+
+    def test_prompt_still_has_to_match_within_the_session(self):
+        """sid 只是缩小候选，不是无条件放行：同 session 里不相干的对话仍不该命中。"""
+        self.assertIsNone(locate_conversation(self.IDX2, "2026-09-09T11:59:00Z",
+                                              "完全不相干的话", session_id="sB"))
+
+
 if __name__ == "__main__":
     unittest.main()
