@@ -85,7 +85,15 @@ def main():
 
     started_ts = _utc_now()
     answers = _parse_answers(args.answer)
+    # attach() 默认就自己开 tab 独占一个 gateway session（"auto" 档）。两个好处——
+    #  ① 不去抢用户已经开着的 chat tab（抢了会互相串台，见 chat_driver 模块 docstring）；
+    #  ② 拿到确定的 sessionId，后面按它**确定性**定位 wire 对话，不靠 (时间,首句) 猜。
+    # 该环境 multi-tab 没开（flag 默认关，cn-stage 未验）时 auto 档自己会降级复用已有 tab
+    # 并打 warn —— 单 driver 复用是安全的，功能不减，只是 wire 定位退回启发式。
     d = chat_driver.ChatDriver().attach()
+    session_id = d.session_id      # attach 后立刻取：放在 try 里的话，中途抛异常会留下未绑定名
+    if not d.tab_isolated:
+        print("[warn] 未能独占 tab（该环境 multi-tab 未开）—— wire 定位退回 (时间,首句) 启发式")
     try:
         d.new_conversation()
         turns = []
@@ -99,13 +107,17 @@ def main():
     wire_root = pull_wire.pull(args.user, since_days=args.since, out=args.out)
     meta = {"env": args.env, "started_ts": started_ts, "first_message": args.message[0],
             "expect": args.expect, "issue_repo": args.issue_repo, "turns": turns,
+            "session_id": session_id,      # 本轮跑在哪个 gateway session（= wire 目录名）
             "located": None, "located_reason": None}
     wrote_prepped = False
     if not wire_root:
         meta["located_reason"] = "no_wire_session"
     if wire_root:
         index = pull_wire.emit_conversation_index(wire_root)
-        hit = pull_wire.locate_conversation(index, started_ts, args.message[0])
+        hit = pull_wire.locate_conversation(index, started_ts, args.message[0],
+                                            session_id=session_id)
+        if session_id and not hit:
+            meta["located_reason"] = f"session {session_id} 在 wire 索引里没有对话（未落盘/TTL 过期/账号不对）"
         meta["located"] = hit
         if hit:
             sdir = os.path.join(wire_root, hit["sid"])
@@ -117,7 +129,10 @@ def main():
             convs = pull_wire.segment(reqs, deref)
             conv = select_conversation_in_session(convs, deref, hit)
             if conv is not None:
-                _, _, _, _, wire_md = pull_wire.render_conversation(conv, resps, deref, hit["gidx"])
+                # 6 元返回（上游 #102 起多了 resp_ok）：末 response 不正常时 wire_md 结尾已显式收口，
+                # 但 meta 也记一份，报告层不必去 grep transcript 才知道「最终回复不可核」。
+                _, _, _, _, resp_ok, wire_md = pull_wire.render_conversation(conv, resps, deref, hit["gidx"])
+                meta["wire_last_response_ok"] = resp_ok
                 prepped = prep_conversation.merge_browser_evidence(wire_md, turns)
                 with open(os.path.join(args.out, "prepped.md"), "w", encoding="utf-8") as f:
                     f.write(prepped)
