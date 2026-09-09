@@ -2,8 +2,8 @@
 
 | 本文件 | 上游 repo · 路径 | commit | 同步日期 |
 |---|---|---|---|
-| chat_driver.py | optima-store-skills · .claude/skills/operating-yzsgo-chat/chat_driver.py | acc9fb9 | 2026-09-09 |
-| pull_wire.py | optima-store-skills · .claude/skills/pulling-yzsgo-session-wire/pull_wire.py | acc9fb9 | 2026-09-09 |
+| chat_driver.py | optima-store-skills · .claude/skills/operating-yzsgo-chat/chat_driver.py | 980e675 | 2026-09-09 |
+| pull_wire.py | optima-store-skills · .claude/skills/pulling-yzsgo-session-wire/pull_wire.py | 980e675 | 2026-09-09 |
 | prep_conversation.py | optima-gateway · .claude/skills/conversation-iq/prep_session.py（改编：+浏览器证据合并） | b75f575c | 2026-08-31 |
 | judge_workflow.js | optima-gateway · .claude/skills/conversation-iq/workflow.js（改编：+前后端一致性维度） | b75f575c | 2026-08-31 |
 
@@ -12,9 +12,11 @@
 ## 2026-09-09 这次同步带了什么
 
 上游把 e2e 改成**并发跑**（鸭嘴兽支持并发任务：一个 tab = 一个独立 gateway session）。
-`chat_driver.py` 逐字取自上游 `acc9fb9`（feat/parallel-tab-e2e 分支；合入 main 后回填 merge commit），本次变更点：
+`chat_driver.py` 逐字取自上游 `980e675`（feat/parallel-tab-e2e 分支；合入 main 后回填 merge commit），本次变更点：
 
-- `attach(own_tab=True)`：自己开 tab 独占 session；sid 与已有 tab 撞车抛 `TabSessionUnavailable`。
+- `attach()` **默认自己开 tab** 独占 session（`own_tab="auto"`；拿不到独立 session 就降级复用
+  已有 tab 并置 `tab_isolated=False`）。`own_tab=True` 是严格档，并行必用——auto 档多 worker
+  一起降级会都落到同一个 tab 上 = 静默串台。
 - `session_id` / `close()` 只关自己开的 tab / `concurrency_status()` 读并发名额。
 - send 拒绝分流从三码扩到五码（新增 `concurrency_limit` / `busy_elsewhere`）。
 

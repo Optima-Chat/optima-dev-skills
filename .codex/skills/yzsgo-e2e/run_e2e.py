@@ -85,17 +85,15 @@ def main():
 
     started_ts = _utc_now()
     answers = _parse_answers(args.answer)
-    # 自己开一个 tab（own_tab=True）：独占一个 gateway session。两个好处——
+    # attach() 默认就自己开 tab 独占一个 gateway session（"auto" 档）。两个好处——
     #  ① 不去抢用户已经开着的 chat tab（抢了会互相串台，见 chat_driver 模块 docstring）；
     #  ② 拿到确定的 sessionId，后面按它**确定性**定位 wire 对话，不靠 (时间,首句) 猜。
-    # 该环境 multi-tab 没开（flag 默认关，cn-stage 未验）→ 退回复用已有 tab，功能不减，
-    # 只是 wire 定位退回启发式。
-    try:
-        d = chat_driver.ChatDriver().attach(own_tab=True)
-    except chat_driver.TabSessionUnavailable as e:
-        print(f"[warn] 开独立 tab 失败（{e}）—— 退回复用已有 tab；wire 定位退回启发式")
-        d = chat_driver.ChatDriver().attach()
+    # 该环境 multi-tab 没开（flag 默认关，cn-stage 未验）时 auto 档自己会降级复用已有 tab
+    # 并打 warn —— 单 driver 复用是安全的，功能不减，只是 wire 定位退回启发式。
+    d = chat_driver.ChatDriver().attach()
     session_id = d.session_id      # attach 后立刻取：放在 try 里的话，中途抛异常会留下未绑定名
+    if not d.tab_isolated:
+        print("[warn] 未能独占 tab（该环境 multi-tab 未开）—— wire 定位退回 (时间,首句) 启发式")
     try:
         d.new_conversation()
         turns = []

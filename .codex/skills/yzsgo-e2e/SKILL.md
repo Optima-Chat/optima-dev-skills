@@ -32,13 +32,15 @@ allowed-tools: ["Bash", "Read", "Write", "Agent", "Workflow"]
 鸭嘴兽支持并发任务了 —— **一个浏览器 tab = 一个独立 gateway session**（一 tab 一 session，
 跨 tab 可真并行，同 tab 内仍串行；上限按 plan：free 1 / starter 2 / pro 4 / enterprise 20）。
 
-`run_e2e.py` 因此改成 `attach(own_tab=True)`：**自己开一个 tab**，不去抢用户已经开着的 chat tab。
-两个好处——① 不跟用户/别的跑测互相串台；② 拿到确定的 `sessionId`，
+`chat_driver.attach()` **默认就自己开一个 tab**（`own_tab="auto"`）——平台既然支持多 tab，
+独占一个 session 就是常态，共用别人的 tab 才是例外。所以 `run_e2e.py` 直接 `attach()` 即可，
+不去抢用户已经开着的 chat tab。两个好处——① 不跟用户/别的跑测互相串台；② 拿到确定的 `sessionId`，
 `locate_conversation(..., session_id=...)` 按它**确定性**定位 wire 对话，不再靠 (时间, 首句) 猜
 （并发跑时多个会话时间戳交叠，启发式会挑错）。`meta.json` 里多了 `session_id` 字段。
 
 该环境 multi-tab flag 没开（`NEXT_PUBLIC_MULTI_TAB_SESSION`，build-time、**默认关**；
-cn-prod 已验开、cn-stage 未验）时会打一行 warn 并退回复用已有 tab，功能不减，只是 wire 定位退回启发式。
+cn-prod 已验开、cn-stage 未验）时 `"auto"` 档自己会降级复用已有 tab（`d.tab_isolated=False`）
+并打 warn，功能不减，只是 wire 定位退回启发式。
 
 🔴 **绝不能让两个 driver 共用一个 tab**：实证会**静默串台**——两个线程写同一个 textarea，
 后写的覆盖先写的，只有一条消息真到服务端，两边却都抓到同一份回复，还全程无报错。

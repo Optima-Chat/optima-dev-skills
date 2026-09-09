@@ -66,6 +66,7 @@ class ChatDriver:
         self.page = None
         self.session_id = None    # 本 tab 认领的 gateway sessionId（wire 归因/并行隔离校验都靠它）
         self._own_tab = False     # 这个 tab 是我开的吗 —— close() 只关自己开的，绝不关用户的
+        self.tab_isolated = False # 是否真独占了一个 gateway session（并行的前提，降级后为 False）
         self._tool_baseline = 0   # 发送前的「個工具」面板数；本轮只抓之后新增的（防超时用例污染下一轮）
         self._console_errs = []   # 前端 console 报错缓冲——区分「傳送失敗」的真实根因（weekly_limit vs credits）
 
@@ -88,19 +89,29 @@ class ChatDriver:
             self.page.wait_for_timeout(1000)
         return None
 
-    def attach(self, own_tab: bool = False, claim_timeout: int = 60) -> "ChatDriver":
+    def attach(self, own_tab="auto", claim_timeout: int = 60) -> "ChatDriver":
         """连上调试端口 Chrome 并选定本 driver 要驱动的 tab。
 
-        `own_tab=False`（默认，串行）：复用页面上已开的 chat tab。
-        `own_tab=True`（并行必用）：**自己新开一个 tab**，独占一个 gateway session；
-            开完校验拿到的 sid 与其它 tab 都不同，撞了就抛 `TabSessionUnavailable`
-            —— 宁可让调用方退回串行，也绝不共用 tab（共用 = 静默串台，见模块 docstring）。
-        无论哪种模式都会把认领到的 sessionId 记到 `self.session_id`，供 Wire 归因用。
+        `own_tab` 三态 —— **默认自己开 tab**（平台既然支持多 tab，独占就是常态，共用才是例外）：
+
+        - `"auto"`（默认）：先试着自己开 tab 独占一个 gateway session；该环境不支持多 tab
+          （`NEXT_PUBLIC_MULTI_TAB_SESSION` 没开，新 tab 会被并回同一个 session）或认领超时时，
+          **降级复用已有 tab** 并把 `self.tab_isolated` 置 False、打一行 warn。
+          单 driver 场景下复用是安全的（那就是改并发之前的老行为），所以降级不是问题。
+        - `True`（**并行必用**）：严格独占，拿不到独立 session 直接抛 `TabSessionUnavailable`。
+          🔴 并行时绝不能用 "auto" —— 多个 worker 各自降级到同一个已有 tab = 静默串台
+          （见模块 docstring 的实证）。要并行就必须 fail-fast 让调用方退回串行。
+        - `False`：显式复用已有 tab（旧行为；只在你确实想操作用户当前那个 tab 时用）。
+
+        `self.session_id` 记认领到的 gateway sessionId（Wire 归因锚点）；
+        `self.tab_isolated` 说明这个 driver 是不是真独占了一个 session。
         """
+        strict = (own_tab is True)
+        want_own = (own_tab is True or own_tab == "auto")
         self._pw = sync_playwright().start()
         self.browser = self._pw.chromium.connect_over_cdp(f"http://localhost:{self.port}")
         ctx = self.browser.contexts[0]
-        if own_tab:
+        if want_own:
             # 先快照**别的 tab 已认领的 sid**，再开自己的 —— 顺序反了就分不清撞没撞车。
             # ⚠️ 多 worker 并行 attach 时调用方要串行化这一段（各自认领完再放下一个），
             #    否则两个新 tab 可能都在对方写 sessionStorage 之前完成快照，撞车检测漏判。
@@ -124,31 +135,51 @@ class ChatDriver:
             pass   # 清不掉不影响驱动，只影响观感
         # 捕获前端 console：发送被拒时「傳送失敗」toast 是通用的，真实原因（weekly_limit=本周额度用完 / 积分不足 …）
         # 只在 console 里（[Chat Error] weekly_limit…）。留最近 20 条供 send() 分流，别再把 weekly_limit 误报成 credits。
+        self._hook_console()
+        self.session_id = self._await_sid(claim_timeout if want_own else 10)
+        if want_own:
+            why = None
+            if not self.session_id:
+                why = f"新 tab {claim_timeout}s 内没认领到 gateway session（没登录？连不上 gateway？）"
+            elif self.session_id in taken:
+                why = (f"新 tab 与已有 tab 撞同一个 session（{self.session_id}）—— 该环境 multi-tab 没开"
+                       f"（NEXT_PUBLIC_MULTI_TAB_SESSION 是 build-time flag、默认关）")
+            if why:
+                if strict:
+                    self.close()          # 失败路径也要把刚开的 tab 关掉，别留垃圾
+                    raise TabSessionUnavailable(why + "，并行会静默串台。退回串行跑。")
+                # auto：降级复用已有 tab。单 driver 复用是安全的（= 改并发之前的老行为）。
+                print(f"[chat_driver] ⚠️ 独占 tab 失败（{why}）—— 降级复用已有 tab；"
+                      f"**此 driver 不可用于并行**")
+                self._close_own_tab()
+                self._own_tab = False
+                chat = [p for p in ctx.pages if "/chat" in p.url]
+                self.page = chat[0] if chat else (ctx.pages[-1] if ctx.pages else ctx.new_page())
+                self._hook_console()
+                self.session_id = self._await_sid(10)
+                self.tab_isolated = False
+                return self
+        self.tab_isolated = bool(want_own)
+        return self
+
+    def _hook_console(self) -> None:
+        """捕获前端 console：发送被拒时「傳送失敗」toast 是通用的，真实原因（weekly_limit / 积分…）只在 console 里。"""
         self.page.on("console", lambda m: self._console_errs.append((m.text or "")[:200])
                      if m.type in ("error", "warning") else None)
-        self.session_id = self._await_sid(claim_timeout if own_tab else 10)
-        if own_tab:
-            if not self.session_id:
-                self.close()
-                raise TabSessionUnavailable(
-                    f"新 tab {claim_timeout}s 内没认领到 gateway session（没登录？连不上 gateway？）")
-            if self.session_id in taken:
-                bad = self.session_id
-                self.close()
-                raise TabSessionUnavailable(
-                    f"新 tab 与已有 tab 撞同一个 session（{bad}）—— 该环境 multi-tab 没开，"
-                    f"并行会静默串台。退回串行跑。")
-        return self
+
+    def _close_own_tab(self) -> None:
+        """只关本 driver 自己开的 tab（降级/收尾共用）。"""
+        if self._own_tab and self.page:
+            try:
+                self.page.close()
+            except Exception:
+                pass
 
     def close(self) -> None:
         # 只断开 attach，不关用户的 Chrome。**自己开的 tab 要自己关**（关掉即释放该 gateway
         # session 的并发名额）；不是自己开的（默认 attach 复用的用户 tab）一律不动。
         try:
-            if self._own_tab and self.page:
-                try:
-                    self.page.close()
-                except Exception:
-                    pass
+            self._close_own_tab()
         finally:
             try:
                 if self.browser:
