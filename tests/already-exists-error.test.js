@@ -89,3 +89,14 @@ test('httpRequest 的错误 message 模板未漂（判定逻辑的前提）', ()
     'isAlreadyExistsError 依赖 `HTTP <status>: <body>` 这个 message 形状',
   );
 });
+
+// 本文件顶部 require 了编译产物，挡住 main() 的只有 require.main 守卫。守卫一旦被误删，
+// require 就会真的去注册账号（默认 ci 环境；async 未 await，断言照样全绿），故把它钉住。
+// 按守卫的结构匹配：只匹配字样的话，删了守卫、留一句提到它的注释也能过。
+test('main() 有 require.main 守卫（否则本测试 require 时会真去注册账号）', () => {
+  const source = fs.readFileSync(
+    path.join(repoRoot, 'bin/helpers/generate-test-token.ts'),
+    'utf8',
+  );
+  assert.match(source, /^if \(require\.main === module\) \{\s*main\(\);\s*\}/m);
+});
