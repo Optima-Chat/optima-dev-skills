@@ -55,7 +55,7 @@ const SERVICES: Record<string, SvcCfg> = {
   // stage-ecs/variables.tf:146 与 prod-ecs/variables.tf:508 都写着「MCP 工具服务已移除」,
   // 两个 ecs stack 的 services map 里均无该条目;实测四个候选主机名全是壳(mcp.stage.optima.onl
   // 307 → /en-US/health 前端 locale 路由,mcp-stage.optima.onl 与 prod 的 mcp.optima.onl 均
-  // 301 → www)。🔴 别再把它加回来:worstOk 是全局单标志(:221),留着它会让 `--all --env stage`
+  // 301 → www)。🔴 别再把它加回来:worstOk 是全局单标志(见 main()),留着它会让 `--all --env stage`
   // 与 `--all --env prod` 恒 exit 1,而那个退出码正是接 CI 卡口时唯一被读的东西。
   // 同一约束在 tests/service-matrix-alignment.test.js 里对 show-env 的清单也钉着。
   'gateway-core':     { path: '/health',     'cn-prod': 'gw.yzsgo.com', 'cn-stage': 'gw.stage.optima.chat' },
@@ -182,37 +182,56 @@ function resolve(svc: string, e: Env): [string, string, string] | null {
   return [`${svc} [${e}]`, host, path];
 }
 
-async function main() {
-  const argv = process.argv.slice(2);
-  const has = (f: string) => argv.includes(f);
-  const val = (f: string) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined; };
-  const asJson = has('--json'), strict = has('--strict');
-  const expect = val('--expect-commit');
+export interface Args { help: boolean; json: boolean; strict: boolean; all: boolean; env: Env | 'all'; expect?: string; url?: string; service?: string; }
+
+// 🔴 不认识的输入一律报错、绝不静默丢弃（同 query-db.ts 的 parseQueryDbArgs、logs.ts 的 parseArgs）：
+// 此前 `--env=stage` 不认、`--env` 漏写取值、多敲一个位置参数都会被静默无视而回落默认 cn-prod ——
+// 想探 stage，实际探的是阿里云生产，还 exit 0。
+export function parseArgs(argv: string[]): Args {
+  const flags = new Set<string>(), vals: Record<string, string> = {}, positional: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    const eq = arg.startsWith('--') ? arg.indexOf('=') : -1;
+    const name = eq > 0 ? arg.slice(0, eq) : arg;
+    if (['--env', '--expect-commit', '--url'].includes(name)) {
+      const v = eq > 0 ? arg.slice(eq + 1) : argv[++i];
+      if (!v || v.startsWith('-')) throw new Error(`${name} 缺少取值`);
+      vals[name] = v;
+    } else if (['--json', '--strict', '--all', '--help', '-h'].includes(arg)) flags.add(arg);
+    else if (arg.startsWith('-')) throw new Error(`未知参数:${arg}`);
+    else positional.push(arg);
+  }
   // 🔴 必须先校验再转型：不校验的话任何不认识的 env 都会让 resolve() 把每个 SvcCfg 键查成
   // undefined，于是落到下面的「无目标」分支，把「环境名打错」报成「该服务无部署」——
   // 一个活着的服务被说成没上线，正是 #83 要根治的那类静默误报。
-  let envArg = val('--env') || 'cn-prod';
+  let envArg = vals['--env'] || 'cn-prod';
   // 'cn' 是本文件的历史叫法，继续放行但不在 usage 里宣传（同 query-db.ts 的 ENV_ALIASES）。
   if (envArg === 'cn') envArg = 'cn-prod';
-  if (envArg !== 'all' && !ENVS.includes(envArg as Env)) {
-    console.error(`❌ 未知环境:${envArg}(可选:${ENVS.join(' | ')} | all)`);
-    process.exit(2);
-  }
-  const env = envArg as Env | 'all';
-  const envs: Env[] = env === 'all' ? ENVS : [env as Env];
-  const positional = argv.filter((x, i) => !x.startsWith('--') && !(i > 0 && argv[i - 1].startsWith('--') && ['--env', '--expect-commit', '--url'].includes(argv[i - 1])));
+  if (envArg !== 'all' && !ENVS.includes(envArg as Env)) throw new Error(`未知环境:${envArg}(可选:${ENVS.join(' | ')} | all)`);
+  if (positional.length > 1) throw new Error(`多余参数:${positional.slice(1).join(' ')}(一次探一个服务;环境用 --env 指定)`);
+  const service = positional[0];
+  if (service && !Object.keys(SERVICES).includes(service)) throw new Error(`未知服务:${service}(可选:${Object.keys(SERVICES).join(' | ')})`);
+  const url = vals['--url'], all = flags.has('--all');
+  return { help: flags.has('--help') || flags.has('-h') || !(url || all || service), json: flags.has('--json'), strict: flags.has('--strict'), all, env: envArg as Env | 'all', expect: vals['--expect-commit'], url, service };
+}
+
+async function main() {
+  let args: Args;
+  try { args = parseArgs(process.argv.slice(2)); } catch (e: any) { console.error(`❌ ${e.message}`); process.exit(2); }
+  const { json: asJson, strict, expect, env } = args;
+  const envs: Env[] = env === 'all' ? ENVS : [env];
 
   let targets: [string, string, string][] = [];
-  if (has('--url')) {
-    const u = new URL(val('--url')!);
-    targets = [[u.hostname, u.hostname, u.pathname || '/health']];
-  } else if (has('--all')) {
-    for (const e of envs) for (const s of Object.keys(SERVICES)) { const t = resolve(s, e); if (t) targets.push(t); }
-  } else if (positional[0] && SERVICES[positional[0]]) {
-    for (const e of envs) { const t = resolve(positional[0], e); if (t) targets.push(t); }
-  } else {
+  if (args.help) {
     console.log((require('fs').readFileSync(__filename, 'utf-8').match(/\/\*\*[\s\S]*?\*\//)?.[0] || '').replace(/^\s*\*?/gm, ''));
     process.exit(2);
+  } else if (args.url) {
+    const u = new URL(args.url);
+    targets = [[u.hostname, u.hostname, u.pathname || '/health']];
+  } else if (args.all) {
+    for (const e of envs) for (const s of Object.keys(SERVICES)) { const t = resolve(s, e); if (t) targets.push(t); }
+  } else if (args.service) {
+    for (const e of envs) { const t = resolve(args.service, e); if (t) targets.push(t); }
   }
   if (targets.length === 0) { console.log(`(无目标:${env} 环境下该服务无部署)`); process.exit(2); }
 
@@ -234,4 +253,6 @@ async function main() {
   process.exitCode = worstOk ? 0 : 1;
 }
 
-main();
+if (require.main === module) {
+  main();
+}
