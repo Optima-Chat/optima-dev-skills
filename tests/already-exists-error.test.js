@@ -49,7 +49,7 @@ test('commerce-backend 的 400 "Merchant profile already exists" 判为已存在
   );
 });
 
-test('任意状态码 + already exists/registered 文案仍判为已存在（不回归）', () => {
+test('任意 4xx + already exists/registered 文案仍判为已存在（不回归）', () => {
   assert.equal(isAlreadyExistsError('HTTP 422: {"detail":"merchant already exists"}'), true);
   assert.equal(isAlreadyExistsError('HTTP 400: {"error":"Email already registered"}'), true);
 });
@@ -58,6 +58,13 @@ test('真错误不被吞：认证失败 / 校验失败 / 网络错误一律 fals
   assert.equal(isAlreadyExistsError('HTTP 401: {"detail":"Invalid credentials"}'), false);
   assert.equal(isAlreadyExistsError('HTTP 400: {"detail":"password too short"}'), false);
   assert.equal(isAlreadyExistsError('fetch failed'), false);
+});
+
+// 文案腿只在 4xx 上成立：5xx 是服务端故障，body 里恰好带着这些词也不能当成「已存在」吞掉、
+// 让流程照常往下走 —— 那是把一次真实故障报成一次干净的运行。
+test('5xx 即便 body 带 already exists/registered 也不算已存在（不把故障报成成功）', () => {
+  assert.equal(isAlreadyExistsError('HTTP 503: upstream user already registered in cache'), false);
+  assert.equal(isAlreadyExistsError('HTTP 502: Bad Gateway - merchant already exists in shard'), false);
 });
 
 // 状态码判定必须锚在 message 开头，否则 body 里夹着的数字会误伤：下面这条

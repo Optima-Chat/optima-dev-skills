@@ -94,13 +94,16 @@ async function httpRequest<T>(url: string, options: RequestInit = {}): Promise<T
  * 两条腿各自对应一个真实来源（user-auth / commerce-backend 是同一套代码跑在 AWS 与
  * cn 两侧，响应形态一致；下列均为 2026-08-13 直查 origin/main 坐实）：
  *
- * - **文案腿** `already (exists|registered)`
+ * - **文案腿** `^HTTP 4xx` 且 `already (exists|registered)`
  *   · user-auth 注册已注册邮箱 → 400 "Email already registered"
  *     （user-auth `app/services/user.py`）。**这就是 #78 的病灶**：旧判定只认
  *     "already exists"，措辞对不上 ⇒ cn 侧 `--email` 复用已有账号必挂。
  *     实测 cn-prod 响应体：{"error":"Email already registered","status_code":400}
  *   · commerce-backend 重复建 merchant profile → 400 "Merchant profile already
  *     exists. Use PUT ..."（commerce-backend `src/api/merchants.py`）
+ *   · 🔴 必须同时是 4xx：5xx 是服务端故障，body 里恰好带着这些词也不能吞 —— 否则
+ *     `POST /api/merchants/me` 的 502/503 会被报成 ℹ already exists，一路打印到
+ *     「✅ Test token generated successfully!」+ Merchant ID: N/A、exit 0。
  * - **状态码腿** `^HTTP 409`
  *   · 本工具只调 `POST /api/v1/auth/register/merchant` 与 `POST /api/merchants/me`
  *     两个端点。**register/merchant 这条路径上唯一的 409** 是企业席位：
@@ -117,7 +120,7 @@ async function httpRequest<T>(url: string, options: RequestInit = {}): Promise<T
  * （参数校验失败也是 400），单凭它放行等于吞掉一切请求错误 —— 400 一律交给文案腿判。
  */
 export function isAlreadyExistsError(message: string): boolean {
-  return /^HTTP 409\b/.test(message) || /already (exists|registered)/i.test(message);
+  return /^HTTP 409\b/.test(message) || (/^HTTP 4\d\d\b/.test(message) && /already (exists|registered)/i.test(message));
 }
 
 async function registerMerchant(
