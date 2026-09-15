@@ -27,6 +27,7 @@ allowed-tools: ["Bash", "SlashCommand"]
 **说明**：
 - 查看 CI 开发环境（dev.optima.chat）
 - 默认环境，不需要指定 `ci` 参数
+- 🔴 这里的「默认 ci」只指 `/logs`（SSH + Docker Compose）。`optima-logs` CLI 不带 `--env` 时默认是 **`cn-prod`（阿里云生产）**，不是 `ci`（见 `bin/helpers/logs.ts`）—— 直接调 CLI 务必显式传 `--env`，否则以为在读 CI、实际读的是生产日志
 - 通过 SSH + Docker Compose 访问
 - 从 GitHub Variables 获取认证信息
 
