@@ -142,7 +142,8 @@ async function main() {
 
   // 2. 触发(凭证由云效变量组供给,无需注入)。stage/prod 流水线 id 均按名 `${svc}-cn-${env}`
   //    从云效实时解析、不硬编码,根除与 optima-terraform cn-run.py 手工 PIPELINES 表漂移(#84)。
-  const lp = devops('ListPipelines', { maxResults: '100' });
+  // nextToken 自 2026-09 起被 aliyun CLI 标成必填,不传则 API 直接返参数错误 → devops() 吞成 {} → 误报「云效无流水线」。
+  const lp = devops('ListPipelines', { maxResults: '100', nextToken: '0' });
   const hit = (lp.pipelines || []).find((p: any) => p.pipelineName === `${svcName}-cn-${envName}`);
   if (!hit) { console.error(`✗ 云效无 ${svcName}-cn-${envName} 流水线`); process.exit(1); }
   const pipelineId = hit.pipelineId;
