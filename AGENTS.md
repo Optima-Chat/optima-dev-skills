@@ -7,7 +7,7 @@ This repository provides shared development skills and CLI helpers for Optima en
 Prefer the installed CLI tools over reimplementing long shell workflows:
 
 - `optima-query-db <service> "<sql>" [environment]`
-- `optima-show-env <service> <stage|prod> [options]`
+- `optima-show-env <service> <stage|prod|cn-prod|cn-stage> [options]`
 - `optima-generate-test-token [options]`
 - `optima-grant-subscription <email> [options]`
 - `optima-grant-credits <email|phone|userId> --credits <n> [options]`
