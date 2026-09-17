@@ -46,8 +46,6 @@ cn-prod 已验开、cn-stage 未验）时 `"auto"` 档自己会降级复用已�
 漏传直接 `TypeError`；`ziniao=None` 必须带非空 `reason`，否则 `ValueError`。`run_e2e.py` 传的是
 `ziniao=None` + 理由，因为本 skill 测对话链路、不绑定任何店。**自己写脚本调 `chat_driver` 时照此声明。**
 消息正文里出现 `--ziniao-profile <id>` 而声明是 `None`，`send()` 会抛 `ZiniaoDeclarationConflict` 拒发。
-`tests/yzsgo-e2e/test_attach_declaration.py` 检查「本 skill 里每处 `attach()` 都满足驱动签名」；
-CI 不跑 Python 测试，改了驱动或调用方后本地跑 `python3 -m unittest discover -s tests/yzsgo-e2e`。
 
 🔴 **绝不能让两个 driver 共用一个 tab**：实证会**静默串台**——两个线程写同一个 textarea，
 后写的覆盖先写的，只有一条消息真到服务端，两边却都抓到同一份回复，还全程无报错。

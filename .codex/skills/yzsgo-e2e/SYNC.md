@@ -33,12 +33,14 @@
 
 1. `run_e2e.py` 改传 `attach(ziniao=None, reason=…)`。🔴 **不改会在第一步就崩**——2026-09-16 曾有人只把新驱动手工拷进
    `~/.claude/skills/yzsgo-e2e/` 而没改调用方，结果本机这个 skill 一直是坏的。
-2. 新增 `tests/yzsgo-e2e/test_attach_declaration.py`：用 ast 读驱动签名和本 skill 所有 `attach()` 调用，
-   双向检查（驱动的必填参数调用方都传了、调用方传的参数驱动都收），不需要 playwright。
+2. 新增 `tests/yzsgo-e2e/test_attach_declaration.py`：从驱动的 ast 重建 `attach()` 的参数表，
+   把本 skill 每处 `attach()` 调用用 `inspect.Signature.bind` 绑一遍 ⇒ 缺必填参数、传了驱动不收的关键字、
+   位置参数不对，都会红。不需要 playwright。
    原有的 `test_imports.py` 只在装了 playwright 时才导入驱动，而且只查 `ChatDriver` 类存在，挡不住签名变化。
-   🔴 **CI 不跑 Python 测试**（`test.yml` 只跑 `npm test`）。**同步驱动或改调用方之后必须本地跑**
-   `python3 -m unittest discover -s tests/yzsgo-e2e`，这个测试只在被跑的时候才挡得住。
-3. ⚠️ **装好后已知 profile 表恒为空**：`known_profile_ids()` 读的是「驱动文件往上三层」的
+3. `test.yml` 加一步 `python3 -m unittest discover -s tests/yzsgo-e2e`。🔴 **此前 CI 只跑 `npm test`，
+   `tests/yzsgo-e2e/*.py` 一条都不跑**，这些测试只在有人手动跑时才生效。runner 与 optima-store-skills
+   的 `publish-plugin.yml` 同一个标签，那边直接用 `python3`。
+4. ⚠️ **装好后已知 profile 表恒为空**：`known_profile_ids()` 读的是「驱动所在目录再往上三层」的
    `e2e/registry*.yaml`，那是 store-skills 仓库的布局；装到 `~/.claude/skills/yzsgo-e2e` 算出来是 `~`，
    装到 `~/.codex/skills/optima-dev/yzsgo-e2e` 算出来是 `~/.codex`，都读不到 ⇒ 对账只认
    `--ziniao-profile <id>` 这种显式写法，裸 14 位 profile id 认不出来。不影响本 skill（本来就声明 `None`）。

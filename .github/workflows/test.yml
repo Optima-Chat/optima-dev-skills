@@ -19,3 +19,6 @@ jobs:
       # npm ci 触发 prepare→build；npm test 的 pretest 再 build 一次，秒级，忍。
       - run: npm ci
       - run: npm test
+      # tests/yzsgo-e2e 是 Python unittest（纯函数 / ast，不连网不开浏览器；缺 playwright 的那条自动跳过）。
+      # 之前这里不跑它们，vendored chat_driver 的签名变化只能靠人记得手动跑才挡得住。
+      - run: python3 -m unittest discover -s tests/yzsgo-e2e
