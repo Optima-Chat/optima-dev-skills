@@ -90,7 +90,13 @@ def main():
     #  ② 拿到确定的 sessionId，后面按它**确定性**定位 wire 对话，不靠 (时间,首句) 猜。
     # 该环境 multi-tab 没开（flag 默认关，cn-stage 未验）时 auto 档自己会降级复用已有 tab
     # 并打 warn —— 单 driver 复用是安全的，功能不减，只是 wire 定位退回启发式。
-    d = chat_driver.ChatDriver().attach()
+    # ziniao 是 attach() 的必填关键字参数（上游 store-skills #611，漏传即 TypeError）：
+    # 本 skill 测的是鸭嘴兽对话链路，这个 tab 不绑定任何紫鸟 profile，所以显式声明 None + 理由。
+    # 若 --message 正文里写了 `--ziniao-profile <id>`，send() 会抛 ZiniaoDeclarationConflict
+    # 拒发 —— 那是上游有意的闸，不是本脚本的 bug。装到 ~/.claude 后已知 profile 表为空
+    # （它读 store-skills 仓库里的 e2e/registry*.yaml），所以只认 `--ziniao-profile` 这种显式写法。
+    d = chat_driver.ChatDriver().attach(
+        ziniao=None, reason="yzsgo-e2e 驱动鸭嘴兽网页对话做端到端测试，本脚本不绑定任何紫鸟 profile")
     session_id = d.session_id      # attach 后立刻取：放在 try 里的话，中途抛异常会留下未绑定名
     if not d.tab_isolated:
         print("[warn] 未能独占 tab（该环境 multi-tab 未开）—— wire 定位退回 (时间,首句) 启发式")

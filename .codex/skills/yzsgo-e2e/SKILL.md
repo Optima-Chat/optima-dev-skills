@@ -33,7 +33,7 @@ allowed-tools: ["Bash", "Read", "Write", "Agent", "Workflow"]
 跨 tab 可真并行，同 tab 内仍串行；上限按 plan：free 1 / starter 2 / pro 4 / enterprise 20）。
 
 `chat_driver.attach()` **默认就自己开一个 tab**（`own_tab="auto"`）——平台既然支持多 tab，
-独占一个 session 就是常态，共用别人的 tab 才是例外。所以 `run_e2e.py` 直接 `attach()` 即可，
+独占一个 session 就是常态，共用别人的 tab 才是例外。所以 `run_e2e.py` 不传 `own_tab`、用默认档即可，
 不去抢用户已经开着的 chat tab。两个好处——① 不跟用户/别的跑测互相串台；② 拿到确定的 `sessionId`，
 `locate_conversation(..., session_id=...)` 按它**确定性**定位 wire 对话，不再靠 (时间, 首句) 猜
 （并发跑时多个会话时间戳交叠，启发式会挑错）。`meta.json` 里多了 `session_id` 字段。
@@ -41,6 +41,12 @@ allowed-tools: ["Bash", "Read", "Write", "Agent", "Workflow"]
 该环境 multi-tab flag 没开（`NEXT_PUBLIC_MULTI_TAB_SESSION`，build-time、**默认关**；
 cn-prod 已验开、cn-stage 未验）时 `"auto"` 档自己会降级复用已有 tab（`d.tab_isolated=False`）
 并打 warn，功能不减，只是 wire 定位退回启发式。
+
+🔴 **`attach()` 必须声明紫鸟 profile**（2026-09-17 同步上游 #611 起）：`ziniao` 是必填关键字参数，
+漏传直接 `TypeError`；`ziniao=None` 必须带非空 `reason`，否则 `ValueError`。`run_e2e.py` 传的是
+`ziniao=None` + 理由，因为本 skill 测对话链路、不绑定任何店。**自己写脚本调 `chat_driver` 时照此声明。**
+消息正文里出现 `--ziniao-profile <id>` 而声明是 `None`，`send()` 会抛 `ZiniaoDeclarationConflict` 拒发。
+`tests/yzsgo-e2e/test_attach_declaration.py` 钉住「本 skill 里每处 `attach()` 都满足驱动签名」。
 
 🔴 **绝不能让两个 driver 共用一个 tab**：实证会**静默串台**——两个线程写同一个 textarea，
 后写的覆盖先写的，只有一条消息真到服务端，两边却都抓到同一份回复，还全程无报错。

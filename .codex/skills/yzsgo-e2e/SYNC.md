@@ -2,12 +2,37 @@
 
 | 本文件 | 上游 repo · 路径 | commit | 同步日期 |
 |---|---|---|---|
-| chat_driver.py | optima-store-skills · .claude/skills/operating-yzsgo-chat/chat_driver.py | 3cfc2d6 | 2026-09-09 |
+| chat_driver.py | optima-store-skills · .claude/skills/operating-yzsgo-chat/chat_driver.py | 010c578a（PR #1852，含 #1635） | 2026-09-17 |
 | pull_wire.py | optima-store-skills · .claude/skills/pulling-yzsgo-session-wire/pull_wire.py | 3cfc2d6 | 2026-09-09 |
 | prep_conversation.py | optima-gateway · .claude/skills/conversation-iq/prep_session.py（改编：+浏览器证据合并） | b75f575c | 2026-08-31 |
 | judge_workflow.js | optima-gateway · .claude/skills/conversation-iq/workflow.js（改编：+前后端一致性维度） | b75f575c | 2026-08-31 |
 
 > 注：judge_workflow.js 内联的 decideOutcome 是 judge_outcome.js（有 node 单测）的副本，改逻辑需同步两处。
+
+## 2026-09-17 这次同步带了什么
+
+`chat_driver.py` 逐字取自上游 `010c578a`（optima-store-skills#1852 合入 main 的那个 merge commit；
+同步时上游 main 上该文件与它逐字节一致）。`3cfc2d6..010c578a` 之间上游动了这个文件 25 次，对本仓有影响的三组：
+
+- **#1635 多张 question-card**：活卡按「有 確認/下一題/補充回答 按钮」认，不再取第一张可见卡；
+  `wait_reply` 回执带卡片原文与来源。这是本次同步的直接动机。
+- **#611 / #666 紫鸟 profile 声明闸**：`attach(*, ziniao, reason=None, ...)` 的 `ziniao` 变成**必填**，
+  漏传 `TypeError`；`ziniao=None` 无理由 `ValueError`。`send()` / `send_and_wait()` 多了可选的
+  `ziniao=` 按条声明，并对账正文点名的 profile，不符抛 `ZiniaoDeclarationConflict`。
+  互斥锁本身 2026-09-14 已撤，只剩声明 + 对账；每次放行/拦截追加到 `~/.optima-locks/ziniao-gate.jsonl`（写失败不抛）。
+- **#870 本轮开的 tab 本轮关**：新增 `keep_tab_for_human(reason)`，否则 `close()` 关掉自己开的 tab。
+
+**本仓为此做的适配**（驱动本身仍逐字，不改）：
+
+1. `run_e2e.py` 改传 `attach(ziniao=None, reason=…)`。🔴 **不改会在第一步就崩**——2026-09-16 曾有人只把新驱动手工拷进
+   `~/.claude/skills/yzsgo-e2e/` 而没改调用方，结果本机这个 skill 一直是坏的。
+2. 新增 `tests/yzsgo-e2e/test_attach_declaration.py`：用 ast 读驱动签名和本 skill 所有 `attach()` 调用，
+   不需要 playwright。原有的 `test_imports.py` 在没装 playwright 时整条跳过，挡不住这类回归。
+3. ⚠️ **装到 `~/.claude` 后已知 profile 表恒为空**：`known_profile_ids()` 读的是「驱动文件往上三层」的
+   `e2e/registry*.yaml`，那是 store-skills 仓库的布局；装好后算出来是 `~`，读不到 ⇒ 对账只认
+   `--ziniao-profile <id>` 这种显式写法，裸 14 位 profile id 认不出来。不影响本 skill（本来就声明 `None`）。
+
+`pull_wire.py`：核过上游 `3cfc2d6..origin/main` 该文件无新提交，不用动。
 
 ## 2026-09-09 这次同步带了什么
 
