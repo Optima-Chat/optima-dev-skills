@@ -21,15 +21,25 @@ def _parse(skill, name):
         return ast.parse(fh.read(), filename=name)
 
 
-def required_attach_kwonly(skill):
-    """Required keyword-only parameters of ChatDriver.attach in the vendored driver."""
+def _attach_args(skill):
     for node in ast.walk(_parse(skill, "chat_driver.py")):
         if isinstance(node, ast.ClassDef) and node.name == "ChatDriver":
             for fn in node.body:
                 if isinstance(fn, ast.FunctionDef) and fn.name == "attach":
-                    a = fn.args
-                    return [p.arg for p, d in zip(a.kwonlyargs, a.kw_defaults) if d is None]
+                    return fn.args
     raise AssertionError("ChatDriver.attach not found in chat_driver.py")
+
+
+def required_attach_kwonly(skill):
+    """Required keyword-only parameters of ChatDriver.attach in the vendored driver."""
+    a = _attach_args(skill)
+    return [p.arg for p, d in zip(a.kwonlyargs, a.kw_defaults) if d is None]
+
+
+def accepted_attach_keywords(skill):
+    """(names attach() accepts by keyword, whether it has **kwargs)."""
+    a = _attach_args(skill)
+    return {p.arg for p in a.args[1:] + a.kwonlyargs}, a.kwarg is not None
 
 
 def attach_calls(skill):
@@ -60,6 +70,16 @@ class TestAttachDeclaration(unittest.TestCase):
                     passed = {k.arg for k in call.keywords}
                     missing = [r for r in required if r not in passed]
                     self.assertEqual(missing, [], f"{name}:{line} attach() is missing {missing}")
+
+    def test_every_passed_keyword_is_accepted(self):
+        # the other direction: if upstream drops or renames a parameter, the caller breaks too
+        for skill in SKILLS:
+            accepted, has_var_kw = accepted_attach_keywords(skill)
+            for name, line, call in attach_calls(skill):
+                with self.subTest(skill=skill, call=f"{name}:{line}"):
+                    unknown = [] if has_var_kw else [k.arg for k in call.keywords
+                                                     if k.arg is not None and k.arg not in accepted]
+                    self.assertEqual(unknown, [], f"{name}:{line} attach() passes unknown keywords {unknown}")
 
     def test_ziniao_none_carries_a_reason(self):
         # the driver raises ValueError at runtime for ziniao=None without a reason

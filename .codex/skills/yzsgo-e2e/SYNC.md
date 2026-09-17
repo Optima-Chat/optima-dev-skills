@@ -20,16 +20,27 @@
   漏传 `TypeError`；`ziniao=None` 无理由 `ValueError`。`send()` / `send_and_wait()` 多了可选的
   `ziniao=` 按条声明，并对账正文点名的 profile，不符抛 `ZiniaoDeclarationConflict`。
   互斥锁本身 2026-09-14 已撤，只剩声明 + 对账；每次放行/拦截追加到 `~/.optima-locks/ziniao-gate.jsonl`（写失败不抛）。
-- **#870 本轮开的 tab 本轮关**：新增 `keep_tab_for_human(reason)`，否则 `close()` 关掉自己开的 tab。
+- **#870 本轮开的 tab 本轮关**：新增 `keep_tab_for_human(reason)`（停手交人时保留 tab）和 `with` 用法
+  （`__enter__` / `__exit__`）。`close()` 只关自己开的 tab 是 09-09 那版就有的行为，不是这次新增。
+
+**没接的**：`wait_reply` 新增的 `question` 回执（#1635，用来区分「读不到卡片」和「根本没问」）没有写进
+`run_e2e.py` 的 turns / `meta.json`，判定层看不到它；要用得另改。`tool_trace` 末尾追加的十来个字段不影响现有读取。
+
+**新增副作用**：每次 `attach()` 都会建 `~/.optima-locks/` 并往 `ziniao-gate.jsonl` 追加一行（写失败不抛）。
+驱动报错提示里的 `scripts/ziniao-gate-report.py` 在 store-skills 仓库，本仓没有。
 
 **本仓为此做的适配**（驱动本身仍逐字，不改）：
 
 1. `run_e2e.py` 改传 `attach(ziniao=None, reason=…)`。🔴 **不改会在第一步就崩**——2026-09-16 曾有人只把新驱动手工拷进
    `~/.claude/skills/yzsgo-e2e/` 而没改调用方，结果本机这个 skill 一直是坏的。
 2. 新增 `tests/yzsgo-e2e/test_attach_declaration.py`：用 ast 读驱动签名和本 skill 所有 `attach()` 调用，
-   不需要 playwright。原有的 `test_imports.py` 在没装 playwright 时整条跳过，挡不住这类回归。
-3. ⚠️ **装到 `~/.claude` 后已知 profile 表恒为空**：`known_profile_ids()` 读的是「驱动文件往上三层」的
-   `e2e/registry*.yaml`，那是 store-skills 仓库的布局；装好后算出来是 `~`，读不到 ⇒ 对账只认
+   双向检查（驱动的必填参数调用方都传了、调用方传的参数驱动都收），不需要 playwright。
+   原有的 `test_imports.py` 只在装了 playwright 时才导入驱动，而且只查 `ChatDriver` 类存在，挡不住签名变化。
+   🔴 **CI 不跑 Python 测试**（`test.yml` 只跑 `npm test`）。**同步驱动或改调用方之后必须本地跑**
+   `python3 -m unittest discover -s tests/yzsgo-e2e`，这个测试只在被跑的时候才挡得住。
+3. ⚠️ **装好后已知 profile 表恒为空**：`known_profile_ids()` 读的是「驱动文件往上三层」的
+   `e2e/registry*.yaml`，那是 store-skills 仓库的布局；装到 `~/.claude/skills/yzsgo-e2e` 算出来是 `~`，
+   装到 `~/.codex/skills/optima-dev/yzsgo-e2e` 算出来是 `~/.codex`，都读不到 ⇒ 对账只认
    `--ziniao-profile <id>` 这种显式写法，裸 14 位 profile id 认不出来。不影响本 skill（本来就声明 `None`）。
 
 `pull_wire.py`：核过上游 `3cfc2d6..origin/main` 该文件无新提交，不用动。
