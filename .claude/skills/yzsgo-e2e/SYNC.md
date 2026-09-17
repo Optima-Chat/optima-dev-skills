@@ -2,12 +2,50 @@
 
 | 本文件 | 上游 repo · 路径 | commit | 同步日期 |
 |---|---|---|---|
-| chat_driver.py | optima-store-skills · .claude/skills/operating-yzsgo-chat/chat_driver.py | 3cfc2d6 | 2026-09-09 |
+| chat_driver.py | optima-store-skills · .claude/skills/operating-yzsgo-chat/chat_driver.py | 010c578a（PR #1852，含 #1635） | 2026-09-17 |
 | pull_wire.py | optima-store-skills · .claude/skills/pulling-yzsgo-session-wire/pull_wire.py | 3cfc2d6 | 2026-09-09 |
 | prep_conversation.py | optima-gateway · .claude/skills/conversation-iq/prep_session.py（改编：+浏览器证据合并） | b75f575c | 2026-08-31 |
 | judge_workflow.js | optima-gateway · .claude/skills/conversation-iq/workflow.js（改编：+前后端一致性维度） | b75f575c | 2026-08-31 |
 
 > 注：judge_workflow.js 内联的 decideOutcome 是 judge_outcome.js（有 node 单测）的副本，改逻辑需同步两处。
+
+## 2026-09-17 这次同步带了什么
+
+`chat_driver.py` 逐字取自上游 `010c578a`（optima-store-skills#1852 合入 main 的那个 merge commit；
+同步时上游 main 上该文件与它逐字节一致）。`3cfc2d6..010c578a` 之间上游动了这个文件 25 次，对本仓有影响的三组：
+
+- **#1635 多张 question-card**：活卡按「有 確認/下一題/補充回答 按钮」认，不再取第一张可见卡；
+  `wait_reply` 回执带卡片原文与来源。这是本次同步的直接动机。
+- **#611 / #666 紫鸟 profile 声明闸**：`attach(*, ziniao, reason=None, ...)` 的 `ziniao` 变成**必填**，
+  漏传 `TypeError`；`ziniao=None` 无理由 `ValueError`。`send()` / `send_and_wait()` 多了可选的
+  `ziniao=` 按条声明，并对账正文点名的 profile，不符抛 `ZiniaoDeclarationConflict`。
+  互斥锁本身 2026-09-14 已撤，只剩声明 + 对账；每次放行/拦截追加到 `~/.optima-locks/ziniao-gate.jsonl`（写失败不抛）。
+- **#870 本轮开的 tab 本轮关**：新增 `keep_tab_for_human(reason)`（停手交人时保留 tab）和 `with` 用法
+  （`__enter__` / `__exit__`）。`close()` 只关自己开的 tab 是 09-09 那版就有的行为，不是这次新增。
+
+**没接的**：`wait_reply` 新增的 `question` 回执（#1635，用来区分「读不到卡片」和「根本没问」）没有写进
+`run_e2e.py` 的 turns / `meta.json`，判定层看不到它；要用得另改。`tool_trace` 末尾追加的十来个字段不影响现有读取。
+
+**新增副作用**：每次 `attach()` 都会建 `~/.optima-locks/` 并往 `ziniao-gate.jsonl` 追加一行（写失败不抛）。
+驱动报错提示里的 `scripts/ziniao-gate-report.py` 在 store-skills 仓库，本仓没有。
+
+**本仓为此做的适配**（驱动本身仍逐字，不改）：
+
+1. `run_e2e.py` 改传 `attach(ziniao=None, reason=…)`。🔴 **不改会在第一步就崩**——2026-09-16 曾有人只把新驱动手工拷进
+   `~/.claude/skills/yzsgo-e2e/` 而没改调用方，结果本机这个 skill 一直是坏的。
+2. 新增 `tests/yzsgo-e2e/test_attach_declaration.py`：从驱动的 ast 重建 `attach()` 的参数表，
+   把本 skill 每处 `attach()` 调用用 `inspect.Signature.bind` 绑一遍 ⇒ 缺必填参数、传了驱动不收的关键字、
+   位置参数不对，都会红。不需要 playwright。
+   原有的 `test_imports.py` 只在装了 playwright 时才导入驱动，而且只查 `ChatDriver` 类存在，挡不住签名变化。
+3. `test.yml` 加一步 `python3 -m unittest discover -s tests/yzsgo-e2e`。🔴 **此前 CI 只跑 `npm test`，
+   `tests/yzsgo-e2e/*.py` 一条都不跑**，这些测试只在有人手动跑时才生效。runner 与 optima-store-skills
+   的 `publish-plugin.yml` 同一个标签，那边直接用 `python3`。
+4. ⚠️ **装好后已知 profile 表恒为空**：`known_profile_ids()` 读的是「驱动所在目录再往上三层」的
+   `e2e/registry*.yaml`，那是 store-skills 仓库的布局；装到 `~/.claude/skills/yzsgo-e2e` 算出来是 `~`，
+   装到 `~/.codex/skills/optima-dev/yzsgo-e2e` 算出来是 `~/.codex`，都读不到 ⇒ 对账只认
+   `--ziniao-profile <id>` 这种显式写法，裸 14 位 profile id 认不出来。不影响本 skill（本来就声明 `None`）。
+
+`pull_wire.py`：核过上游 `3cfc2d6..origin/main` 该文件无新提交，不用动。
 
 ## 2026-09-09 这次同步带了什么
 
