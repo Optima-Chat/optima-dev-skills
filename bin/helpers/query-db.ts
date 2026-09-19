@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execSync } from 'child_process';
+import { sanitizeExecError } from './safe-exec';
 import * as fs from 'fs';
 import { ensureTunnel, getGitHubVariable, getInfisicalConfig, getInfisicalToken, getInfisicalSecrets, parseDatabaseUrl, isCnEnv, connectCnDB, connectCnDBFromUrl } from './db-utils';
 
@@ -305,10 +306,16 @@ async function main() {
 
     const { container, user, database } = serviceConfig as any;
 
-    const result = execSync(
-      `sshpass -p "${ciPassword}" ssh -o StrictHostKeyChecking=no ${ciUser}@${ciHost} "docker exec ${container} psql -U ${user} -d ${database} -c \\"${sql}\\""`,
-      { encoding: 'utf-8' }
-    );
+    // 密码经 SSHPASS 环境变量给 `sshpass -e`：不进命令行（ps 不可见），失败时的报错也不会带出它。
+    let result: string;
+    try {
+      result = execSync(
+        `sshpass -e ssh -o StrictHostKeyChecking=no ${ciUser}@${ciHost} "docker exec ${container} psql -U ${user} -d ${database} -c \\"${sql}\\""`,
+        { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, SSHPASS: ciPassword } }
+      );
+    } catch (raw) {
+      throw sanitizeExecError('ssh (CI database)', raw, [ciPassword], `host=${ciHost}`);
+    }
 
     console.log('\n' + result);
   } else {
