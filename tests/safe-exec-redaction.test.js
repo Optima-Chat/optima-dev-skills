@@ -98,7 +98,7 @@ test('runCurl: verbose/trace/include options are refused (they would put header 
 test('isSecretName: anchored exclusions — credential-ish names are never excused by a substring', () => {
   for (const n of ['provider_secret', 'hidden_secret', 'oidc_secret', 'android_secret', 'widget_secret', 'idp_secret',
     'model_secret', 'prototype_secret', 'username_secret', 'secret_provider', 'client_secret', 'clientSecret',
-    'password', 'api_key', 'access_token', 'session', 'code', 'key']) assert.equal(isSecretName(n), true, n);
+    'password', 'api_key', 'access_token', 'session', 'code', 'key', 'jwt', 'otp', 'assertion', 'hmac', 'ticket', 'pw']) assert.equal(isSecretName(n), true, n);
   for (const n of ['secretPath', 'expandSecretReferences', 'secret_id', 'secretKeyId', 'secretName', 'token_type',
     'token_version', 'max_tokens', 'sshpass', 'tokenizer', 'environment', 'workspaceId', 'page']) assert.equal(isSecretName(n), false, n);
 });

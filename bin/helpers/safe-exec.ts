@@ -29,7 +29,7 @@ const HEADER_OPTS = new Set(['-H', '--header', '--proxy-header']);
 /** 头值白名单：只有这些无害头保留原值，其余一律整值打码（黑名单永远列不全）。 */
 const SAFE_HEADER_RE = /^(content-type|content-length|content-encoding|accept|accept-encoding|accept-language|user-agent|cache-control|connection|host|origin)$/i;
 /** 参数/字段名像凭据 ⇒ 值打码。`secret` 单独判：`secretPath` / `expandSecretReferences` 这类是路径与开关，不是凭据。 */
-const SECRET_NAME_RE = /(pass(?:word|wd)?|pwd|token|api[-_]?key|access[-_]?key|private[-_]?key|signature|credential|session|(?:^|[-_])(?:sig|auth|code|key)$)/i;
+const SECRET_NAME_RE = /(pass(?:word|wd)?|pwd|token|jwt|hmac|assertion|api[-_]?key|access[-_]?key|private[-_]?key|signature|credential|session|(?:^|[-_])(?:sig|sign|auth|code|key|otp|pw|ticket)$)/i;
 const SECRET_WORD_RE = /secret/i;
 /**
  * 「名字像凭据、其实不是」的排除——**必须锚定**：无锚点的子串排除会把 `provider_secret`（prov-id-er）、

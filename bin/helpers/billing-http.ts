@@ -152,7 +152,7 @@ export function getServiceToken(env: string, scope?: string): string {
   // execFileSync + 参数数组（不经 shell）：Windows cmd.exe 不认单引号，shell 拼出的
   // `-d '${body}'` 会被拆碎、curl 收到垃圾参数直接退出（#92）。数组传参绕开 shell、
   // 跨平台一致；函数保持同步。
-  // runCurl：失败时的报错不回显命令参数（body 里有 client_secret）。
+  // runCurl：失败时的报错不回显命令参数（请求体含凭据）。
   const response = runCurl([
     '-X', 'POST',
     `${authUrl}/api/v1/oauth/token`,
