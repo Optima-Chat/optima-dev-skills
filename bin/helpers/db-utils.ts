@@ -1,4 +1,5 @@
-import { execSync, execFileSync, spawn } from 'child_process';
+import { execSync, spawn } from 'child_process';
+import { runCurl, scrub } from './safe-exec';
 import * as fs from 'fs';
 import * as os from 'os';
 
@@ -92,10 +93,11 @@ export function getInfisicalToken(config: InfisicalConfig): string {
 }
 
 export function getInfisicalSecrets(config: InfisicalConfig, token: string, environment: string, secretPath: string): Record<string, string> {
-  const response = execSync(
-    `curl -s "${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${secretPath}" -H "Authorization: Bearer ${token}"`,
-    { encoding: 'utf-8' }
-  );
+  // runCurl：参数数组直传（不经 shell），失败时的报错不回显命令参数。
+  const response = runCurl([
+    `${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${secretPath}`,
+    '-H', `Authorization: Bearer ${token}`,
+  ]);
   const data = JSON.parse(response);
   const secrets: Record<string, string> = {};
   for (const secret of data.secrets || []) {
@@ -105,11 +107,15 @@ export function getInfisicalSecrets(config: InfisicalConfig, token: string, envi
 }
 
 // ─── cn Infisical（独立实例，admin email/password 认证）──────────────────────
-/** curl → JSON，用 execFileSync 传参（避免 shell 引号坑，跨平台安全）。 */
+/**
+ * curl → JSON。参数数组直传（避免 shell 引号坑，跨平台安全）。
+ * 走 runCurl：curl 失败时抛的错误只带退出码 / 主机名 / 清洗过的 stderr，不回显命令参数
+ * （参数里有请求体与认证头）。
+ */
 function curlJson(args: string[]): any {
-  const out = execFileSync('curl', ['-s', ...args], { encoding: 'utf-8' });
+  const out = runCurl(args);
   try { return JSON.parse(out || '{}'); }
-  catch { throw new Error(`cn Infisical: non-JSON response: ${String(out).slice(0, 200)}`); }
+  catch { throw new Error(`cn Infisical: non-JSON response: ${scrub(String(out)).slice(0, 200)}`); }
 }
 
 /** 明文密码文件权限比 600 宽（组/其他用户可读）时往 stderr 警告一行。Windows 无此语义，跳过。 */
@@ -187,14 +193,14 @@ export function getCnInfisicalToken(): string {
     '-H', 'Content-Type: application/json',
     '-d', JSON.stringify({ email, password }),
   ]);
-  if (!login.accessToken) throw new Error(`cn Infisical login 失败: ${JSON.stringify(login).slice(0, 200)}`);
+  if (!login.accessToken) throw new Error(`cn Infisical login 失败: ${scrub(JSON.stringify(login)).slice(0, 200)}`);
   const org = curlJson([
     '-X', 'POST', `${CN_INFISICAL_URL}/api/v3/auth/select-organization`,
     '-H', 'Content-Type: application/json',
     '-H', `Authorization: Bearer ${login.accessToken}`,
     '-d', JSON.stringify({ organizationId: CN_INFISICAL_ORG }),
   ]);
-  if (!org.token) throw new Error(`cn Infisical select-organization 失败: ${JSON.stringify(org).slice(0, 200)}`);
+  if (!org.token) throw new Error(`cn Infisical select-organization 失败: ${scrub(JSON.stringify(org)).slice(0, 200)}`);
   return org.token;
 }
 

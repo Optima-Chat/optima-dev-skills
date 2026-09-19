@@ -1,4 +1,4 @@
-import { execFileSync } from 'child_process';
+import { runCurl, scrub } from './safe-exec';
 import { fetchInfisicalSecret } from './infisical-secrets';
 import { getInfisicalConfig, getInfisicalToken, getCnInfisicalToken, getCnSecrets, resolveUserId } from './db-utils';
 
@@ -152,25 +152,22 @@ export function getServiceToken(env: string, scope?: string): string {
   // execFileSync + 参数数组（不经 shell）：Windows cmd.exe 不认单引号，shell 拼出的
   // `-d '${body}'` 会被拆碎、curl 收到垃圾参数直接退出（#92）。数组传参绕开 shell、
   // 跨平台一致；函数保持同步。
-  const response = execFileSync(
-    'curl',
-    [
-      '-s', '-X', 'POST',
-      `${authUrl}/api/v1/oauth/token`,
-      '-H', 'Content-Type: application/x-www-form-urlencoded',
-      '-d', body,
-    ],
-    { encoding: 'utf-8' },
-  );
+  // runCurl：失败时的报错不回显命令参数（请求体含凭据）。
+  const response = runCurl([
+    '-X', 'POST',
+    `${authUrl}/api/v1/oauth/token`,
+    '-H', 'Content-Type: application/x-www-form-urlencoded',
+    '-d', body,
+  ]);
 
   let parsed: { access_token?: string; error?: string };
   try {
     parsed = JSON.parse(response);
   } catch {
-    throw new Error(`user-auth token endpoint returned non-JSON (${env}): ${response.slice(0, 200)}`);
+    throw new Error(`user-auth token endpoint returned non-JSON (${env}): ${scrub(response).slice(0, 200)}`);
   }
   if (!parsed.access_token) {
-    throw new Error(`user-auth token mint failed (${env}): ${response.slice(0, 200)}`);
+    throw new Error(`user-auth token mint failed (${env}): ${scrub(response).slice(0, 200)}`);
   }
   tokenCache[cacheKey] = parsed.access_token;
   return parsed.access_token;

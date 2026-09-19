@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { runCurl, scrub } from './safe-exec';
 import { getInfisicalConfig, getInfisicalToken, InfisicalConfig } from './db-utils';
 
 /**
@@ -23,19 +23,20 @@ export function fetchInfisicalSecret(
   const encodedPath = encodeURIComponent(secretPath);
   const encodedName = encodeURIComponent(secretName);
 
-  const response = execSync(
-    `curl -s "${cfg.url}/api/v3/secrets/raw/${encodedName}?workspaceId=${cfg.projectId}&environment=${envSlug}&secretPath=${encodedPath}" -H "Authorization: Bearer ${tok}"`,
-    { encoding: 'utf-8' },
-  );
+  // runCurl：参数数组直传（不经 shell），失败时的报错不回显命令参数。
+  const response = runCurl([
+    `${cfg.url}/api/v3/secrets/raw/${encodedName}?workspaceId=${cfg.projectId}&environment=${envSlug}&secretPath=${encodedPath}`,
+    '-H', `Authorization: Bearer ${tok}`,
+  ]);
 
   let parsed: { secret?: { secretValue?: string }; message?: string };
   try {
     parsed = JSON.parse(response);
   } catch {
-    throw new Error(`Infisical raw secret fetch returned non-JSON for ${secretPath}/${secretName} (${envSlug}): ${response.slice(0, 200)}`);
+    throw new Error(`Infisical raw secret fetch returned non-JSON for ${secretPath}/${secretName} (${envSlug}): ${scrub(response).slice(0, 200)}`);
   }
   if (!parsed.secret?.secretValue) {
-    throw new Error(`Infisical secret not found: env=${envSlug} path=${secretPath} name=${secretName} (response: ${response.slice(0, 200)})`);
+    throw new Error(`Infisical secret not found: env=${envSlug} path=${secretPath} name=${secretName} (response: ${scrub(response).slice(0, 200)})`);
   }
   return parsed.secret.secretValue;
 }
