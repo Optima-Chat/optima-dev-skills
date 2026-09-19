@@ -19,17 +19,30 @@ const VALUE_IS_SECRET = new Set([
   '-u', '--user', '-U', '--proxy-user', '--oauth2-bearer',
   '-x', '--proxy', '--preproxy', // 代理 URL 常带 user:pass@，且可能无 scheme
   '-F', '--form', '--form-string', '-b', '--cookie', '--pass', '--key',
+  '--tlspassword', '--proxy-tlspassword', '--proxy-pass', '--proxy-key',
+  '-E', '--cert', '--proxy-cert', // `<file>:<passphrase>`
+  '--variable', '--aws-sigv4',
 ]);
+/** 带值的短选项字母：解析 `-sSu user:pass` / `-XPOST` 这类合写簇时，遇到它簇就结束（其后是值）。 */
+const SHORT_WITH_VALUE = new Set('dubFHxeAXoKEUmTrCQYyzwPtcDh'.split('').filter((c) => c !== 'h'));
 const HEADER_OPTS = new Set(['-H', '--header', '--proxy-header']);
 /** 头值白名单：只有这些无害头保留原值，其余一律整值打码（黑名单永远列不全）。 */
 const SAFE_HEADER_RE = /^(content-type|content-length|content-encoding|accept|accept-encoding|accept-language|user-agent|cache-control|connection|host|origin)$/i;
 /** 参数/字段名像凭据 ⇒ 值打码。`secret` 单独判：`secretPath` / `expandSecretReferences` 这类是路径与开关，不是凭据。 */
 const SECRET_NAME_RE = /(pass(?:word|wd)?|pwd|token|api[-_]?key|access[-_]?key|private[-_]?key|signature|credential|session|(?:^|[-_])(?:sig|auth|code|key)$)/i;
 const SECRET_WORD_RE = /secret/i;
-const NOT_A_SECRET_RE = /(path|references?|names?|ids?|version|type|mode|enabled|expand)/i;
-function isSecretName(name: string): boolean {
-  if (SECRET_NAME_RE.test(name)) return true;
-  return SECRET_WORD_RE.test(name) && !NOT_A_SECRET_RE.test(name);
+/**
+ * 「名字像凭据、其实不是」的排除——**必须锚定**：无锚点的子串排除会把 `provider_secret`（prov-id-er）、
+ * `model_secret`（mode-l）这类真凭据放过去。只认两种形态：
+ *  - 整名是已知的路径/开关参数；
+ *  - 以「凭据词 + 明确的非凭据后缀」结尾（`secret_id` / `token_type` / `max_tokens` …）。
+ */
+const KNOWN_NON_SECRET = new Set(['secretpath', 'expandsecretreferences', 'sshpass', 'tokenizer', 'passthrough', 'bypass']);
+const NON_SECRET_SUFFIX_RE = /(?:secret|token|key)s?[-_]?(?:path|references?|names?|ids?|version|types?|mode|enabled|count|limit|length|ttl|expiry|expires(?:[-_]?(?:at|in))?)$|(?:^|[-_])(?:max|min|num|total|input|output|prompt|completion)[-_]?tokens$/i;
+export function isSecretName(name: string): boolean {
+  const n = name.trim();
+  if (KNOWN_NON_SECRET.has(n.toLowerCase()) || NON_SECRET_SUFFIX_RE.test(n)) return false;
+  return SECRET_NAME_RE.test(n) || SECRET_WORD_RE.test(n);
 }
 
 function redactUrl(raw: string): string {
@@ -40,6 +53,7 @@ function redactUrl(raw: string): string {
   for (const key of [...u.searchParams.keys()]) {
     if (isSecretName(key)) u.searchParams.set(key, MASK);
   }
+  if (u.hash.length > 1) u.hash = MASK; // fragment 常见 `#access_token=…`，对排错无用，整段打码
   return u.toString().replace(/%5BREDACTED%5D/g, MASK);
 }
 
@@ -50,7 +64,10 @@ function redactHeader(h: string): string {
   return SAFE_HEADER_RE.test(name) ? h : `${name}: ${MASK}`;
 }
 
-/** 返回脱敏后的 argv 副本（仅用于展示/排错；绝不改传给子进程的真参数）。 */
+/**
+ * 返回脱敏后的 argv 副本（仅用于展示/排错；绝不改传给子进程的真参数）。
+ * 不覆盖：藏在 URL **路径段**里的凭据（webhook 型 URL）与 User-Agent 里夹带的值——这类请走请求头/请求体。
+ */
 export function redactArgv(args: readonly string[]): string[] {
   const out: string[] = [];
   for (let i = 0; i < args.length; i++) {
@@ -65,11 +82,20 @@ export function redactArgv(args: readonly string[]): string[] {
     // 选项与值分开
     if (VALUE_IS_SECRET.has(a)) { out.push(a); if (i + 1 < args.length) { out.push(MASK); i++; } continue; }
     if (HEADER_OPTS.has(a)) { out.push(a); if (i + 1 < args.length) { out.push(redactHeader(args[i + 1])); i++; } continue; }
-    // 短选项粘连写法：-Hfoo / -dbody / -uuser:pass
-    if (/^-[A-Za-z]./.test(a) && !a.startsWith('--')) {
-      const opt = a.slice(0, 2);
-      if (VALUE_IS_SECRET.has(opt)) { out.push(`${opt}${MASK}`); continue; }
-      if (HEADER_OPTS.has(opt)) { out.push(`${opt}${redactHeader(a.slice(2))}`); continue; }
+    // 短选项簇：-Hfoo / -dbody / -uuser:pass / -sSu user:pass / -XPOST
+    if (/^-[A-Za-z]/.test(a) && !a.startsWith('--') && a.length > 2) {
+      let j = 1;
+      while (j < a.length && !SHORT_WITH_VALUE.has(a[j])) j++;   // 跳过不带值的开关字母
+      if (j < a.length) {
+        const opt = `-${a[j]}`, head = a.slice(0, j + 1), rest = a.slice(j + 1);
+        const sticky = rest.length > 0;                           // 值粘在簇里，否则是下一个 argv
+        const value = sticky ? rest : args[i + 1];
+        if (VALUE_IS_SECRET.has(opt) || HEADER_OPTS.has(opt)) {
+          const masked = value === undefined ? undefined : (HEADER_OPTS.has(opt) ? redactHeader(value) : MASK);
+          if (sticky) out.push(`${head}${masked}`); else { out.push(head); if (masked !== undefined) { out.push(masked); i++; } }
+          continue;
+        }
+      }
     }
     if (/^https?:\/\//i.test(a)) { out.push(redactUrl(a)); continue; }
     // 无 scheme 的 `user:pass@host…`（curl 接受）
@@ -127,11 +153,20 @@ export function scrub(text: string, literals: readonly string[] = []): string {
     .replace(/((?:proxy-)?authorization\s*[:=]\s*)(?:(?:bearer|basic|token)\s+)?[^\s"'\\]+/gi, `$1${MASK}`)
     .replace(/\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, `$1 ${MASK}`)
     .replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^\s/:]+:[^\s/]*@/gi, `$1${MASK}@`) // 贪婪到最后一个 @：密码本身可含 @
-    .replace(/([?&\s"'](?:[\w-]*(?:pass(?:word|wd)?|pwd|secret|token|api[-_]?key|access[-_]?key|signature|credential)[\w-]*)=)[^&\s"']+/gi, `$1${MASK}`)
-    .replace(/("(?:[\w-]*(?:pass(?:word|wd)?|pwd|secret|token|api[-_]?key|access[-_]?key|credential)[\w-]*)"\s*:\s*")[^"]*(")/gi, `$1${MASK}$2`)
+    // 三条「名字 → 值」规则统一用 isSecretName 判（与 argv 脱敏同一口径）
+    .replace(/(^|[?&\s"'])([A-Za-z_][\w-]*)=([^&\s"']+)/g,
+      (m, pre: string, key: string, _v: string) => (isSecretName(key) ? `${pre}${key}=${MASK}` : m))
+    .replace(/"([A-Za-z_][\w-]*)"(\s*:\s*)"[^"]*"/g,
+      (m, key: string, sep: string) => (isSecretName(key) ? `"${key}"${sep}"${MASK}"` : m))
     .replace(/\b((?:cookie|set-cookie|x-[a-z0-9-]*(?:key|token|secret|auth|session)[a-z0-9-]*|[a-z0-9-]*api-?key)\s*:\s*)[^\r\n"']+/gi, `$1${MASK}`)
-    .replace(/((?:["']?)[\w-]*(?:pass(?:word|wd)?|pwd|secret|token|api[-_]?key|access[-_]?key|credential)[\w-]*(?:["']?)\s*:\s*)(?:'[^']*'|[^\s,}"']+)/gi,
-      (m, head: string) => (/secret(?:path|references?)/i.test(head) ? m : `${head}${MASK}`))
+    // `name: value`（yaml / 单引号 dict）。值须像一个 token（≥6 且含数字或符号），否则 `password: must be …`
+    // 这类普通报错句子会被误洗。
+    .replace(/(^|[\s{,])(["']?)([A-Za-z_][\w-]*)\2(\s*:\s*)('[^']*'|[^\s,}"']+)/g,
+      (m, pre: string, q: string, key: string, sep: string, val: string) => {
+        const bare = val.replace(/^'|'$/g, '');
+        const tokenish = bare.length >= 6 && /[\d_\-+/=.]/.test(bare);
+        return isSecretName(key) && tokenish ? `${pre}${q}${key}${q}${sep}${MASK}` : m;
+      })
     .replace(/(\bsshpass\s+-p\s*)("[^"]*"|'[^']*'|\S+)/g, `$1${MASK}`);
 }
 
@@ -147,7 +182,26 @@ function hostOf(args: readonly string[]): string {
 }
 
 /** 会让 curl 把请求头/响应头/响应体细节写进输出的选项：响应头里的凭据（Set-Cookie 等）没法按字面值清洗，直接不许用。 */
-const VERBOSE_OPT_RE = /^(-v|--verbose|--trace|--trace-ascii|--trace-config|-i|--include|-D|--dump-header)(=|$)/;
+function findVerboseOpt(args: readonly string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a.startsWith('--')) {
+      const name = a.split('=')[0];
+      // curl 接受长选项的唯一前缀（`--verbos`），所以按前缀判
+      if (/^--(verb|trace|incl|dump-h)/.test(name)) return name;
+      if (!a.includes('=') && (VALUE_IS_SECRET.has(name) || HEADER_OPTS.has(name) || URL_VALUED_OPTS.has(name))) i++; // 跳过它的值
+      continue;
+    }
+    if (!/^-[A-Za-z]/.test(a)) continue;
+    let j = 1;
+    for (; j < a.length; j++) {
+      if ('viD'.includes(a[j])) return `-${a[j]}`;
+      if (SHORT_WITH_VALUE.has(a[j])) break;
+    }
+    if (j < a.length && j === a.length - 1) i++; // 簇以带值选项结尾：下一个 argv 是值，跳过
+  }
+  return undefined;
+}
 
 /**
  * 把 child_process 抛的 error 换成一个干净的新 Error。
@@ -177,8 +231,8 @@ export interface RunCurlOptions {
  * `-sS`：静默进度条但保留 curl 自己的错误行（`curl: (7) Failed to connect…`），否则失败时两眼一抹黑。
  */
 export function runCurl(args: readonly string[], opts: RunCurlOptions = {}): string {
-  const verbose = args.find((a) => VERBOSE_OPT_RE.test(a));
-  if (verbose) throw new Error(`runCurl: option ${verbose.split('=')[0]} is not allowed (it writes header/body details to the output)`);
+  const verbose = findVerboseOpt(args);
+  if (verbose) throw new Error(`runCurl: option ${verbose} is not allowed (it writes header/body details to the output)`);
   try {
     return execFileSync(opts.bin ?? 'curl', ['-sS', ...args], {
       encoding: 'utf-8',

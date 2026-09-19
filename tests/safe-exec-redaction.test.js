@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 
 // Tests the compiled dist artifact — `npm test`'s pretest builds first.
-const { runCurl, redactArgv, scrub, sanitizeExecError } = require(
+const { runCurl, redactArgv, scrub, sanitizeExecError, isSecretName } = require(
   path.resolve(__dirname, '..', 'dist', 'bin', 'helpers', 'safe-exec.js'),
 );
 
@@ -85,12 +85,51 @@ test('runCurl: form-urlencoded body + proxy/referer ordering — no leak, host i
 });
 
 test('runCurl: verbose/trace/include options are refused (they would put header details in the output)', () => {
-  for (const opt of ['-v', '--verbose', '--trace-ascii', '-i', '--include']) {
+  for (const opt of ['-v', '--verbose', '--trace-ascii', '-i', '--include', '-sv', '-vs', '--verbos', '-D/dev/stderr']) {
     assert.throws(() => runCurl([opt, 'http://127.0.0.1:1/', '-H', `Authorization: Bearer ${FAKE_TOKEN}`]), (e) => {
       assertNoFakes(everyStringIn(e), 'error object');
       return /not allowed/.test(e.message);
     });
   }
+});
+
+// Regression: exclusions must be anchored. An unanchored "id"/"mode"/"type"/"name" exclusion let
+// `provider_secret` (prov-ID-er), `model_secret` (MODE-l) etc. through.
+test('isSecretName: anchored exclusions — credential-ish names are never excused by a substring', () => {
+  for (const n of ['provider_secret', 'hidden_secret', 'oidc_secret', 'android_secret', 'widget_secret', 'idp_secret',
+    'model_secret', 'prototype_secret', 'username_secret', 'secret_provider', 'client_secret', 'clientSecret',
+    'password', 'api_key', 'access_token', 'session', 'code', 'key']) assert.equal(isSecretName(n), true, n);
+  for (const n of ['secretPath', 'expandSecretReferences', 'secret_id', 'secretKeyId', 'secretName', 'token_type',
+    'token_version', 'max_tokens', 'sshpass', 'tokenizer', 'environment', 'workspaceId', 'page']) assert.equal(isSecretName(n), false, n);
+});
+
+test('runCurl: value-only echo — provider_secret & friends are scrubbed in query, form and JSON carriers', { skip: process.platform === 'win32' }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'safe-exec-'));
+  const fake = path.join(dir, 'fake-curl.sh');
+  // echoes only the *values*, never the key names — the literal list has to catch them
+  fs.writeFileSync(fake, `#!/bin/sh\necho "saw ${FAKE_SECRET} and ${FAKE_TOKEN}" >&2\nexit 22\n`, { mode: 0o755 });
+  for (const args of [
+    [`http://h.example.invalid/x?provider_secret=${FAKE_SECRET}&model_secret=${FAKE_TOKEN}`],
+    ['http://h.example.invalid/x', '-d', `a=b&provider_secret=${FAKE_SECRET}&model_secret=${FAKE_TOKEN}`],
+    ['http://h.example.invalid/x', '-d', JSON.stringify({ provider_secret: FAKE_SECRET, model_secret: FAKE_TOKEN })],
+  ]) {
+    let err;
+    try { runCurl(args, { bin: fake }); } catch (e) { err = e; }
+    assert.ok(err);
+    assertNoFakes(everyStringIn(err), 'error object');
+    assertNoFakes(redactArgv(args).join(' '), 'redacted argv');
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('redactArgv: short-option clusters, cert passphrase, tls password, --variable, fragment', () => {
+  const red = redactArgv([
+    '-sSu', `user:${FAKE_PASSWORD}`, `-sSuuser:${FAKE_PASSWORD}`, '-XPOST',
+    '--tlspassword', FAKE_PASSWORD, '-E', `/tmp/c.pem:${FAKE_PASSWORD}`, `--cert=/tmp/c.pem:${FAKE_PASSWORD}`,
+    '--variable', `tok=${FAKE_TOKEN}`, `http://h.example.invalid/cb#access_token=${FAKE_TOKEN}`,
+  ]).join(' ');
+  assertNoFakes(red, 'redacted argv');
+  assert.ok(red.includes('-XPOST') && red.includes('h.example.invalid/cb'));
 });
 
 test('runCurl: missing binary — reports errno code, no argv', () => {
@@ -172,6 +211,17 @@ test('scrub: shape rules without literals — api-key/cookie headers, single-quo
     `sshpass -p "${FAKE_PASSWORD}" ssh host`,
   ]) assertNoFakes(scrub(text), `scrub(${text.slice(0, 14)}…)`);
   assert.equal(scrub('secretPath: /services/foo'), 'secretPath: /services/foo');
+  // ordinary diagnostics must survive untouched
+  for (const text of [
+    'sshpass: Failed to run command: No such file or directory',
+    'Error: tokenizer: unexpected end of input',
+    'rate limit: max_tokens: 4096 exceeded',
+    'token: expired at 12:00; password: must be at least 8 chars',
+    'LINE 1: ... where password_hash is null and token_version=3',
+    'https://h.example.invalid/raw?workspaceId=ws1&environment=prod&secretPath=%2Fservices%2Ffoo&expandSecretReferences=true',
+    'curl: (22) The requested URL returned error: 401',
+    'psql: error: FATAL:  password authentication failed for user "app"',
+  ]) assert.equal(scrub(text), text);
   // password containing "@": nothing after the first "@" may survive
   const dsn = scrub('postgres://app:FAKE@dbPW-DO-NOT-LEAK@db.example.invalid:5432/x');
   assert.ok(!dsn.includes('dbPW-DO-NOT-LEAK'), dsn);
