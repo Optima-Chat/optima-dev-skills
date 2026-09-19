@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execSync } from 'child_process';
+import { runCurl } from './safe-exec';
 import { getInfisicalConfig, getInfisicalToken, InfisicalConfig, isCnEnv, cnInfisicalEnv, getCnInfisicalToken, getCnSecrets } from './db-utils';
 
 // 支持的服务列表（Infisical 路径为 /services/<service-name>）
@@ -46,10 +46,11 @@ function isSupportedEnv(env: string): boolean {
 // NOTE: getInfisicalSecrets is kept local because it encodes secretPath (encodeURIComponent),
 // unlike db-utils' raw-path variant; getGitHubVariable/getInfisicalConfig/getInfisicalToken are shared from db-utils.
 function getInfisicalSecrets(config: InfisicalConfig, token: string, environment: string, secretPath: string): Record<string, string> {
-  const response = execSync(
-    `curl -s "${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${encodeURIComponent(secretPath)}" -H "Authorization: Bearer ${token}"`,
-    { encoding: 'utf-8' }
-  );
+  // runCurl：参数数组直传（不经 shell），失败时的报错不回显命令参数。
+  const response = runCurl([
+    `${config.url}/api/v3/secrets/raw?workspaceId=${config.projectId}&environment=${environment}&secretPath=${encodeURIComponent(secretPath)}`,
+    '-H', `Authorization: Bearer ${token}`,
+  ]);
   const data = JSON.parse(response);
   const secrets: Record<string, string> = {};
   for (const secret of data.secrets || []) {
