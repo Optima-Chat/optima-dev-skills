@@ -76,6 +76,7 @@ export function redactArgv(args: readonly string[]): string[] {
     const eq = a.startsWith('--') ? a.indexOf('=') : -1;
     if (eq > 0) {
       const opt = a.slice(0, eq);
+      if (opt === '--url') { out.push(`${opt}=${redactUrl(a.slice(eq + 1))}`); continue; }
       if (VALUE_IS_SECRET.has(opt)) { out.push(`${opt}=${MASK}`); continue; }
       if (HEADER_OPTS.has(opt)) { out.push(`${opt}=${redactHeader(a.slice(eq + 1))}`); continue; }
     }
@@ -83,7 +84,7 @@ export function redactArgv(args: readonly string[]): string[] {
     if (VALUE_IS_SECRET.has(a)) { out.push(a); if (i + 1 < args.length) { out.push(MASK); i++; } continue; }
     if (HEADER_OPTS.has(a)) { out.push(a); if (i + 1 < args.length) { out.push(redactHeader(args[i + 1])); i++; } continue; }
     // 短选项簇：-Hfoo / -dbody / -uuser:pass / -sSu user:pass / -XPOST
-    if (/^-[A-Za-z]/.test(a) && !a.startsWith('--') && a.length > 2) {
+    if (/^-[^-]/.test(a) && a.length > 2) {
       let j = 1;
       while (j < a.length && !SHORT_WITH_VALUE.has(a[j])) j++;   // 跳过不带值的开关字母
       if (j < a.length) {
@@ -110,7 +111,7 @@ function secretLiterals(args: readonly string[]): string[] {
   const lits: string[] = [];
   for (let i = 0; i < args.length; i++) {
     if (!red[i].includes(MASK)) continue; // 按「是否真的打了码」判，不按字符串是否相等（URL 规范化也会让它不等）
-    const a = args[i];
+    const a = args[i].replace(/^--url=/, '');
     // 子进程 stderr 可能只回显参数的一段，所以除整串外还要收内部片段——但**只收名字像凭据的值**：
     // 把 URL 里所有 k=v 都当秘密，会让 `prod` / `true` 这类普通词把报错原文洗得没法读。
     if (/^https?:\/\//i.test(a)) {
@@ -119,6 +120,10 @@ function secretLiterals(args: readonly string[]): string[] {
         if (u.password) lits.push(u.password, decodeURIComponent(u.password));
         if (u.username && u.password) lits.push(`${u.username}:${u.password}`);
         for (const [k, v] of u.searchParams) if (isSecretName(k)) lits.push(v);
+        if (u.hash.length > 1) {                                  // fragment：`#access_token=…`
+          lits.push(u.hash.slice(1));
+          for (const [, v] of new URLSearchParams(u.hash.slice(1))) if (v) lits.push(v);
+        }
       } catch { /* 非法 URL：redactUrl 也不会动它，走不到这里 */ }
       continue;
     }
@@ -154,8 +159,9 @@ export function scrub(text: string, literals: readonly string[] = []): string {
     .replace(/\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, `$1 ${MASK}`)
     .replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^\s/:]+:[^\s/]*@/gi, `$1${MASK}@`) // 贪婪到最后一个 @：密码本身可含 @
     // 三条「名字 → 值」规则统一用 isSecretName 判（与 argv 脱敏同一口径）
-    .replace(/(^|[?&\s"'])([A-Za-z_][\w-]*)=([^&\s"']+)/g,
-      (m, pre: string, key: string, _v: string) => (isSecretName(key) ? `${pre}${key}=${MASK}` : m))
+    // 值类必须排除 `?`：否则非凭据键（`url=http://h/cb?token=X`）会把后面的凭据对整段吞进自己的值里原样返回。
+    .replace(/(^|[?&;,(\s"'])(-{0,2}[A-Za-z_][\w.-]*)(\s*=\s*)(?:"[^"]*"|'[^']*'|[^&?;,)\s"']+)/g,
+      (m, pre: string, key: string, eq: string) => (isSecretName(key.replace(/^-+/, '')) ? `${pre}${key}${eq}${MASK}` : m))
     .replace(/"([A-Za-z_][\w-]*)"(\s*:\s*)"[^"]*"/g,
       (m, key: string, sep: string) => (isSecretName(key) ? `"${key}"${sep}"${MASK}"` : m))
     .replace(/\b((?:cookie|set-cookie|x-[a-z0-9-]*(?:key|token|secret|auth|session)[a-z0-9-]*|[a-z0-9-]*api-?key)\s*:\s*)[^\r\n"']+/gi, `$1${MASK}`)
@@ -174,7 +180,7 @@ export function scrub(text: string, literals: readonly string[] = []): string {
 const URL_VALUED_OPTS = new Set(['-x', '--proxy', '--preproxy', '-e', '--referer']);
 function hostOf(args: readonly string[]): string {
   for (let i = 0; i < args.length; i++) {
-    const a = args[i];
+    const a = args[i].replace(/^--url=/, '');
     if (!/^https?:\/\//i.test(a) || (i > 0 && URL_VALUED_OPTS.has(args[i - 1]))) continue;
     try { return new URL(a).host; } catch { /* 不是合法 URL：继续找 */ }
   }
@@ -192,7 +198,7 @@ function findVerboseOpt(args: readonly string[]): string | undefined {
       if (!a.includes('=') && (VALUE_IS_SECRET.has(name) || HEADER_OPTS.has(name) || URL_VALUED_OPTS.has(name))) i++; // 跳过它的值
       continue;
     }
-    if (!/^-[A-Za-z]/.test(a)) continue;
+    if (!/^-[^-]/.test(a)) continue;
     let j = 1;
     for (; j < a.length; j++) {
       if ('viD'.includes(a[j])) return `-${a[j]}`;

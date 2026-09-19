@@ -230,6 +230,34 @@ test('scrub: shape rules without literals — api-key/cookie headers, single-quo
   assertNoFakes(scrub(JSON.stringify({ mfaToken: FAKE_TOKEN, message: 'mfa required' })), 'response echo');
 });
 
+// Regression: a non-credential key must not swallow a following `?token=…` into its own value.
+test('scrub: k=v rule — value stops at "?", more prefixes, leading dashes, quoted values', () => {
+  for (const text of [
+    `url=http://h.example.invalid/cb?token=${FAKE_TOKEN}`,
+    `arg=[--url=http://h.example.invalid/?token=${FAKE_TOKEN}]`,
+    `password="${FAKE_PASSWORD}"`, `password='${FAKE_PASSWORD}'`,
+    `host=h;password=${FAKE_PASSWORD}`, `a=1,token=${FAKE_TOKEN}`, `(token=${FAKE_TOKEN})`,
+    ` --password=${FAKE_PASSWORD}`, `token = ${FAKE_TOKEN}`, `my.token=${FAKE_TOKEN}`,
+  ]) assertNoFakes(scrub(text), `scrub(${text.slice(0, 18)}…)`);
+  assert.equal(scrub('url=http://h.example.invalid/cb?page=2'), 'url=http://h.example.invalid/cb?page=2');
+});
+
+test('runCurl: --url=<URL> and digit/symbol-led short clusters', { skip: process.platform === 'win32' }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'safe-exec-'));
+  const fake = path.join(dir, 'fake-curl.sh');
+  fs.writeFileSync(fake, '#!/bin/sh\nfor a in "$@"; do echo "arg=[$a]" >&2; done\nexit 22\n', { mode: 0o755 });
+  let err;
+  try {
+    runCurl([`--url=http://h.example.invalid/cb?token=${FAKE_TOKEN}#access_token=${FAKE_SECRET}`, '-4u', `x:${FAKE_PASSWORD}`], { bin: fake });
+  } catch (e) { err = e; }
+  assert.ok(err);
+  assertNoFakes(everyStringIn(err), 'error object');
+  assert.match(err.message, /host=h\.example\.invalid/);
+  assertNoFakes(redactArgv(['-0u', `x:${FAKE_PASSWORD}`, '-#u', `x:${FAKE_PASSWORD}`]).join(' '), 'redacted argv');
+  for (const opt of ['-4v', '-#v', '-0sv']) assert.throws(() => runCurl([opt, 'http://127.0.0.1:1/']), /not allowed/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('scrub: removes literal secrets and bearer/basic tokens from arbitrary text', () => {
   const text = `Command failed: curl -s -H "Authorization: Bearer ${FAKE_TOKEN}" -d {"password":"${FAKE_PASSWORD}"} https://x/y?token=${FAKE_TOKEN}`;
   const out = scrub(text, [FAKE_PASSWORD]);
