@@ -26,3 +26,21 @@ test('⛔ 非 cn-stage 不允许经铸号工具补额（prod 发放必须显式�
 test('非整数拒绝', () => {
   for (const bad of ['-1', '1.5', 'abc', '']) assert.throws(() => resolveMintCredits('cn-stage', bad), /整数/);
 });
+
+const { grantMintCreditsOrWarn } = require(
+  path.resolve(__dirname, '..', 'dist', 'bin', 'helpers', 'mint-credits.js'),
+);
+test('补额成功 → 返回 lot 信息、不告警', async () => {
+  const warns = [];
+  const r = await grantMintCreditsOrWarn(async () => ({ credits: 20000, lotId: 'L1' }), { email: 'a@x', credits: 20000, env: 'cn-stage' }, (m) => warns.push(m));
+  assert.deepEqual(r, { credits: 20000, lotId: 'L1' });
+  assert.equal(warns.length, 0);
+});
+test('🔴 补额抛错 → 不抛出（注册成果保住）、返回 null、告警里带可直接复制的手动补额命令', async () => {
+  const warns = [];
+  const r = await grantMintCreditsOrWarn(async () => { throw new Error('curl: (28) timeout'); }, { email: 'a@x', credits: 20000, env: 'cn-stage' }, (m) => warns.push(m));
+  assert.equal(r, null);
+  assert.equal(warns.length, 1);
+  assert.match(warns[0], /curl: \(28\) timeout/);
+  assert.match(warns[0], /optima-grant-credits a@x --credits 20000 --env cn-stage/);
+});

@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-import { resolveMintCredits, CN_STAGE_DEFAULT_MINT_CREDITS } from './mint-credits';
+import { resolveMintCredits, CN_STAGE_DEFAULT_MINT_CREDITS, grantMintCreditsOrWarn } from './mint-credits';
 import { callBilling } from './billing-http';
 import { operatorActorId } from './operator';
 import { resolveTargetUser } from './grant-subscription';
@@ -331,18 +331,22 @@ Example:
 
     // 4. 铸号后补额（仅 cn-stage 默认开，见 mint-credits.ts）
     if (mintCredits > 0) {
-      const { userId } = await resolveTargetUser(environment, email);
-      const { body } = await callBilling<{ success: boolean; lotId: string; credits: number }>(
-        environment, 'POST', '/api/billing/admin/grant-credits',
-        {
-          userId,
-          amountCredits: mintCredits,
-          description: 'dev-skills 铸号默认补额（cn-stage 真扣，防验证中途被挂起）',
-          actorUserId: operatorActorId(null),
-          idempotencyKey: `dev-skills-mint:${randomUUID()}`,
-        },
-      );
-      console.log(`\n🎁 Granted ${body.credits} credits (lot ${body.lotId})；要零余额号请传 --credits 0`);
+      const granted = await grantMintCreditsOrWarn(async () => {
+        const { userId } = await resolveTargetUser(environment, email);
+        const { body } = await callBilling<{ success: boolean; lotId: string; credits: number }>(
+          environment, 'POST', '/api/billing/admin/grant-credits',
+          {
+            userId,
+            amountCredits: mintCredits,
+            description: 'dev-skills 铸号默认补额（cn-stage 真扣，防验证中途被挂起）',
+            actorUserId: operatorActorId(null),
+            idempotencyKey: `dev-skills-mint:${randomUUID()}`,
+          },
+        );
+        return body;
+      }, { email, credits: mintCredits, env: environment });
+      if (granted) console.log(`\n🎁 Granted ${granted.credits} credits (lot ${granted.lotId})；要零余额号请传 --credits 0`);
+      else mintCredits = 0; // 下面 Details 里如实显示「没补上」
     }
 
     // 5. 保存 token 到临时文件

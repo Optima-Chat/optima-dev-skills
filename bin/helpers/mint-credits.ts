@@ -22,3 +22,24 @@ export function resolveMintCredits(env: string, raw?: string | null): number {
   }
   return n;
 }
+
+/**
+ * 补额「失败只告警、不中断」（dev-skills#107 review）：补额夹在「拿到 token」与「写 token 文件」之间，
+ * 而下游 Infisical 取票是一次无重试的 curl ⇒ 抖一下就会「注册成功、token 有效，但脚本整体退出」，
+ * 只能重注册、上一个号成孤儿。账号是不可恢复的成果，钱可以后补 ⇒ 补额失败只打一条带手动补额命令的告警。
+ * @returns 成功时的 lot 信息；失败时 null（告警已经打出）
+ */
+export async function grantMintCreditsOrWarn(
+  grant: () => Promise<{ credits: number; lotId: string }>,
+  ctx: { email: string; credits: number; env: string },
+  warn: (msg: string) => void = (m) => console.warn(m),
+): Promise<{ credits: number; lotId: string } | null> {
+  try {
+    return await grant();
+  } catch (e: any) {
+    warn(`\n⚠️  补额失败（账号与 token 不受影响，照常输出）：${e?.message ?? e}\n` +
+      `   手动补：optima-grant-credits ${ctx.email} --credits ${ctx.credits} --env ${ctx.env}`);
+    return null;
+  }
+}
+
