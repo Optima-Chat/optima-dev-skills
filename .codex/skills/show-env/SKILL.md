@@ -27,3 +27,4 @@ optima-show-env gateway-core cn-prod --filter REDIS
 - For service configuration, prefer `optima-show-env` over raw Infisical API calls.
 - If the user only needs key names, use `--keys-only` to avoid exposing values unnecessarily.
 - `cn-prod` / `cn-stage` read the separate Alibaba Cloud cn Infisical instance and need `INFISICAL_CN_EMAIL` / `INFISICAL_CN_PASSWORD` (or a `~/.infisical_cn_creds` file).
+- AWS `stage` / `prod` Infisical config comes from GitHub Variables (4× `gh api`, 20s timeout, 3 attempts; #105). If api.github.com is flaky, export **all four** of `INFISICAL_URL` / `INFISICAL_CLIENT_ID` / `INFISICAL_CLIENT_SECRET` / `INFISICAL_PROJECT_ID`, or put them in `~/.infisical_aws_creds` (`chmod 600`; override with `INFISICAL_AWS_CREDS_FILE`). A partial set is ignored with a warning.

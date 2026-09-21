@@ -37,7 +37,7 @@ test('env 为空串视为未设，仍走 gh', () => {
 
 test('INFISICAL_AWS_CREDS_FILE 里的 KEY=val 作为旁路，文件不存在时静默', () => {
   const f = path.join(os.tmpdir(), `ghvar-creds-${process.pid}-${Math.random().toString(36).slice(2)}`);
-  fs.writeFileSync(f, 'export GHVAR_TEST_FILE=from-file\n');
+  fs.writeFileSync(f, 'export GHVAR_TEST_FILE=from-file\n', { mode: 0o600 });
   process.env.INFISICAL_AWS_CREDS_FILE = f;
   delete process.env.GHVAR_TEST_FILE;
   try {
@@ -96,4 +96,111 @@ test('默认退避表：3 次尝试（2 个间隔），总等待在秒级', () =
   assert.equal(GH_VARIABLE_RETRY_DELAYS_MS.length, 2);
   const total = GH_VARIABLE_RETRY_DELAYS_MS.reduce((a, b) => a + b, 0);
   assert.ok(total >= 1000 && total <= 10000, `total backoff ${total}ms`);
+});
+
+// ── 真实 execFileSync 路径：用 tests/fixtures/fake-gh.sh 顶替 gh ────────────────
+const { isRetryableGhError, getInfisicalConfig } = require(
+  path.resolve(__dirname, '..', 'dist', 'bin', 'helpers', 'db-utils.js'),
+);
+const FAKE_GH = path.resolve(__dirname, 'fixtures', 'fake-gh.sh');
+const skipOnWin = process.platform === 'win32' ? { skip: 'bash fixture' } : {};
+
+function withCallLog(fn) {
+  const log = path.join(os.tmpdir(), `fake-gh-calls-${process.pid}-${Math.random().toString(36).slice(2)}`);
+  fs.writeFileSync(log, '');
+  process.env.FAKE_GH_CALLS = log;
+  try { return fn(() => fs.readFileSync(log, 'utf-8').trim().split('\n').filter(Boolean)); }
+  finally { delete process.env.FAKE_GH_CALLS; fs.unlinkSync(log); }
+}
+
+test('真 gh 路径：成功取值并 trim', skipOnWin, () => {
+  withCallLog((calls) => {
+    assert.equal(getGitHubVariable('OK', { bin: FAKE_GH, sleep: noSleep }), 'value-from-fake-gh');
+    assert.equal(calls().length, 1);
+    assert.match(calls()[0], /^OK api repos\/Optima-Chat\/optima-dev-skills\/actions\/variables\/OK --jq \.value$/);
+  });
+});
+
+test('真 gh 路径：404 不重试、报错含 variable= 与 HTTP 404', skipOnWin, () => {
+  withCallLog((calls) => {
+    assert.throws(
+      () => getGitHubVariable('NOPE', { bin: FAKE_GH, retryDelaysMs: [0, 0], sleep: noSleep }),
+      (e) => /1 attempt failed/.test(e.message) && /variable=NOPE/.test(e.message) && /HTTP 404/.test(e.message),
+    );
+    assert.equal(calls().length, 1);
+  });
+});
+
+test('真 gh 路径：未登录不重试', skipOnWin, () => {
+  withCallLog((calls) => {
+    assert.throws(() => getGitHubVariable('NOAUTH', { bin: FAKE_GH, retryDelaysMs: [0, 0], sleep: noSleep }), /gh auth login/);
+    assert.equal(calls().length, 1);
+  });
+});
+
+test('真 gh 路径：i/o timeout 类失败重试到成功', skipOnWin, () => {
+  withCallLog((calls) => {
+    assert.equal(getGitHubVariable('FLAKY', { bin: FAKE_GH, retryDelaysMs: [0, 0], sleep: noSleep }), 'flaky-ok');
+    assert.equal(calls().length, 3);
+  });
+});
+
+test('真 gh 路径：超时 → ETIMEDOUT/SIGTERM，可重试且不 hang', skipOnWin, () => {
+  withCallLog((calls) => {
+    const t0 = Date.now();
+    assert.throws(
+      () => getGitHubVariable('SLOW', { bin: FAKE_GH, timeoutMs: 300, retryDelaysMs: [0], sleep: noSleep }),
+      (e) => /2 attempts failed/.test(e.message) && /ETIMEDOUT|SIGTERM/.test(e.message),
+    );
+    assert.equal(calls().length, 2);
+    assert.ok(Date.now() - t0 < 5000, 'must not wait for the 30s sleep');
+  });
+});
+
+test('真 gh 路径：stderr 里的 token 被清洗，argv 不回显', skipOnWin, () => {
+  withCallLog(() => {
+    assert.throws(
+      () => getGitHubVariable('LEAKY', { bin: FAKE_GH, retryDelaysMs: [], sleep: noSleep }),
+      (e) => !/ghp_secret123/.test(e.message) && !/repos\/Optima-Chat/.test(e.message),
+    );
+  });
+});
+
+test('isRetryableGhError：4xx(非429)/ENOENT/未登录不重试，429/5xx/网络错重试', () => {
+  assert.equal(isRetryableGhError('gh api failed (exit=1 variable=X): gh: Not Found (HTTP 404)'), false);
+  assert.equal(isRetryableGhError('gh api failed (exit=1): HTTP 403'), false);
+  assert.equal(isRetryableGhError('gh api failed (code=ENOENT variable=X)'), false);
+  assert.equal(isRetryableGhError('gh api failed (exit=4): please run: gh auth login'), false);
+  assert.equal(isRetryableGhError('gh api failed (exit=1): HTTP 429'), true);
+  assert.equal(isRetryableGhError('gh api failed (exit=1): HTTP 502'), true);
+  assert.equal(isRetryableGhError('gh api failed (exit=1): dial tcp 20.205.243.168:443: i/o timeout'), true);
+  assert.equal(isRetryableGhError('gh api failed (signal=SIGTERM code=ETIMEDOUT variable=X)'), true);
+});
+
+// ── getInfisicalConfig：env 旁路全有或全无 ──────────────────────────────────────
+const INF = ['INFISICAL_URL', 'INFISICAL_CLIENT_ID', 'INFISICAL_CLIENT_SECRET', 'INFISICAL_PROJECT_ID'];
+function clearInf() { for (const k of INF) delete process.env[k]; }
+
+test('getInfisicalConfig：四个 env 齐全 → source=env，不打 gh', () => {
+  clearInf();
+  process.env.INFISICAL_URL = 'https://u'; process.env.INFISICAL_CLIENT_ID = 'c'; process.env.INFISICAL_CLIENT_SECRET = 's'; process.env.INFISICAL_PROJECT_ID = 'p';
+  try {
+    const cfg = getInfisicalConfig();
+    assert.deepEqual(cfg, { url: 'https://u', clientId: 'c', clientSecret: 's', projectId: 'p', source: 'env' });
+  } finally { clearInf(); }
+});
+
+test('getInfisicalConfig：只配一部分 → 整体忽略 env、四个全走 gh、source=github、stderr 提示一次', skipOnWin, () => {
+  clearInf();
+  process.env.INFISICAL_CLIENT_ID = 'from-service-container'; // 模拟 source 了某服务 .env
+  const errs = [];
+  const orig = console.error; console.error = (m) => errs.push(String(m));
+  try {
+    withCallLog((calls) => {
+      // fake gh 对未知名字 exit 2 → 首个变量即抛；抛前 warn 已打出、且确实没有拿 env 里那个 CLIENT_ID 短路。
+      assert.throws(() => getInfisicalConfig({ bin: FAKE_GH, retryDelaysMs: [], sleep: noSleep }), /INFISICAL_URL/);
+      assert.equal(calls().length, 1); // 首个变量 INFISICAL_URL 就走了 gh（未用 env 里的 CLIENT_ID）
+      assert.ok(errs.some((m) => /only 1\/4/.test(m) && /missing INFISICAL_URL, INFISICAL_CLIENT_SECRET, INFISICAL_PROJECT_ID/.test(m)), errs.join('\n'));
+    });
+  } finally { console.error = orig; clearInf(); }
 });

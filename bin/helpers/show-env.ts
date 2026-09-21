@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { runCurl } from './safe-exec';
-import { getInfisicalConfig, getInfisicalToken, InfisicalConfig, isCnEnv, cnInfisicalEnv, getCnInfisicalToken, getCnSecrets } from './db-utils';
+import { getInfisicalConfig, describeInfisicalConfigSource, getInfisicalToken, InfisicalConfig, isCnEnv, cnInfisicalEnv, getCnInfisicalToken, getCnSecrets } from './db-utils';
 
 // 支持的服务列表（Infisical 路径为 /services/<service-name>）
 const SUPPORTED_SERVICES = [
@@ -146,7 +146,7 @@ async function main() {
       console.log(`✓ Retrieved secrets from cn Infisical (env: ${cnInfisicalEnv(environment)}, path: ${secretPath})\n`);
     } else {
       const infisicalConfig = getInfisicalConfig();
-      console.log('✓ Loaded Infisical config from GitHub Variables');
+      console.log(`✓ Loaded Infisical config from ${describeInfisicalConfigSource(infisicalConfig)}`);
 
       const token = getInfisicalToken(infisicalConfig);
       console.log('✓ Obtained Infisical access token');

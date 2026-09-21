@@ -24,6 +24,7 @@ Pass the environment as the 3rd positional argument (`optima-query-db gateway-co
 For `cn-prod` / `cn-stage`, two extra env vars are required (the CLI prints an actionable error when missing; see https://github.com/Optima-Chat/optima-dev-skills/issues/21 ):
 
 - `INFISICAL_CN_EMAIL` + `INFISICAL_CN_PASSWORD` — cn Infisical login (1Password "Infisical cn-prod admin (secrets-cn.optima.chat)")
+- AWS `stage`/`prod` Infisical config comes from GitHub Variables (4× `gh api`, 20s timeout, 3 attempts; #105). If api.github.com is flaky, bypass by exporting **all four** of `INFISICAL_URL` / `INFISICAL_CLIENT_ID` / `INFISICAL_CLIENT_SECRET` / `INFISICAL_PROJECT_ID`, or put them in `~/.infisical_aws_creds` (`chmod 600`; override path with `INFISICAL_AWS_CREDS_FILE`). A partial set is ignored with a warning.
 - `OPTIMA_CN_BUILDBOX_PASSWORD` — buildbox ECS root password for the RDS tunnel (1Password "Aliyun cn-prod buildbox ECS (root)"); optional when a healthy tunnel already exists
 
 ## Services

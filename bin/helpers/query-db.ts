@@ -3,7 +3,7 @@
 import { execSync } from 'child_process';
 import { sanitizeExecError } from './safe-exec';
 import * as fs from 'fs';
-import { ensureTunnel, getGitHubVariable, getInfisicalConfig, getInfisicalToken, getInfisicalSecrets, parseDatabaseUrl, isCnEnv, connectCnDB, connectCnDBFromUrl } from './db-utils';
+import { ensureTunnel, getGitHubVariable, getInfisicalConfig, describeInfisicalConfigSource, getInfisicalToken, getInfisicalSecrets, parseDatabaseUrl, isCnEnv, connectCnDB, connectCnDBFromUrl } from './db-utils';
 
 interface DatabaseConfig {
   host: string;
@@ -321,7 +321,7 @@ async function main() {
   } else {
     // Stage/Prod 环境：通过 SSH 隧道访问 RDS
     const infisicalConfig = getInfisicalConfig();
-    console.log('✓ Loaded Infisical config from GitHub Variables');
+    console.log(`✓ Loaded Infisical config from ${describeInfisicalConfigSource(infisicalConfig)}`);
 
     const token = getInfisicalToken(infisicalConfig);
     console.log('✓ Obtained Infisical access token');

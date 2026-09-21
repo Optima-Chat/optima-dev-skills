@@ -4,7 +4,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
-export interface InfisicalConfig { url: string; clientId: string; clientSecret: string; projectId: string }
+export interface InfisicalConfig {
+  url: string; clientId: string; clientSecret: string; projectId: string;
+  /** 四个值从哪来：`env`（全部来自 env / 凭证文件旁路）或 `github`（GitHub Variables）。#105 */
+  source?: 'env' | 'github';
+}
 
 export interface DBConnection {
   host: string;
@@ -81,75 +85,133 @@ export const GH_VARIABLE_RETRY_DELAYS_MS: readonly number[] = [1000, 3000];
 const ghVariableCache = new Map<string, string>();
 
 export interface GitHubVariableOptions {
+  /** 是否允许 env / 凭证文件旁路（默认 true）。getInfisicalConfig 在 env 只配了一部分时传 false，避免拼出混血配置。 */
+  allowEnv?: boolean;
   /** 仅测试用：替换真正的 `gh api` 取值函数。 */
   fetch?: (name: string) => string;
+  /** 仅测试用：替换 gh 可执行文件。 */
+  bin?: string;
+  /** 仅测试用：替换单次 gh 调用超时（毫秒）。 */
+  timeoutMs?: number;
   /** 仅测试用：替换退避表。 */
   retryDelaysMs?: readonly number[];
   /** 仅测试用：替换同步睡眠。 */
   sleep?: (ms: number) => void;
 }
 
-function fetchGitHubVariableViaGh(name: string): string {
+function fetchGitHubVariableViaGh(name: string, bin = 'gh', timeoutMs = GH_VARIABLE_TIMEOUT_MS): string {
   // `gh variable` has no `get` subcommand (only list/set/delete); read the value via the REST variables endpoint.
   // execFileSync + 参数数组（不经 shell）；失败时经 sanitizeExecError 只露退出码/清洗过的 stderr，不回显参数。
   try {
-    return execFileSync('gh', ['api', `repos/${GH_VARIABLES_REPO}/actions/variables/${name}`, '--jq', '.value'], {
+    return execFileSync(bin, ['api', `repos/${GH_VARIABLES_REPO}/actions/variables/${name}`, '--jq', '.value'], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: GH_VARIABLE_TIMEOUT_MS,
+      timeout: timeoutMs,
     }).trim();
   } catch (raw) {
     throw sanitizeExecError('gh api', raw, [], `variable=${name}`);
   }
 }
 
+/**
+ * 哪些失败值得重试：网络抖动 / 超时 / 5xx / 429。确定性失败（变量不存在 404、无权限 403、
+ * 未登录、没装 gh = ENOENT）重试只是白等，直接抛。判据基于 sanitizeExecError 清洗后的文案。
+ */
+export function isRetryableGhError(message: string): boolean {
+  if (/\bcode=ENOENT\b/.test(message)) return false;
+  const http = message.match(/HTTP (\d{3})/);
+  if (http) { const code = Number(http[1]); return code === 429 || code >= 500; }
+  if (/gh auth login/.test(message)) return false;
+  return true;
+}
+
 function awsCredsFile(): string {
   return process.env.INFISICAL_AWS_CREDS_FILE || `${os.homedir()}/.infisical_aws_creds`;
 }
 
-export function getGitHubVariable(name: string, opts: GitHubVariableOptions = {}): string {
-  // ① 旁路：env（含从凭证文件装入的），空串视为未设
+/** env 旁路值（含从凭证文件装入的）；空串视为未设。名字通用（CI_SSH_* 也走这里），文件名沿用 infisical_aws 只因主要用途。 */
+function githubVariableFromEnv(name: string): string | undefined {
   loadCredsFileIntoEnv(awsCredsFile());
-  const fromEnv = process.env[name];
-  if (fromEnv !== undefined && fromEnv !== '') return fromEnv;
+  const v = process.env[name];
+  return v !== undefined && v !== '' ? v : undefined;
+}
+
+export function getGitHubVariable(name: string, opts: GitHubVariableOptions = {}): string {
+  // ① 旁路
+  if (opts.allowEnv !== false) {
+    const fromEnv = githubVariableFromEnv(name);
+    if (fromEnv !== undefined) return fromEnv;
+  }
   // ③ 进程内缓存
   const cached = ghVariableCache.get(name);
   if (cached !== undefined) return cached;
-  // ② gh + 有限重试
-  const fetch = opts.fetch ?? fetchGitHubVariableViaGh;
+  // ② gh + 有限重试（只重试网络类失败，见 isRetryableGhError）
+  const fetchVar = opts.fetch ?? ((n: string) => fetchGitHubVariableViaGh(n, opts.bin, opts.timeoutMs));
   const delays = opts.retryDelaysMs ?? GH_VARIABLE_RETRY_DELAYS_MS;
   const sleep = opts.sleep ?? sleepSync;
   const attempts = delays.length + 1;
   let lastError: unknown;
+  let tried = 0;
   for (let attempt = 1; attempt <= attempts; attempt++) {
+    tried = attempt;
     try {
-      const value = fetch(name);
+      const value = fetchVar(name);
       ghVariableCache.set(name, value);
       return value;
     } catch (err) {
       lastError = err;
+      const reason = err instanceof Error ? err.message : String(err);
+      if (!isRetryableGhError(reason)) break;
       if (attempt < attempts) {
         const delay = delays[attempt - 1];
-        console.error(`⚠ GitHub variable ${name}: attempt ${attempt}/${attempts} failed, retrying in ${delay}ms…`);
+        console.error(`⚠ GitHub variable ${name}: attempt ${attempt}/${attempts} failed (${reason}), retrying in ${delay}ms…`);
         sleep(delay);
       }
     }
   }
   const reason = lastError instanceof Error ? lastError.message : String(lastError);
   throw new Error(
-    `GitHub variable ${name}: ${attempts} attempts failed. ` +
+    `GitHub variable ${name}: ${tried} attempt${tried === 1 ? '' : 's'} failed. ` +
     `Bypass gh by setting ${name} in env or in ${awsCredsFile()} (INFISICAL_AWS_CREDS_FILE, KEY=val lines; #105). Last error: ${reason}`,
   );
 }
 
 // ─── Infisical ──────────────────────────────────────────────────────────────
-export function getInfisicalConfig(): InfisicalConfig {
+const INFISICAL_CONFIG_VARS = ['INFISICAL_URL', 'INFISICAL_CLIENT_ID', 'INFISICAL_CLIENT_SECRET', 'INFISICAL_PROJECT_ID'] as const;
+let warnedPartialInfisicalEnv = false;
+
+/**
+ * env 旁路对这四个值是**全有或全无**：INFISICAL_CLIENT_ID/SECRET/PROJECT_ID 正是各服务容器
+ * 自己 machine identity 的 env 名（commerce-backend / gateway / billing 的 docker-entrypoint；
+ * cn 侧 workflow 甚至同名传 cn 项目）。开发者 source 了某服务 .env 再跑 CLI，若逐个旁路会拼出
+ * 「clientId 来自服务身份 + url 来自 GitHub」的混血配置，下游只报 401 难查。只配了一部分时
+ * 整体忽略 env、走 GitHub Variables，并往 stderr 提示一次。
+ */
+export function getInfisicalConfig(testOpts: Omit<GitHubVariableOptions, 'allowEnv'> = {}): InfisicalConfig {
+  const fromEnv = INFISICAL_CONFIG_VARS.map((n) => githubVariableFromEnv(n));
+  const present = fromEnv.filter((v) => v !== undefined).length;
+  if (present === INFISICAL_CONFIG_VARS.length) {
+    const [url, clientId, clientSecret, projectId] = fromEnv as string[];
+    return { url, clientId, clientSecret, projectId, source: 'env' };
+  }
+  if (present > 0 && !warnedPartialInfisicalEnv) {
+    warnedPartialInfisicalEnv = true;
+    const missing = INFISICAL_CONFIG_VARS.filter((_, i) => fromEnv[i] === undefined);
+    console.error(`⚠ Infisical env bypass ignored: only ${present}/${INFISICAL_CONFIG_VARS.length} of ${INFISICAL_CONFIG_VARS.join('/')} set (missing ${missing.join(', ')}); loading all from GitHub Variables (#105)`);
+  }
+  const opts: GitHubVariableOptions = { ...testOpts, allowEnv: false };
   return {
-    url: getGitHubVariable('INFISICAL_URL'),
-    clientId: getGitHubVariable('INFISICAL_CLIENT_ID'),
-    clientSecret: getGitHubVariable('INFISICAL_CLIENT_SECRET'),
-    projectId: getGitHubVariable('INFISICAL_PROJECT_ID'),
+    url: getGitHubVariable('INFISICAL_URL', opts),
+    clientId: getGitHubVariable('INFISICAL_CLIENT_ID', opts),
+    clientSecret: getGitHubVariable('INFISICAL_CLIENT_SECRET', opts),
+    projectId: getGitHubVariable('INFISICAL_PROJECT_ID', opts),
+    source: 'github',
   };
+}
+
+/** 供调用方打日志：配置来自哪。 */
+export function describeInfisicalConfigSource(cfg: InfisicalConfig): string {
+  return cfg.source === 'env' ? 'env / creds file' : 'GitHub Variables';
 }
 
 export function getInfisicalToken(config: InfisicalConfig): string {
