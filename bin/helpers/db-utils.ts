@@ -1,5 +1,5 @@
-import { execSync, spawn } from 'child_process';
-import { runCurl, scrub } from './safe-exec';
+import { execFileSync, execSync, spawn } from 'child_process';
+import { runCurl, sanitizeExecError, scrub } from './safe-exec';
 import * as fs from 'fs';
 import * as os from 'os';
 
@@ -66,9 +66,80 @@ export function escapeSQL(value: string): string {
 }
 
 // ─── GitHub Variables ───────────────────────────────────────────────────────
-export function getGitHubVariable(name: string): string {
+// #105：AWS 侧 Infisical 配置（INFISICAL_URL/CLIENT_ID/CLIENT_SECRET/PROJECT_ID）原来每个进程
+// 串行打 4 次 `gh api`，无旁路、无重试、无超时——api.github.com 一抖（dial tcp … i/o timeout）
+// 所有走 AWS Infisical 的运营命令一起挂。现在三条腿：
+//   ① env / 凭证文件旁路：`process.env[name]`（可由 INFISICAL_AWS_CREDS_FILE、默认
+//      ~/.infisical_aws_creds 里的 KEY=val 装入，复用 cn 侧的 loadCredsFileIntoEnv）→ 不打 gh；
+//   ② 打 gh 时带 20s 超时 + 有限重试（GH_VARIABLE_RETRY_DELAYS_MS，默认 3 次尝试）；
+//   ③ 进程内缓存，同一次命令同名只取一次。
+// 默认行为不变：不配 env 时仍从 Optima-Chat/optima-dev-skills 的 GitHub Variables 取。
+const GH_VARIABLES_REPO = 'Optima-Chat/optima-dev-skills';
+const GH_VARIABLE_TIMEOUT_MS = 20_000;
+/** 每次失败后的退避（毫秒）；长度 + 1 = 总尝试次数。导出仅为测试钉住口径。 */
+export const GH_VARIABLE_RETRY_DELAYS_MS: readonly number[] = [1000, 3000];
+const ghVariableCache = new Map<string, string>();
+
+export interface GitHubVariableOptions {
+  /** 仅测试用：替换真正的 `gh api` 取值函数。 */
+  fetch?: (name: string) => string;
+  /** 仅测试用：替换退避表。 */
+  retryDelaysMs?: readonly number[];
+  /** 仅测试用：替换同步睡眠。 */
+  sleep?: (ms: number) => void;
+}
+
+function fetchGitHubVariableViaGh(name: string): string {
   // `gh variable` has no `get` subcommand (only list/set/delete); read the value via the REST variables endpoint.
-  return execSync(`gh api repos/Optima-Chat/optima-dev-skills/actions/variables/${name} --jq .value`, { encoding: 'utf-8' }).trim();
+  // execFileSync + 参数数组（不经 shell）；失败时经 sanitizeExecError 只露退出码/清洗过的 stderr，不回显参数。
+  try {
+    return execFileSync('gh', ['api', `repos/${GH_VARIABLES_REPO}/actions/variables/${name}`, '--jq', '.value'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: GH_VARIABLE_TIMEOUT_MS,
+    }).trim();
+  } catch (raw) {
+    throw sanitizeExecError('gh api', raw, [], `variable=${name}`);
+  }
+}
+
+function awsCredsFile(): string {
+  return process.env.INFISICAL_AWS_CREDS_FILE || `${os.homedir()}/.infisical_aws_creds`;
+}
+
+export function getGitHubVariable(name: string, opts: GitHubVariableOptions = {}): string {
+  // ① 旁路：env（含从凭证文件装入的），空串视为未设
+  loadCredsFileIntoEnv(awsCredsFile());
+  const fromEnv = process.env[name];
+  if (fromEnv !== undefined && fromEnv !== '') return fromEnv;
+  // ③ 进程内缓存
+  const cached = ghVariableCache.get(name);
+  if (cached !== undefined) return cached;
+  // ② gh + 有限重试
+  const fetch = opts.fetch ?? fetchGitHubVariableViaGh;
+  const delays = opts.retryDelaysMs ?? GH_VARIABLE_RETRY_DELAYS_MS;
+  const sleep = opts.sleep ?? sleepSync;
+  const attempts = delays.length + 1;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const value = fetch(name);
+      ghVariableCache.set(name, value);
+      return value;
+    } catch (err) {
+      lastError = err;
+      if (attempt < attempts) {
+        const delay = delays[attempt - 1];
+        console.error(`⚠ GitHub variable ${name}: attempt ${attempt}/${attempts} failed, retrying in ${delay}ms…`);
+        sleep(delay);
+      }
+    }
+  }
+  const reason = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(
+    `GitHub variable ${name}: ${attempts} attempts failed. ` +
+    `Bypass gh by setting ${name} in env or in ${awsCredsFile()} (INFISICAL_AWS_CREDS_FILE, KEY=val lines; #105). Last error: ${reason}`,
+  );
 }
 
 // ─── Infisical ──────────────────────────────────────────────────────────────
@@ -409,6 +480,7 @@ function setupSSHTunnel(dbHost: string, localPort: number): void {
 
 /** Block the current (sync) call for `ms` without spawning a subprocess. */
 function sleepSync(ms: number): void {
+  if (ms <= 0) return;
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
