@@ -759,9 +759,17 @@ export function tunnelExitHint(pids: readonly string[], localPort: number, dbHos
   return `ℹ️  本次新开了 DB 隧道：${who}，localhost:${localPort} → ${dbHost}。它会在后台常驻，工具不会替你关；用完请 \`${kill}\`。`;
 }
 
-function announceTunnelOnExit(pids: readonly string[], localPort: number, dbHost: string): void {
+/**
+ * 只挂 `exit` 不够：Ctrl-C（SIGINT）/ SIGTERM 默认直接终止进程、**不触发 `exit`** ⇒ 提示不打、隧道留着，
+ * 而「跑一半 Ctrl-C 掉」恰恰是最容易留下无人认领隧道的形态（dev-skills#108 review）。
+ * ⇒ 信号处理里显式 `process.exit(128+signo)`，由 exit 钩子统一打印（只打一次）。SIGKILL 捕获不了，认了。
+ */
+export function announceTunnelOnExit(pids: readonly string[], localPort: number, dbHost: string): void {
   const line = tunnelExitHint(pids, localPort, dbHost);
   process.once('exit', () => { try { process.stderr.write(`\n${line}\n`); } catch { /* ignore */ } });
+  // 装了监听就会接管默认的终止行为，所以必须自己退出；退出码沿用 shell 约定 128+signo。
+  process.once('SIGINT', () => process.exit(130));
+  process.once('SIGTERM', () => process.exit(143));
 }
 
 // ─── psql ───────────────────────────────────────────────────────────────────
