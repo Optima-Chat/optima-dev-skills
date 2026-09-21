@@ -176,7 +176,14 @@ test('isRetryableGhError：4xx(非429)/ENOENT/未登录不重试，429/5xx/网�
 
 // ── getInfisicalConfig：env 旁路全有或全无 ──────────────────────────────────────
 const INF = ['INFISICAL_URL', 'INFISICAL_CLIENT_ID', 'INFISICAL_CLIENT_SECRET', 'INFISICAL_PROJECT_ID'];
-function clearInf() { for (const k of INF) delete process.env[k]; resetInfisicalConfigNoticesForTests(); }
+// 每条 getInfisicalConfig 用例：清四个 env、重置进程级判定/once-flag、把凭证文件指到必不存在的路径
+// （开发机若真有 ~/.infisical_aws_creds，不能让它混进来）。
+const NO_CREDS_FILE = path.join(os.tmpdir(), 'ghvar-creds-definitely-missing');
+function clearInf() {
+  for (const k of INF) delete process.env[k];
+  process.env.INFISICAL_AWS_CREDS_FILE = NO_CREDS_FILE;
+  resetInfisicalConfigNoticesForTests();
+}
 
 test('getInfisicalConfig：四个 env 齐全 → source=env，不打 gh', () => {
   clearInf();
@@ -188,7 +195,7 @@ test('getInfisicalConfig：四个 env 齐全 → source=env，不打 gh', () => 
     assert.deepEqual(cfg, { url: 'https://u', clientId: 'c', clientSecret: 's', projectId: 'p', source: 'env' });
     getInfisicalConfig();
     assert.equal(errs.filter((m) => /Infisical config from env/.test(m)).length, 1); // 来源提示只打一次
-  } finally { console.error = orig; clearInf(); }
+  } finally { console.error = orig; clearInf(); delete process.env.INFISICAL_AWS_CREDS_FILE; }
 });
 
 test('getInfisicalConfig：只配一部分 → 整体忽略 env、四个全走 gh、source=github、stderr 提示一次', skipOnWin, () => {
@@ -203,7 +210,7 @@ test('getInfisicalConfig：只配一部分 → 整体忽略 env、四个全走 g
       assert.equal(calls().length, 1); // 首个变量 INFISICAL_URL 就走了 gh（未用 env 里的 CLIENT_ID）
       assert.ok(errs.some((m) => /only 1\/4/.test(m) && /missing INFISICAL_URL, INFISICAL_CLIENT_SECRET, INFISICAL_PROJECT_ID/.test(m)), errs.join('\n'));
     });
-  } finally { console.error = orig; clearInf(); }
+  } finally { console.error = orig; clearInf(); delete process.env.INFISICAL_AWS_CREDS_FILE; }
 });
 
 test('getInfisicalConfig：shell env 只带 1 个 + 凭证文件补齐其余 3 个 = 混血 → 仍整体走 gh', skipOnWin, () => {
@@ -223,4 +230,34 @@ test('getInfisicalConfig：shell env 只带 1 个 + 凭证文件补齐其余 3 �
   } finally {
     console.error = orig; clearInf(); fs.unlinkSync(f); delete process.env.INFISICAL_AWS_CREDS_FILE;
   }
+});
+
+test('getInfisicalConfig：混血判定按进程固定——第二次调用不因文件已装进 env 而翻转（r3 ❌1 回归）', skipOnWin, () => {
+  clearInf();
+  const f = path.join(os.tmpdir(), `ghvar-mixed2-${process.pid}-${Math.random().toString(36).slice(2)}`);
+  fs.writeFileSync(f, ['INFISICAL_URL=https://file-url', 'INFISICAL_CLIENT_ID=file-id', 'INFISICAL_CLIENT_SECRET=file-secret', 'INFISICAL_PROJECT_ID=file-proj', ''].join('\n'), { mode: 0o600 });
+  process.env.INFISICAL_AWS_CREDS_FILE = f;
+  process.env.INFISICAL_CLIENT_ID = 'service-container-identity';
+  const orig = console.error; console.error = () => {};
+  try {
+    withCallLog((calls) => {
+      const o = { bin: FAKE_GH, retryDelaysMs: [], sleep: noSleep };
+      assert.throws(() => getInfisicalConfig(o), /INFISICAL_URL/); // 第一次：走 gh（fake 对该名 exit 2）
+      // 此时文件已把另外 3 个装进 env，process.env 四个齐全——第二次仍必须走 gh，不得返回混血 env 配置
+      assert.throws(() => getInfisicalConfig(o), /INFISICAL_URL/);
+      assert.equal(calls().length, 2);
+    });
+  } finally {
+    console.error = orig; clearInf(); fs.unlinkSync(f); delete process.env.INFISICAL_AWS_CREDS_FILE;
+  }
+});
+
+test('getInfisicalConfig：判定固定后 env 齐全的进程连续两次都返回同一 env 配置', () => {
+  clearInf();
+  process.env.INFISICAL_URL = 'https://u'; process.env.INFISICAL_CLIENT_ID = 'c'; process.env.INFISICAL_CLIENT_SECRET = 's'; process.env.INFISICAL_PROJECT_ID = 'p';
+  const orig = console.error; console.error = () => {};
+  try {
+    assert.equal(getInfisicalConfig().source, 'env');
+    assert.equal(getInfisicalConfig().source, 'env');
+  } finally { console.error = orig; clearInf(); delete process.env.INFISICAL_AWS_CREDS_FILE; }
 });
