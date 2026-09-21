@@ -3,6 +3,11 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
+import { resolveMintCredits, CN_STAGE_DEFAULT_MINT_CREDITS, grantMintCreditsOrWarn } from './mint-credits';
+import { callBilling } from './billing-http';
+import { operatorActorId } from './operator';
+import { resolveTargetUser } from './grant-subscription';
 
 interface RegisterResponse {
   email: string;
@@ -227,6 +232,7 @@ async function main() {
   let address: string | undefined;
   let environment: Environment = 'ci';
   let skipMerchant = false;
+  let creditsRaw: string | undefined;
 
   // 解析命令行参数
   for (let i = 0; i < args.length; i++) {
@@ -242,6 +248,8 @@ async function main() {
       phone = args[++i];
     } else if (arg === '--address' && args[i + 1]) {
       address = args[++i];
+    } else if (arg === '--credits' && args[i + 1]) {
+      creditsRaw = args[++i];
     } else if (arg === '--skip-merchant') {
       skipMerchant = true;
     } else if (arg === '--env' && args[i + 1]) {
@@ -265,6 +273,9 @@ Options:
   --skip-merchant              只注册用户 + 拿 token，跳过 Commerce merchant profile 设置
                                （token-only；用于 gateway E2E、或 commerce 未就绪的环境）
   --env <environment>          Environment: ci (default), stage, prod, cn-prod, or cn-stage
+  --credits <n>                铸号后补的 credits（仅 cn-stage；默认 ${CN_STAGE_DEFAULT_MINT_CREDITS}，其它环境默认 0）。
+                               cn-stage 真扣且 opus-5 有价，新号自带 600 ≈ 1–2 轮就会被挂起；
+                               零余额 / 新用户类验证传 --credits 0
   --help, -h                   Show this help message
 
 Environments:
@@ -284,6 +295,14 @@ Example:
       `);
       process.exit(0);
     }
+  }
+
+  let mintCredits: number;
+  try {
+    mintCredits = resolveMintCredits(environment, creditsRaw);
+  } catch (e: any) {
+    console.error(`❌ ${e.message}`);
+    process.exit(1);
   }
 
   const config = ENV_CONFIG[environment];
@@ -310,7 +329,27 @@ Example:
       : await setupMerchantProfile(token, businessName, config);
     if (skipMerchant) console.log('\n⏭️  Skipped merchant profile setup (--skip-merchant)');
 
-    // 4. 保存 token 到临时文件
+    // 4. 铸号后补额（仅 cn-stage 默认开，见 mint-credits.ts）
+    if (mintCredits > 0) {
+      const granted = await grantMintCreditsOrWarn(async () => {
+        const { userId } = await resolveTargetUser(environment, email);
+        const { body } = await callBilling<{ success: boolean; lotId: string; credits: number }>(
+          environment, 'POST', '/api/billing/admin/grant-credits',
+          {
+            userId,
+            amountCredits: mintCredits,
+            description: 'dev-skills 铸号默认补额（cn-stage 真扣，防验证中途被挂起）',
+            actorUserId: operatorActorId(null),
+            idempotencyKey: `dev-skills-mint:${randomUUID()}`,
+          },
+        );
+        return body;
+      }, { email, credits: mintCredits, env: environment });
+      if (granted) console.log(`\n🎁 Granted ${granted.credits} credits (lot ${granted.lotId})；要零余额号请传 --credits 0`);
+      else mintCredits = 0; // 下面 Details 里如实显示「没补上」
+    }
+
+    // 5. 保存 token 到临时文件
     const tmpDir = os.tmpdir();
     const tokenFileName = `optima-test-token-${Date.now()}.txt`;
     const tokenFilePath = path.join(tmpDir, tokenFileName);
@@ -328,7 +367,8 @@ Example:
     console.log(`  User ID:       ${user.user_id || 'N/A'}`);
     console.log(`  Role:          ${user.role}`);
     console.log(`  Business Name: ${businessName}`);
-    console.log(`  Merchant ID:   ${merchantProfile.merchant_id || 'N/A'}\n`);
+    console.log(`  Merchant ID:   ${merchantProfile.merchant_id || 'N/A'}`);
+    console.log(`  Minted Credits: ${mintCredits}（另有注册赠送，如 cn 的 600）\n`);
     console.log('📁 Token File Path:');
     console.log(`  ${tokenFilePath}\n`);
     console.log('💡 Usage Examples:');
