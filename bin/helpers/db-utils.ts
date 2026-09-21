@@ -743,7 +743,33 @@ export function ensureTunnel(dbHost: string, via: 'aws' | 'cn-buildbox' = 'aws')
   }
   reg[dbHost] = port;
   writeTunnelRegistry(reg);
+  announceTunnelOnExit(portPids(port), port, dbHost);
   return port;
+}
+
+/**
+ * 新建的隧道是 `-f` 后台常驻，CLI 退出后它还在（父进程变成 init，事后看不出是谁开的）。
+ * 09-21 一天两次「隧道挂着没人认」：问题不是不想关，是**不知道自己开了**。
+ * ⇒ 本次**新建**了隧道时，退出前在 stderr 打一行提示（复用已有隧道不打印；不自动关——
+ * 同一个人常连续跑多条查询，自动关会让下一条重新冷启，且别人可能在复用这条）。
+ */
+export function tunnelExitHint(pids: readonly string[], localPort: number, dbHost: string): string {
+  const who = pids.length ? `pid ${pids.join(',')}` : 'pid 未知（lsof 没查到）';
+  const kill = pids.length ? `kill ${pids.join(' ')}` : `lsof -ti:${localPort} | xargs kill`;
+  return `ℹ️  本次新开了 DB 隧道：${who}，localhost:${localPort} → ${dbHost}。它会在后台常驻，工具不会替你关；用完请 \`${kill}\`。`;
+}
+
+/**
+ * 只挂 `exit` 不够：Ctrl-C（SIGINT）/ SIGTERM 默认直接终止进程、**不触发 `exit`** ⇒ 提示不打、隧道留着，
+ * 而「跑一半 Ctrl-C 掉」恰恰是最容易留下无人认领隧道的形态（dev-skills#108 review）。
+ * ⇒ 信号处理里显式 `process.exit(128+signo)`，由 exit 钩子统一打印（只打一次）。SIGKILL 捕获不了，认了。
+ */
+export function announceTunnelOnExit(pids: readonly string[], localPort: number, dbHost: string): void {
+  const line = tunnelExitHint(pids, localPort, dbHost);
+  process.once('exit', () => { try { process.stderr.write(`\n${line}\n`); } catch { /* ignore */ } });
+  // 装了监听就会接管默认的终止行为，所以必须自己退出；退出码沿用 shell 约定 128+signo。
+  process.once('SIGINT', () => process.exit(130));
+  process.once('SIGTERM', () => process.exit(143));
 }
 
 // ─── psql ───────────────────────────────────────────────────────────────────
