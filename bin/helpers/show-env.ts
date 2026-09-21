@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { runCurl } from './safe-exec';
-import { getInfisicalConfig, getInfisicalToken, InfisicalConfig, isCnEnv, cnInfisicalEnv, getCnInfisicalToken, getCnSecrets } from './db-utils';
+import { getInfisicalConfig, describeInfisicalConfigSource, getInfisicalToken, InfisicalConfig, isCnEnv, cnInfisicalEnv, getCnInfisicalToken, getCnSecrets } from './db-utils';
 
 // 支持的服务列表（Infisical 路径为 /services/<service-name>）
 const SUPPORTED_SERVICES = [
@@ -75,7 +75,7 @@ Options:
 
 Note:
   cn-prod / cn-stage 读阿里云 cn Infisical（需 INFISICAL_CN_EMAIL/PASSWORD 环境变量，
-  admin user，见 optima-dev-skills#21）。stage/prod 读 AWS Infisical（GitHub Variables）。
+  admin user，见 optima-dev-skills#21）。stage/prod 读 AWS Infisical（配置来自 GitHub Variables，或四个 INFISICAL_* env / ~/.infisical_aws_creds 一起旁路，#105）。
 
 Examples:
   optima-show-env commerce-backend stage
@@ -146,7 +146,7 @@ async function main() {
       console.log(`✓ Retrieved secrets from cn Infisical (env: ${cnInfisicalEnv(environment)}, path: ${secretPath})\n`);
     } else {
       const infisicalConfig = getInfisicalConfig();
-      console.log('✓ Loaded Infisical config from GitHub Variables');
+      console.log(`✓ Loaded Infisical config from ${describeInfisicalConfigSource(infisicalConfig)}`);
 
       const token = getInfisicalToken(infisicalConfig);
       console.log('✓ Obtained Infisical access token');

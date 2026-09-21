@@ -26,6 +26,8 @@ For `cn-prod` / `cn-stage`, two extra env vars are required (the CLI prints an a
 - `INFISICAL_CN_EMAIL` + `INFISICAL_CN_PASSWORD` — cn Infisical login (1Password "Infisical cn-prod admin (secrets-cn.optima.chat)")
 - `OPTIMA_CN_BUILDBOX_PASSWORD` — buildbox ECS root password for the RDS tunnel (1Password "Aliyun cn-prod buildbox ECS (root)"); optional when a healthy tunnel already exists
 
+AWS `stage`/`prod` Infisical config comes from GitHub Variables (4× `gh api`, 20s timeout, 3 attempts; #105). If api.github.com is flaky, bypass by exporting **all four** of `INFISICAL_URL` / `INFISICAL_CLIENT_ID` / `INFISICAL_CLIENT_SECRET` / `INFISICAL_PROJECT_ID`, or put them in `~/.infisical_aws_creds` (`chmod 600`; override path with `INFISICAL_AWS_CREDS_FILE`). A partial set is ignored with a warning.
+
 ## Services
 
 - `commerce-backend`
