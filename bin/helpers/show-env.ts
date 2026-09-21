@@ -75,7 +75,7 @@ Options:
 
 Note:
   cn-prod / cn-stage 读阿里云 cn Infisical（需 INFISICAL_CN_EMAIL/PASSWORD 环境变量，
-  admin user，见 optima-dev-skills#21）。stage/prod 读 AWS Infisical（GitHub Variables）。
+  admin user，见 optima-dev-skills#21）。stage/prod 读 AWS Infisical（配置来自 GitHub Variables，或四个 INFISICAL_* env / ~/.infisical_aws_creds 一起旁路，#105）。
 
 Examples:
   optima-show-env commerce-backend stage

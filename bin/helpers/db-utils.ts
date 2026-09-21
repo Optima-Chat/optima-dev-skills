@@ -116,6 +116,7 @@ function fetchGitHubVariableViaGh(name: string, bin = 'gh', timeoutMs = GH_VARIA
 /**
  * 哪些失败值得重试：网络抖动 / 超时 / 5xx / 429。确定性失败（变量不存在 404、无权限 403、
  * 未登录、没装 gh = ENOENT）重试只是白等，直接抛。判据基于 sanitizeExecError 清洗后的文案。
+ * 注意 GitHub 主速率限制也回 403（"API rate limit exceeded"），reset 窗口远大于 1s/3s 退避，不重试是对的——别改成重试。
  */
 export function isRetryableGhError(message: string): boolean {
   if (/\bcode=ENOENT\b/.test(message)) return false;
@@ -179,6 +180,12 @@ export function getGitHubVariable(name: string, opts: GitHubVariableOptions = {}
 // ─── Infisical ──────────────────────────────────────────────────────────────
 const INFISICAL_CONFIG_VARS = ['INFISICAL_URL', 'INFISICAL_CLIENT_ID', 'INFISICAL_CLIENT_SECRET', 'INFISICAL_PROJECT_ID'] as const;
 let warnedPartialInfisicalEnv = false;
+let notedInfisicalEnvSource = false;
+/** 仅测试用：重置「只提示一次」的标记。 */
+export function resetInfisicalConfigNoticesForTests(): void {
+  warnedPartialInfisicalEnv = false;
+  notedInfisicalEnvSource = false;
+}
 
 /**
  * env 旁路对这四个值是**全有或全无**：INFISICAL_CLIENT_ID/SECRET/PROJECT_ID 正是各服务容器
@@ -188,16 +195,27 @@ let warnedPartialInfisicalEnv = false;
  * 整体忽略 env、走 GitHub Variables，并往 stderr 提示一次。
  */
 export function getInfisicalConfig(testOpts: Omit<GitHubVariableOptions, 'allowEnv'> = {}): InfisicalConfig {
+  // 先快照「装凭证文件之前」env 里已设的个数：loadCredsFileIntoEnv 只补空位，若 shell env 只带了
+  // 1-3 个（典型：source 了服务 .env），文件把剩下的补齐也仍是混血——同样按 partial 处理。
+  const setBeforeFile = INFISICAL_CONFIG_VARS.filter((n) => process.env[n] !== undefined && process.env[n] !== '').length;
   const fromEnv = INFISICAL_CONFIG_VARS.map((n) => githubVariableFromEnv(n));
   const present = fromEnv.filter((v) => v !== undefined).length;
-  if (present === INFISICAL_CONFIG_VARS.length) {
+  const mixed = setBeforeFile > 0 && setBeforeFile < INFISICAL_CONFIG_VARS.length;
+  if (present === INFISICAL_CONFIG_VARS.length && !mixed) {
+    if (!notedInfisicalEnvSource) {
+      notedInfisicalEnvSource = true;
+      console.error('ℹ Infisical config from env / creds file (bypassing GitHub Variables, #105)');
+    }
     const [url, clientId, clientSecret, projectId] = fromEnv as string[];
     return { url, clientId, clientSecret, projectId, source: 'env' };
   }
   if (present > 0 && !warnedPartialInfisicalEnv) {
     warnedPartialInfisicalEnv = true;
     const missing = INFISICAL_CONFIG_VARS.filter((_, i) => fromEnv[i] === undefined);
-    console.error(`⚠ Infisical env bypass ignored: only ${present}/${INFISICAL_CONFIG_VARS.length} of ${INFISICAL_CONFIG_VARS.join('/')} set (missing ${missing.join(', ')}); loading all from GitHub Variables (#105)`);
+    const why = mixed && present === INFISICAL_CONFIG_VARS.length
+      ? `only ${setBeforeFile}/${INFISICAL_CONFIG_VARS.length} of ${INFISICAL_CONFIG_VARS.join('/')} came from the shell env, the rest from the creds file`
+      : `only ${present}/${INFISICAL_CONFIG_VARS.length} of ${INFISICAL_CONFIG_VARS.join('/')} set (missing ${missing.join(', ')})`;
+    console.error(`⚠ Infisical env bypass ignored: ${why}; loading all from GitHub Variables (#105)`);
   }
   const opts: GitHubVariableOptions = { ...testOpts, allowEnv: false };
   return {

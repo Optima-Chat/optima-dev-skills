@@ -207,7 +207,7 @@ npm install -g @optima-chat/dev-skills@latest
 - **走 1Password（推荐，密码不落盘）**：从「Infisical cn-prod admin (secrets-cn.optima.chat)」取值，`export INFISICAL_CN_EMAIL=... INFISICAL_CN_PASSWORD=...` 到当前 session（装了 `op` CLI 可 `op run` / `op read` 注入，用完即散）。
 - **本地凭据文件（便捷，安全性较弱）**：若你**自己**维护 `~/.infisical_cn_creds`（每行 `export KEY=val`），本工具会自动读取、免手动 `source`；路径用 `INFISICAL_CN_CREDS_FILE` 覆盖。⚠️ 明文落盘（务必 `chmod 600`），是「省事 vs 暴露面」的取舍——**不是让你把 1P 密码抄进文件当默认做法**，只是给已经这么存的人一个自动读取入口。
 
-AWS `stage` / `prod` 的 Infisical 配置默认从 GitHub Variables 取（4 次 `gh api`，20s 超时、失败重试 3 次，#105）。api.github.com 抖动时可旁路：`INFISICAL_URL` / `INFISICAL_CLIENT_ID` / `INFISICAL_CLIENT_SECRET` / `INFISICAL_PROJECT_ID` **四个一起** `export`（值用 `gh api repos/Optima-Chat/optima-dev-skills/actions/variables/<NAME> --jq .value` 取），或写进 `~/.infisical_aws_creds`（`chmod 600`；路径用 `INFISICAL_AWS_CREDS_FILE` 覆盖）。只配一部分会被整体忽略并提示。
+AWS `stage` / `prod` 的 Infisical 配置默认从 GitHub Variables 取（4 次 `gh api`，20s 超时、最多尝试 3 次，#105）。api.github.com 抖动时可旁路：`INFISICAL_URL` / `INFISICAL_CLIENT_ID` / `INFISICAL_CLIENT_SECRET` / `INFISICAL_PROJECT_ID` **四个一起** `export`（值用 `gh api repos/Optima-Chat/optima-dev-skills/actions/variables/<NAME> --jq .value` 取），或写进 `~/.infisical_aws_creds`（`chmod 600`；路径用 `INFISICAL_AWS_CREDS_FILE` 覆盖）。只配一部分会被整体忽略并提示。
 
 > 两者互不依赖：有本地文件就自动用，没有就回退读 env（即走 1P 那条）。`optima-query-db cn-stage/cn-prod` 的 buildbox 密码同理——`export OPTIMA_CN_BUILDBOX_PASSWORD=...`，或本地 `~/.buildbox_pw`（纯密码一行，自动读取；`OPTIMA_CN_BUILDBOX_PW_FILE` 可覆盖路径）；密码在 1P「Aliyun cn-prod buildbox ECS (root)」。
 >

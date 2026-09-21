@@ -214,7 +214,7 @@ optima-query-db gateway-core "SELECT key, value FROM app_configs" cn-prod
 
 > **两条独立路径**：① 从上表的 1P 取值 `export` 到当前 session（不落盘，推荐；有 `op` CLI 更佳）；或 ② 若你**自己**维护本地明文文件 `~/.infisical_cn_creds`（每行 `export KEY=val`）和 `~/.buildbox_pw`（纯密码一行），工具会自动读取、免手动 `export`/`source`（路径分别可用 `INFISICAL_CN_CREDS_FILE` / `OPTIMA_CN_BUILDBOX_PW_FILE` 覆盖）。②是明文落盘的便捷取舍（`chmod 600`，权限宽于 600 工具会打警告），非默认做法、别把 1P 密码抄进文件；没放这些文件时回退走 env（①）。creds 文件解析**不是 shell**：只认最朴素的 `KEY=值` 与成对引号，无引号值别写行尾注释。
 
-> **AWS stage/prod 的对应物（#105）**：`optima-query-db` / `optima-show-env` / `optima-grant-*` / `optima-entitlement` / `optima-account` 取 AWS Infisical 配置默认走 GitHub Variables（4 次 `gh api`，20s 超时、失败重试 3 次）。api.github.com 抖动时可旁路：把 `INFISICAL_URL` / `INFISICAL_CLIENT_ID` / `INFISICAL_CLIENT_SECRET` / `INFISICAL_PROJECT_ID` **四个一起** `export` 到当前 session（值用 `gh api repos/Optima-Chat/optima-dev-skills/actions/variables/<NAME> --jq .value` 取），或写进 `~/.infisical_aws_creds`（`chmod 600`；路径用 `INFISICAL_AWS_CREDS_FILE` 覆盖）。只配一部分会被整体忽略并提示（防止和服务容器同名的 `INFISICAL_CLIENT_ID` 拼成混血配置）。
+> **AWS stage/prod 的对应物（#105）**：`optima-query-db` / `optima-show-env` / `optima-grant-*` / `optima-entitlement` / `optima-account` 取 AWS Infisical 配置默认走 GitHub Variables（4 次 `gh api`，20s 超时、最多尝试 3 次）。api.github.com 抖动时可旁路：把 `INFISICAL_URL` / `INFISICAL_CLIENT_ID` / `INFISICAL_CLIENT_SECRET` / `INFISICAL_PROJECT_ID` **四个一起** `export` 到当前 session（值用 `gh api repos/Optima-Chat/optima-dev-skills/actions/variables/<NAME> --jq .value` 取），或写进 `~/.infisical_aws_creds`（`chmod 600`；路径用 `INFISICAL_AWS_CREDS_FILE` 覆盖）。只配一部分会被整体忽略并提示（防止和服务容器同名的 `INFISICAL_CLIENT_ID` 拼成混血配置）。
 
 ## 🔧 技术架构
 

@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 
 // 测编译产物（package bin 指向 dist/）——`npm test` 的 pretest 会先 build。
-const { getGitHubVariable, GH_VARIABLE_RETRY_DELAYS_MS } = require(
+const { getGitHubVariable, GH_VARIABLE_RETRY_DELAYS_MS, isRetryableGhError, getInfisicalConfig, resetInfisicalConfigNoticesForTests } = require(
   path.resolve(__dirname, '..', 'dist', 'bin', 'helpers', 'db-utils.js'),
 );
 
@@ -99,9 +99,6 @@ test('默认退避表：3 次尝试（2 个间隔），总等待在秒级', () =
 });
 
 // ── 真实 execFileSync 路径：用 tests/fixtures/fake-gh.sh 顶替 gh ────────────────
-const { isRetryableGhError, getInfisicalConfig } = require(
-  path.resolve(__dirname, '..', 'dist', 'bin', 'helpers', 'db-utils.js'),
-);
 const FAKE_GH = path.resolve(__dirname, 'fixtures', 'fake-gh.sh');
 const skipOnWin = process.platform === 'win32' ? { skip: 'bash fixture' } : {};
 
@@ -179,15 +176,19 @@ test('isRetryableGhError：4xx(非429)/ENOENT/未登录不重试，429/5xx/网�
 
 // ── getInfisicalConfig：env 旁路全有或全无 ──────────────────────────────────────
 const INF = ['INFISICAL_URL', 'INFISICAL_CLIENT_ID', 'INFISICAL_CLIENT_SECRET', 'INFISICAL_PROJECT_ID'];
-function clearInf() { for (const k of INF) delete process.env[k]; }
+function clearInf() { for (const k of INF) delete process.env[k]; resetInfisicalConfigNoticesForTests(); }
 
 test('getInfisicalConfig：四个 env 齐全 → source=env，不打 gh', () => {
   clearInf();
   process.env.INFISICAL_URL = 'https://u'; process.env.INFISICAL_CLIENT_ID = 'c'; process.env.INFISICAL_CLIENT_SECRET = 's'; process.env.INFISICAL_PROJECT_ID = 'p';
+  const errs = [];
+  const orig = console.error; console.error = (m) => errs.push(String(m));
   try {
     const cfg = getInfisicalConfig();
     assert.deepEqual(cfg, { url: 'https://u', clientId: 'c', clientSecret: 's', projectId: 'p', source: 'env' });
-  } finally { clearInf(); }
+    getInfisicalConfig();
+    assert.equal(errs.filter((m) => /Infisical config from env/.test(m)).length, 1); // 来源提示只打一次
+  } finally { console.error = orig; clearInf(); }
 });
 
 test('getInfisicalConfig：只配一部分 → 整体忽略 env、四个全走 gh、source=github、stderr 提示一次', skipOnWin, () => {
@@ -203,4 +204,23 @@ test('getInfisicalConfig：只配一部分 → 整体忽略 env、四个全走 g
       assert.ok(errs.some((m) => /only 1\/4/.test(m) && /missing INFISICAL_URL, INFISICAL_CLIENT_SECRET, INFISICAL_PROJECT_ID/.test(m)), errs.join('\n'));
     });
   } finally { console.error = orig; clearInf(); }
+});
+
+test('getInfisicalConfig：shell env 只带 1 个 + 凭证文件补齐其余 3 个 = 混血 → 仍整体走 gh', skipOnWin, () => {
+  clearInf();
+  const f = path.join(os.tmpdir(), `ghvar-mixed-${process.pid}-${Math.random().toString(36).slice(2)}`);
+  fs.writeFileSync(f, ['INFISICAL_URL=https://file-url', 'INFISICAL_CLIENT_ID=file-id', 'INFISICAL_CLIENT_SECRET=file-secret', 'INFISICAL_PROJECT_ID=file-proj', ''].join('\n'), { mode: 0o600 });
+  process.env.INFISICAL_AWS_CREDS_FILE = f;
+  process.env.INFISICAL_CLIENT_ID = 'service-container-identity';
+  const errs = [];
+  const orig = console.error; console.error = (m) => errs.push(String(m));
+  try {
+    withCallLog((calls) => {
+      assert.throws(() => getInfisicalConfig({ bin: FAKE_GH, retryDelaysMs: [], sleep: noSleep }), /INFISICAL_URL/);
+      assert.equal(calls().length, 1);
+      assert.ok(errs.some((m) => /came from the shell env, the rest from the creds file/.test(m)), errs.join('\n'));
+    });
+  } finally {
+    console.error = orig; clearInf(); fs.unlinkSync(f); delete process.env.INFISICAL_AWS_CREDS_FILE;
+  }
 });
