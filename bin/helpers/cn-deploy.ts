@@ -58,6 +58,7 @@ const SERVICES: Record<string, Svc> = {
   'gw-admin':                 { repo: 'optima-gateway',     saeAppId: '90e0daf7-7910-46b8-b5bf-a0b8bcc60859', prodSaeAppId: 'c6bc5a78-b27f-46e2-825a-eaa338c23645' },
   'kb-backend':               { repo: 'kb-skills',          saeAppId: 'c7f65160-9d9e-416e-9e36-5439010d2b2d', prodSaeAppId: '732dfc8c-ed78-43f7-a722-c614359ff1a1' },
   'ops-portal':               { repo: 'optima-portals',     saeAppId: '41d0ee66-8402-4e72-bfda-8eba75d1270c', prodSaeAppId: '69e513fd-29bf-4355-a275-5eba82b21136' },
+  'optima-channels':          { repo: 'optima-channels',    saeAppId: '6ef530b5-1b00-4e5a-935f-40f026f09467', prodSaeAppId: '8c7846d7-70b7-4ebf-af3f-84e5892cd17a' },
   'optima-generation':        { repo: 'optima-gen',         saeAppId: '327856d5-8b18-4e15-bfd8-b8bd3b807ffa', prodSaeAppId: '868d1a69-12c9-4bb7-868b-3e89c26784b5' },
   'optima-generation-worker': { repo: 'optima-gen',         saeAppId: 'ad75b3b0-9ff4-443d-b0ef-81886bc7aa60', prodSaeAppId: '2adc941e-374b-406a-9863-e53d40bc9500' },
   'optima-scout':             { repo: 'optima-scout',       saeAppId: 'bac2c3a4-90ce-49a6-81d5-caa38cb5c807', prodSaeAppId: 'f5bb7e82-e57c-4bd4-83ae-2c25f8d38647' },
