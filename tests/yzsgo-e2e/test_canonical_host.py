@@ -1,9 +1,12 @@
 """The skill must drive the canonical host app.yzsgo.com (dev-skills#111).
 
 Since 2026-09-24 www.yzsgo.com and the apex 301 to app.yzsgo.com
-(optima-terraform#467/#468), and the login state lives in localStorage, which is
-per-origin. A default that still says www lands on app with nobody logged in,
-so every run stops at attach().
+(optima-terraform#467/#468), path kept, and the login state lives in
+localStorage, which is per-origin. The old www default still ends up on app
+through the redirect; what breaks runs is a debug Chrome that only ever logged
+in on www. The override here keeps the target URL on the canonical host (no
+redirect hop, one origin everywhere) and matches upstream #2567; the re-login
+itself is documented in SKILL.md.
 
 chat_driver.py stays verbatim at upstream 010c578a, whose built-in default is
 still www, so run_e2e.py sets YZSGO_CHAT_URL before importing it. These tests run

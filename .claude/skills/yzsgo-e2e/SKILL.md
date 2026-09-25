@@ -30,6 +30,8 @@ allowed-tools: ["Bash", "Read", "Write", "Agent", "Workflow"]
 > 🔴 **以前在 `www.yzsgo.com` 上登录过的调试 Chrome，要在 `app.yzsgo.com` 上重新登录一次。**
 > 2026-09-24 起 www 和裸域都 301 到唯一规范域名 `app.yzsgo.com`（optima-terraform#467/#468）。登录态存在 localStorage、按 origin 隔离，www 上的登录态带不到 app。
 > `run_e2e.py` 会把 `YZSGO_CHAT_URL` 缺省设为 `https://app.yzsgo.com/zh-HK/chat`（显式设过的照旧）；vendored 的 `chat_driver.py` 自己的缺省仍写着 www（逐字同步，等上游真机验收后再整体同步，见 `SYNC.md`）。
+> **忘了重登时看到的不是「未登录」**（这版驱动没有登录闸，preflight 的 `chrome-9222` 也只查端口）：attach 等约 60s 后打出 `没认领到 gateway session（没登录？…）`，
+> 接着 `run_e2e` 打 `未能独占 tab …`，后面发消息可能直接报错。⇒ **先去调试 Chrome 里打开 `https://app.yzsgo.com` 看是不是已登录**，不是 multi-tab 的问题。
 
 ## 并发（2026-09-09 起）：本 skill 自己开 tab
 
@@ -76,8 +78,11 @@ cn-prod 已验开、cn-stage 未验）时 `"auto"` 档自己会降级复用已�
 ## 前后端对照（本 skill 独有）
 判定要核对**前端渲染的** vs **wire 里 agent 真实产出的**：前端丢内容/半截/报错但 wire 成功（或反之）= 缺陷。
 
+⚠️ **已知盲区（驱动同步前）**：当前 vendored 的驱动读不到 2026-09-19 平台改版后的 `load_skill` 新渲染（`使用技能：<slug>`），
+所以浏览器侧 `tool_trace` 里**没有 `load_skill` 不算前端缺陷**——以 wire 为准。见 `SYNC.md`「⏳ 待办」。
+
 ## vendor 同步纪律
-`chat_driver.py`/`pull_wire.py` 上游权威 = optima-store-skills；`prep_conversation.py`/`judge_workflow.js` 改编自 optima-gateway conversation-iq。见 `SYNC.md`。驱动异常先怀疑前端 DOM 漂移 → 去上游同步。可跑 `python3 verify_drift.py` 比对。只有 `chat_driver.py` 是逐字 vendored、应与上游一致；`pull_wire.py`（在上游基础上追加了 emit_conversation_index/locate_conversation）、`prep_conversation.py`、`judge_workflow.js` 都是改编，`verify_drift.py` 对它们标「⚠️(改编·预期)」是提醒去看上游有无新变更，非「必须一致」。
+`chat_driver.py`/`pull_wire.py` 上游权威 = optima-store-skills；`prep_conversation.py`/`judge_workflow.js` 改编自 optima-gateway conversation-iq。见 `SYNC.md`。驱动异常先怀疑前端 DOM 漂移 → 去上游同步（⚠️ **眼下 `chat_driver.py` 的漂移是有意保留的**：同步要等 `SYNC.md`「⏳ 待办」写的触发条件满足，别直接同步）。可跑 `python3 verify_drift.py` 比对。只有 `chat_driver.py` 是逐字 vendored、应与上游一致；`pull_wire.py`（在上游基础上追加了 emit_conversation_index/locate_conversation）、`prep_conversation.py`、`judge_workflow.js` 都是改编，`verify_drift.py` 对它们标「⚠️(改编·预期)」是提醒去看上游有无新变更，非「必须一致」。
 
 ## 两环境
 `--env cn-prod`（已打通）/ `cn-stage`（wire 取法待核实，脚本会告警）。

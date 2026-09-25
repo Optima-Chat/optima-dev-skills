@@ -109,7 +109,8 @@ def main():
         ziniao=None, reason="yzsgo-e2e 驱动鸭嘴兽网页对话做端到端测试，本脚本不绑定任何紫鸟 profile")
     session_id = d.session_id      # attach 后立刻取：放在 try 里的话，中途抛异常会留下未绑定名
     if not d.tab_isolated:
-        print("[warn] 未能独占 tab（该环境 multi-tab 未开）—— wire 定位退回 (时间,首句) 启发式")
+        print("[warn] 未能独占 tab（该环境 multi-tab 未开，或调试 Chrome 在 app.yzsgo.com 上没登录——"
+              "见 SKILL.md 前置「重新登录」）—— wire 定位退回 (时间,首句) 启发式")
     try:
         d.new_conversation()
         turns = []
