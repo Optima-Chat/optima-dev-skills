@@ -49,8 +49,8 @@ class TestPy39Annotations(unittest.TestCase):
                 with open(os.path.join(skill, name), encoding="utf-8") as fh:
                     tree = ast.parse(fh.read(), filename=name)
                 lines = pep604_unions(tree)
-                if lines:
-                    self.assertTrue(_has_future_annotations(tree),
+                with self.subTest(path=os.path.join(skill, name)):
+                    self.assertTrue(not lines or _has_future_annotations(tree),
                                     f"{skill}/{name}: `X | Y` annotations at lines {lines} break import on "
                                     "Python 3.9 without `from __future__ import annotations`")
 
