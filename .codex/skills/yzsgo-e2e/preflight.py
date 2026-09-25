@@ -3,6 +3,8 @@
 - auto：可由 bootstrap.py 在**征得用户同意后**自动装（托管 venv+playwright、sshpass）；
 - manual：凭据/登录类，装不了、只能引导（buildbox 口令、登了测试账号的调试 Chrome、userId）。
 本脚本只诊断、不装东西。装由 bootstrap.py 做（同意由 SKILL.md/Claude 负责问）。"""
+from __future__ import annotations  # `-> str | None` 在 3.9（macOS 自带 python3）下否则 import 即 TypeError（#114）
+
 import json, os, shutil, socket, subprocess, sys
 
 VENV = os.path.expanduser("~/.cache/yzsgo-e2e/venv")
