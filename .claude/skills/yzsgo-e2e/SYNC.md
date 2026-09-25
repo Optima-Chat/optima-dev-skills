@@ -9,6 +9,29 @@
 
 > 注：judge_workflow.js 内联的 decideOutcome 是 judge_outcome.js（有 node 单测）的副本，改逻辑需同步两处。
 
+## ⏳ 待办：全量同步到上游 `a5eadfbe` 或之后（dev-skills#111）
+
+**触发条件：optima-store-skills#2558（#2557 登录闸的真机验收）以 completed 关闭，且其中三项验收（抛出后 tab 还在 / 人登完接得上 / 干完 tab 被关）都通过。** 在那之前不做（`verify_drift.py` 报的 `chat_driver.py` 漂移是有意保留的）。
+
+2026-09-24 起 www.yzsgo.com / 裸域 301 到唯一规范域名 app.yzsgo.com（optima-terraform#467/#468）。上游在
+store-skills#2567（merge `a5eadfbe`）改了驱动缺省。本仓**这次没有同步驱动**（`chat_driver.py` 仍是上方台账里的
+`010c578a`，逐字未动），只在调用方覆盖了缺省：`run_e2e.py` 在 import 驱动前执行
+`os.environ.setdefault("YZSGO_CHAT_URL", "https://app.yzsgo.com/zh-HK/chat")`；`bootstrap.py launch-chrome` 与 `SKILL.md` 改为 app。
+所以 `verify_drift.py` 会报 `chat_driver.py` 漂移，这是预期内的，等上面的触发条件满足后处理。
+
+之所以不全量同步：`010c578a..a5eadfbe` 的 8 次提交（+720/-11）里含 #2557 登录闸（`attach()` 在没有登录态时抛 `NeedsHumanLogin`、
+留 tab 给人），上游 09-24 才合入，真机验收单 #2558 还开着。做全量同步时要注意（已在关闭的 dev-skills#112 里实做并审过一轮）：
+
+- `run_e2e.py` 要接住 `NeedsHumanLogin` / `TabGoneDuringClaim`。驱动给的 todo 写着「登好回来说一声会接着跑」，
+  脚本如果选择退出就要说清楚；`unknown` 状态下不要催人登录；留下的 tab 要提示登完关掉（free 档只有 1 个并发名额）。
+- #2091 适配了 09-19 的平台改版，新形态 `使用技能：<slug>` 从**整页**文本抓 ⇒ 一次跑多条 `--message` 时，
+  后面几轮的 `tool_trace` 会带上前几轮加载过的 skill，逐轮做前后端核对时可能误判。与此同时，**现在这版（`010c578a`）在 09-19 改版后读不到新形态的 `load_skill`**。
+- 届时的收尾清单：
+  1. 上方台账 `chat_driver.py` 一行改成新 commit 与日期，照例写一节「这次同步带了什么」；
+  2. 去掉 `run_e2e.py` 里的 `setdefault` 覆盖与 `DEFAULT_CHAT_URL`（驱动缺省已是 app），`test_canonical_host.py` 改为直接断言驱动缺省（上游 A34 同款，桩掉 playwright 即可）；
+  3. 处理 `SKILL.md` 里以下过渡说明（删除，另有说明的除外）：前置里「驱动自己的缺省仍写着 www」与「忘了重登时看到的…」（登录闸会给出明确提示），「自己写脚本调 `chat_driver`」那条里的「并在 import 驱动前设 `YZSGO_CHAT_URL`」；「vendor 同步纪律」里「漂移是有意保留的」；「前后端对照」里的「已知盲区」**不是删，而是改写**成新驱动的问题（按整页抓 `使用技能：`，多轮会串）；`run_e2e.py` 警告里的「或没登录」建议保留（上游登录闸在 `unknown` 时不抛）；
+  4. 删掉本节「⏳ 待办」，关闭 dev-skills#111。
+
 ## 2026-09-17 这次同步带了什么
 
 `chat_driver.py` 逐字取自上游 `010c578a`（optima-store-skills#1852 合入 main 的那个 merge commit；
