@@ -28,7 +28,7 @@ def plan_actions(missing_names: list, base: str = VENV) -> list:
             plan.append(("launch-chrome", [[
                 "open", "-na", "Google Chrome", "--args",
                 "--remote-debugging-port=9222", "--user-data-dir=/tmp/yzsgo-chrome",
-                "https://www.yzsgo.com"]]))
+                "https://app.yzsgo.com"]]))
     return plan
 
 

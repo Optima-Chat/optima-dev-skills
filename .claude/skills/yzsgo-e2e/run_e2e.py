@@ -95,8 +95,24 @@ def main():
     # 若 --message 正文里写了 `--ziniao-profile <id>`，send() 会抛 ZiniaoDeclarationConflict
     # 拒发 —— 那是上游有意的闸，不是本脚本的 bug。装到 ~/.claude 后已知 profile 表为空
     # （它读 store-skills 仓库里的 e2e/registry*.yaml），所以只认 `--ziniao-profile` 这种显式写法。
-    d = chat_driver.ChatDriver().attach(
-        ziniao=None, reason="yzsgo-e2e 驱动鸭嘴兽网页对话做端到端测试，本脚本不绑定任何紫鸟 profile")
+    # 上游 #2557 登录闸：这个源上没有登录态（或判不出）时 attach() 抛 NeedsHumanLogin——
+    # str(e) / e.todo 就是给人看的那句话，驱动已把那个 tab 标成「留给人」，e.driver.close()
+    # 只断开、不关 tab，人就在那个 tab 里登录，登完重跑本命令。认领途中 tab 被关则抛
+    # TabGoneDuringClaim。两者都不继承 TabSessionUnavailable，这里单独接，不让它变成 traceback。
+    # 常见触发：以前在 www.yzsgo.com 上登录过的调试 Chrome——www 已 301 到 app.yzsgo.com，
+    # 登录态按 origin 隔离，要在 app 上重登一次（SKILL.md 前置）。
+    try:
+        d = chat_driver.ChatDriver().attach(
+            ziniao=None, reason="yzsgo-e2e 驱动鸭嘴兽网页对话做端到端测试，本脚本不绑定任何紫鸟 profile")
+    except chat_driver.NeedsHumanLogin as e:
+        print(e.todo)
+        print("\n[需要人登录；登录完成后重跑同一条命令]")
+        e.driver.close()
+        sys.exit(2)
+    except chat_driver.TabGoneDuringClaim as e:
+        print(f"[标签页在认领途中被关掉了（{e}）；重跑同一条命令即可]")
+        e.driver.close()
+        sys.exit(2)
     session_id = d.session_id      # attach 后立刻取：放在 try 里的话，中途抛异常会留下未绑定名
     if not d.tab_isolated:
         print("[warn] 未能独占 tab（该环境 multi-tab 未开）—— wire 定位退回 (时间,首句) 启发式")

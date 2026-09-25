@@ -2,12 +2,46 @@
 
 | 本文件 | 上游 repo · 路径 | commit | 同步日期 |
 |---|---|---|---|
-| chat_driver.py | optima-store-skills · .claude/skills/operating-yzsgo-chat/chat_driver.py | 010c578a（PR #1852，含 #1635） | 2026-09-17 |
+| chat_driver.py | optima-store-skills · .claude/skills/operating-yzsgo-chat/chat_driver.py | a5eadfbe（PR #2567 的 merge commit，含 #2557 / #2223） | 2026-09-25 |
 | pull_wire.py | optima-store-skills · .claude/skills/pulling-yzsgo-session-wire/pull_wire.py | 3cfc2d6 | 2026-09-09 |
 | prep_conversation.py | optima-gateway · .claude/skills/conversation-iq/prep_session.py（改编：+浏览器证据合并） | b75f575c | 2026-08-31 |
 | judge_workflow.js | optima-gateway · .claude/skills/conversation-iq/workflow.js（改编：+前后端一致性维度） | b75f575c | 2026-08-31 |
 
 > 注：judge_workflow.js 内联的 decideOutcome 是 judge_outcome.js（有 node 单测）的副本，改逻辑需同步两处。
+
+## 2026-09-25 这次同步带了什么（dev-skills#111）
+
+`chat_driver.py` 逐字取自上游 `a5eadfbe`（optima-store-skills#2567 合入 main 的 merge commit；
+同步时上游 main 就是这个提交）。直接动机：2026-09-24 起 www.yzsgo.com / 裸域 301 到唯一规范域名
+**app.yzsgo.com**（optima-terraform#467/#468），登录态存在 localStorage、按 origin 隔离 ⇒ 缺省还写 www 时，
+调试 Chrome 落在 app 上是未登录，本 skill 每次都起不来。
+
+`010c578a..a5eadfbe` 之间上游动了这个文件 8 次（+720/-11），`attach()` 签名没变：
+
+- **#2223 / #2567 规范域名**：缺省 `CHAT_URL` 改为 `https://app.yzsgo.com/zh-HK/chat`（只换 host，`/zh-HK` 保留——
+  技能市场按繁体文案认控件，落到别的语种会假报 `notfound`）；`login_todo` 里的缺省地址提示从 `CHAT_URL` 取 host。
+- **#2557 登录闸**：`login_state()` 三态纯函数（按 hostname **相等**比）；`attach()` 在这个源上没有登录态
+  （或判不出）时**先把那个 tab 标成「留给人」再抛 `NeedsHumanLogin`**（`str(e)` 就是给人看的 todo，带 `driver`）；
+  认领途中 tab 被关抛 `TabGoneDuringClaim`。两者都**不继承** `TabSessionUnavailable`。另有 `wait_for_login()`、
+  `release_tab_for_human()`，以及 `validate_chat_url()`——**设了 `YZSGO_CHAT_URL` 却指到站点根会当场 `ValueError`**
+  （必须指到聊天页，如 `https://app.stage.optima.chat/zh-HK/chat`）。
+- **#1095 传文件**：`upload_file()` / `clear_attachments()`。本 skill 不用。
+- **#2091 must_call**：`build_must_call()` / `parse_skill_loads()`（给 store-skills 的 skill 测试用）。本 skill 不用。
+
+新副作用：无新增（仍只有 09-17 那版就有的 `~/.optima-locks/ziniao-gate.jsonl`，写失败不抛）。
+
+**本仓为此做的适配**（驱动本身仍逐字，不改）：
+
+1. `run_e2e.py`：`attach()` 包进 try，接住 `NeedsHumanLogin`（打印 `e.todo`，`e.driver.close()`——tab 已被标成
+   「留给人」所以只断开不关，人在那个 tab 里登录后重跑）和 `TabGoneDuringClaim`，都以退出码 2 结束，不再是 traceback。
+   🔴 不接的话 `NeedsHumanLogin` 会以未捕获异常退出（`str(e)` 虽然可读，但会被 traceback 淹没）。
+2. `bootstrap.py` 的 `launch-chrome` 改开 `https://app.yzsgo.com`；`SKILL.md` 的 description 与前置里的 www 改为 app，
+   并提醒「以前在 www 上登录过的 `/tmp/yzsgo-chrome` 要在 app 上重登一次」。`docs/superpowers/` 下的历史设计文档不改。
+3. 新增 `tests/yzsgo-e2e/test_canonical_host.py`（ast，不需要 playwright）：缺省 `CHAT_URL` 的 host 是 app 且保留
+   `/zh-HK/`（对应上游 A34）、`bootstrap` 起 Chrome 用 app、`run_e2e.py` 在 `attach()` 外接住两个新异常（且驱动里确有
+   这两个类）、`.claude` 与 `.codex` 两份逐字节一致。上游 A34 本身要 import 驱动，本仓 CI 没有 playwright 跑不了；
+   同步时在装了 playwright 的 venv 里实跑过：缺省 `CHAT_URL` 下落地 `app.yzsgo.com/zh-HK/chat` ⇒ `logged_in`、
+   被踢回 `app.yzsgo.com/` ⇒ `logged_out`、落在 www ⇒ `unknown`。
 
 ## 2026-09-17 这次同步带了什么
 

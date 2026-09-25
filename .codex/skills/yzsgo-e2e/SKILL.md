@@ -1,6 +1,6 @@
 ---
 name: "yzsgo-e2e"
-description: "当用户请求端到端测试鸭嘴兽、e2e 测 yzsgo 对话、用浏览器真机测鸭嘴兽整个流程、驱动对话再拉 wire 核对前后端、测网关/agent 端到端有没有问题时，使用此技能。playwright attach 调试端口 Chrome 驱 www.yzsgo.com 对话 → 拉 gateway wire → conversation-iq 语义管线判定 → confirmed 自动提 issue。"
+description: "当用户请求端到端测试鸭嘴兽、e2e 测 yzsgo 对话、用浏览器真机测鸭嘴兽整个流程、驱动对话再拉 wire 核对前后端、测网关/agent 端到端有没有问题时，使用此技能。playwright attach 调试端口 Chrome 驱 app.yzsgo.com 对话 → 拉 gateway wire → conversation-iq 语义管线判定 → confirmed 自动提 issue。"
 allowed-tools: ["Bash", "Read", "Write", "Agent", "Workflow"]
 ---
 
@@ -26,6 +26,10 @@ allowed-tools: ["Bash", "Read", "Write", "Agent", "Workflow"]
    - 每个 🅰️ 缺项：**先问用户「要我装 `<name>` 吗？」，用户同意了**再跑 `python3 $S/bootstrap.py setup`（装 venv+playwright）或 `python3 $S/bootstrap.py install-sshpass`。别不问就装。
    - 每个 ✋ 缺项：引导用户——`chrome-9222`：`python3 $S/bootstrap.py launch-chrome` 起窗口、让用户**手动登测试账号**（登一次长期免登）；`buildbox-pw`：让用户把口令放 `~/.buildbox_pw`（内部拉 wire 用，向团队要）；`test-user-id`：让用户登录 Optima（run_e2e 自动从 `~/.optima/token.json` 读 userId）。
    - 补完 `python3 $S/preflight.py <env>` 复检，直到全 ✅ 才进四段。
+
+> 🔴 **以前在 `www.yzsgo.com` 上登录过的调试 Chrome（`/tmp/yzsgo-chrome`），要在 `app.yzsgo.com` 上重新登录一次。**
+> 2026-09-24 起 www 和裸域都 301 到唯一规范域名 `app.yzsgo.com`（optima-terraform#467/#468）。登录态存在 localStorage、按 origin 隔离，www 上的登录态带不到 app。
+> 没重登时 `run_e2e.py` 会在 attach 这一步停下，打印驱动给出的「去那个标签页登录」提示，并以退出码 2 结束（上游 #2557 登录闸）；照提示在 app 上登好，再重跑同一条命令。
 
 ## 并发（2026-09-09 起）：本 skill 自己开 tab
 

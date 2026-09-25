@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""yzsgo Agentic Chat 网页操作固化库 —— 所有对 www.yzsgo.com/zh-HK/chat 的动作的**唯一入口**。
+"""yzsgo Agentic Chat 网页操作固化库 —— 所有对 app.yzsgo.com/zh-HK/chat 的动作的**唯一入口**。
 
 任何人任何时候操作这个网页都走这里，不再现写 Playwright。封装了 pilot(2026-08-27)实测的三个坑：
   ① 侧栏图标文字是 hover tooltip、被 svg 遮挡 → 用 DOM `.click()`（不用坐标/Playwright click）；
@@ -7,7 +7,9 @@
   ③ 流式回复 → 轮询 body 文本尾部稳定判完成。
 
 前置：用户已用带远程调试端口的 Chrome 登录好 Agentic Chat：
-  open -na "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir=/tmp/yzsgo-chrome https://www.yzsgo.com
+  open -na "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir=/tmp/yzsgo-chrome https://app.yzsgo.com
+  （⚠️ 登录态存在 localStorage、按 origin 隔离：以前在 www.yzsgo.com 上登过的 /tmp/yzsgo-chrome，
+   要在 app.yzsgo.com 上**重新登录一次**，见下面 `CHAT_URL` 那条注释。）
 
 用法：
   from chat_driver import ChatDriver
@@ -40,15 +42,117 @@ import os
 import re
 import subprocess
 import time
+from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
 # cn-stage 前端是 app.stage.optima.chat（同一套页面），用 YZSGO_CHAT_URL 覆盖；缺省 cn-prod。
-CHAT_URL = os.environ.get("YZSGO_CHAT_URL", "https://www.yzsgo.com/zh-HK/chat")
+# 🔴 缺省 host 必须是 cn-prod 的**规范域名 app.yzsgo.com**（#2223）：2026-09-24 起 www / 裸域
+#    一律 301 到 app（optima-terraform#467/#468，path + query 保留）。
+#    · `login_state()` 按 **hostname 相等**比 ⇒ 缺省写 www 时落地是 app，永远判 `unknown`，
+#      `attach()` 每次都抛 `NeedsHumanLogin`；
+#    · 登录态存在 localStorage、按 origin 隔离 ⇒ 在 www 上登过的 profile 到 app 上**是未登录**，要重登一次。
+#    `/zh-HK` 前缀保留（⛔ 别照 #2223 正文的字面建议写成裸 `/chat`）：技能市场按繁体文案认控件（`SEARCH_PH` 等），
+#    落到 `/en/` 时 `ensure_installed` 假报 `notfound`（2026-09-20 实撞，`e2e/registry-2030-2035-cn-prod-baseline.yaml:29-30`）。
+CHAT_URL = os.environ.get("YZSGO_CHAT_URL", "https://app.yzsgo.com/zh-HK/chat")
 SEARCH_PH = "搜尋技能..."
 # 本 tab 认领的 gateway sessionId 存这里（agentic-chat src/lib/session/tabSessionClaim.ts）。
 # sessionStorage 天然 per-tab —— 这是「一 tab 一 session」的物理依据，也是并行隔离的校验口。
 TAB_SID_KEY = "optima:gw:sid"
+
+# ── 「这一轮加载了哪些 skill」的**文本形态**判读（#2091）──────────────────────
+# 🔴 平台面板在 2026-09-18 晚～09-19 之间改版：`load_skill` 原来渲染成**聚合面板里的一行工具**
+#    （`load_skill` + `已完成` + `參數`/`結果` 两个按钮，slug 藏在參數的 `<pre>` JSON 里），
+#    改版后变成**两行纯文本**：`使用技能：<slug>` + `已完成`，**没有參數面板**，
+#    而且排在聚合头「已完成 N 個工具」**之前**（即在那个面板之外）。
+#    于是 `loaded_skills()`（认死 `<pre>` 里的 `{"name":"<slug>"}`）和
+#    `_scrape_tool_trace()`（认死「有兩個按鈕 + 參數 + 結果」的行）**同时读空**，
+#    而且读空的样子跟「Agent 真的没加载」一模一样 —— 一次真成功被判成 `uncertain`。
+#
+# ⚠️ **这里只认形状，不放松 slug 判别**：`使用技能：` 必须**独占一行**、后面必须是
+#    slug 形状（小写字母数字 + 连字符）。2026-09-09 收紧 `<pre>` 判别是为了挡「商品名被
+#    当成 skill」的假通过（2026-09-09 实测把 `meta.json` 的商品标题记成了 skill），**这里同样别放宽**。
+#
+# 🔴 **两个形态都要认**：改版不是替换 —— 历史日志还要能重判，而下一次改版会以完全一样的
+#    方式再瞎一次。所以真正要紧的不是这两条正则，而是 `nodes`：
+#    **「一个加载节点都没找到」必须能跟「找到了、期望那个不在里面」分开报。**
+# 🔴 **判据钉在面板节点的「形状」上，不是钉在文本里出现过这个词**（#2091 复核时纠的一刀）。
+#    实证：同一份 09-19 日志里，`load_skill` 这个字符串出现 2 次 —— **两次都在 Agent 自己写的
+#    总结表里**（`:359 load_skill strategizing-store-ops（档案读写规矩的归属者）<TAB>它明示了…`），
+#    它在**谈论** load_skill，不是一次加载事件。真事件在 `:76/:78` 的「使用技能：<slug>」。
+#    ⇒ 只认**整组**渲染形状：
+#      新形态（09-19 起）  `使用技能：<slug>` + 状态行              两行一组，**无參數面板**
+#      旧形态（09-18 及前）`load_skill` + 状态行 + `參數` + `結果`  四行一组，在聚合面板内
+#    认单行 = 打中散文 = 把「我没读到」谎报成「抓取是通的」，这正是这条 issue 的形状本身。
+_STATUS_LINE = r"(?:已完成|完成|失敗|失败|進行中|进行中|錯誤|错误)"
+_SKILL_USE_LINE_RE = re.compile(
+    r"^[ \t]*使用技能[：:][ \t]*([a-z0-9][a-z0-9-]*)[ \t]*\r?\n[ \t]*" + _STATUS_LINE + r"[ \t]*$",
+    re.M)
+_LOAD_SKILL_ROW_RE = re.compile(
+    r"^[ \t]*load_skill[ \t]*\r?\n[ \t]*" + _STATUS_LINE + r"[ \t]*\r?\n"
+    r"[ \t]*(?:參數|参数)[ \t]*\r?\n[ \t]*(?:結果|结果)[ \t]*$",
+    re.M)
+
+
+def parse_skill_loads(text: str) -> dict:
+    """从页面 / 面板的 `innerText` 里读「这一轮有没有加载 skill 的节点、加载的是谁」。
+
+    返回 `{"slugs": [...], "nodes": int, "shapes": [...]}`：
+
+    - `slugs`  —— **只有新形态（`使用技能：<slug>`）给得出 slug**。旧形态的 slug 在參數
+                  `<pre>` 里，不在文本里 ⇒ 旧形态这里恒为 `[]`，slug 仍由 `loaded_skills()`
+                  的 `<pre>` 那条路给。
+    - `nodes`  —— **两种形态加起来，页面上一共有几个「加载 skill」的节点。**
+                  🔴 这一格才是这次修的重点：`nodes == 0` 才是「我们没读到」，
+                  `nodes > 0` 而期望的 slug 不在 `slugs` 里，才是「真的没加载它」。
+    - `shapes` —— 读到的是哪一种渲染（`labelled` 新 / `row` 旧），出问题时给人看。
+
+    **纯函数、不碰浏览器** —— 这样历史日志（`e2e/logs/*.txt` 里落盘的整页文本）可以当夹具重判。
+    """
+    text = text or ""
+    slugs, seen = [], set()
+    for m in _SKILL_USE_LINE_RE.finditer(text):
+        slug = m.group(1)
+        if slug not in seen:
+            seen.add(slug)
+            slugs.append(slug)
+    n_labelled = len(_SKILL_USE_LINE_RE.findall(text))
+    n_rows = len(_LOAD_SKILL_ROW_RE.findall(text))
+    shapes = (['labelled'] if n_labelled else []) + (['row'] if n_rows else [])
+    return {"slugs": slugs, "nodes": n_labelled + n_rows, "shapes": shapes}
+
+
+def build_must_call(expected, pre_slugs, marks) -> dict:
+    """由**两条信号源**合成 `must_call` 那一维的读数。**纯函数**（#2091）。
+
+    - `pre_slugs`   —— 旧形态：參數面板 `<pre>` 里那个 `{"name": "<slug>"}`（DOM 才读得到）
+    - `marks`       —— `parse_skill_loads()` 的结果：新形态的 slug + **两种形态的节点计数**
+
+    ⚠️ **`load_nodes` 只由 `parse_skill_loads` 的整组形状给**，不吃 `loaded_skills` 里那个
+    `n_calls`（「文本恰好等于 `load_skill` 的 span/div」）—— 后者同样会打中 Agent 散文里的
+    行内代码，而一旦打中，`load_nodes` 就从 0 变成正数，
+    **把「我没读到」谎报成「抓取是通的、是它没调」** —— 正好是这条 issue 要分开的那两件事。
+    那个 `n_calls` 留在原处，**只用来判要不要去 toggle 參數面板**。
+
+    返回的 `load_nodes` 是这次修的全部重点：
+      · `> 0` ⇒ **抓取是通的**。期望的 slug 不在 `loaded` 里 ⇒ 它**真的没调** ⇒ `not_detected`
+      · `== 0` ⇒ **我们一个加载节点都没读到** ⇒ `unknown`（没读到），**不许报成「没调」**
+
+    抽成纯函数是为了让**历史日志能重判**：判据不许只活在浏览器里，
+    否则下一次面板改版时，我们连「改版前后这一维读出来一不一样」都没法离线量。
+    """
+    merged = list(pre_slugs or [])
+    for slug in (marks or {}).get("slugs") or []:
+        if slug not in merged:
+            merged.append(slug)
+    exp = expected if isinstance(expected, list) else [expected]
+    return {
+        "expected": expected,
+        "loaded": merged,
+        "ok": any(e in merged for e in exp),
+        "load_nodes": int((marks or {}).get("nodes") or 0),
+        "load_shapes": list((marks or {}).get("shapes") or []),
+    }
 
 
 class TabSessionUnavailable(RuntimeError):
@@ -60,6 +164,46 @@ class TabSessionUnavailable(RuntimeError):
          默认关，见 agentic-chat src/lib/feature-flags.ts），新 tab 会被 gateway 的
          createOrResolveSession 并回同一个 session。cn-prod 已开、cn-stage 未验。
     绝不能降级成「那就共用一个 tab 吧」——那正是静默串台的成因。"""
+
+
+class NeedsHumanLogin(RuntimeError):
+    """这个源上没有登录态（或判不出）—— **要人来登录**，本轮停手。
+
+    🔴 **⛔ 不得继承 `TabSessionUnavailable`**。那个的语义是「并行不安全，退回串行」，
+       跟「要人登录」完全不是一回事；而且 `run.py` 里 `except TabSessionUnavailable`
+       排在前面 ⇒ 一旦继承，**新分支永不执行、`todo` 一个字印不出来**，
+       而判据（只断言「抛的是 NeedsHumanLogin」）**照样全绿**。
+
+    🔴 **`login_state` 是必填位置参数** —— 「确实判不出」和「忘了说」不许共用取值。
+    🔴 **`str(e)` 恰好是 `todo`**：仓里 16 处 `.attach(` 调用点只有 `run.py` 那 2 处会接这个
+       异常，**其余全靠 `str(e)`**。四个参数都塞进 `args` 的话打印出来是个 tuple repr，
+       那句精心写的人话就变成 tuple 里的第 4 个元素。
+    🔴 **`driver` 必带**：两个生产调用点都是链式 `d = ChatDriver().attach(...)`，
+       抛异常时 `d` **根本没被赋值** ⇒ 没有它，调用方既续不了跑、也收不了那个 tab。
+    """
+
+    def __init__(self, login_state, login_why, url, todo, driver):
+        if login_state not in ("logged_out", "unknown"):
+            raise ValueError(f"login_state 只能是 logged_out / unknown，收到 {login_state!r}")
+        super().__init__(todo)
+        self.login_state, self.login_why = login_state, login_why
+        self.url, self.todo, self.driver = url, todo, driver
+
+
+class TabGoneDuringClaim(RuntimeError):
+    """认领等待期间**那个 tab 没了**（人手动关 / 别的 driver 的 `browser.close()` 波及）。
+
+    🔴 **独立收场，⛔ 不并进 `logged_out` / `unknown`** —— 那个 tab 已经不存在了，
+       说「去那个标签页登录」是错的。
+    ⚠️ 为什么非要单独看一眼 `is_closed()`：真 Playwright 的 `Page.url` 是**本地缓存字符串**，
+       页面关掉之后**不抛、照样返回最后那个值** ⇒ 一直判 `logged_in` ⇒ 连续计数永远清零
+       ⇒ **整道闸静默失效**，而 `_read_sid` 的 `except Exception` 正好把 TargetClosedError 吞掉。
+    🔴 同样 ⛔ 不继承 `TabSessionUnavailable`、同样必带 `driver`（否则没人能收拾这个 driver）。
+    """
+
+    def __init__(self, why, driver):
+        super().__init__(why)
+        self.why, self.driver = why, driver
 
 
 # preflight 只问一件事、只认一种答案：让 agent 原样贴 `browser-cli ziniao doctor` 的输出。
@@ -261,6 +405,159 @@ def scrape_login_states(res_text: str) -> list:
     """
     ok = ("logged_in", "logged_out", "unknown")
     return [m.group(1) for m in _LOGIN_STATE_RE.finditer(res_text or "") if m.group(1) in ok]
+
+
+# ── driver 自己看 URL 判的登录态（#2557）───────────────────────────────
+#
+# 🔴 **和上面那份 `scrape_login_states` 同名同值域，但不是一回事，⛔ 不许合并**：
+#    那份是「从 agent 的**工具结果体**里刮 skill 自报的值」，喂的是用例判定管线；
+#    这份是「driver **自己看落地 URL** 判」，喂的是 `attach()` 的收场。
+#    ⛔ 本函数的判定**不喂给** `scrape_login_states` 那条管线。
+#
+# 🔴 **和 `briefing-store-status` 的同名函数也不一样**（那是随包发给云端 agent 的
+#    marketplace skill，harness 不该依赖它的发布节奏）。三行差异：
+#      | | briefing 那份 | 这份 |
+#      | host 比较 | `expected_host not in url` **子串比** | **hostname 相等比** |
+#      | logged_out 判法 | 命中已知**登录页路径** | 命中已知**站点根**（本应用登录入口就是站点根） |
+#      | 极性 | 白名单 logged_out、兜底 logged_in | 白名单 logged_in + 白名单 logged_out，**其余 unknown** |
+#
+# **平台侧事实**（agentic-chat@603945a2 实读，⛔ 不是推断）：
+#   · 未登录访问 `/chat` ⇒ middleware 307 到**同源站点根 `/`**（⚠️ 不是 `/login`）；
+#   · 那道闸只在 `stripLocalePrefix(pathname) === '/chat'` 时生效，而它只剥**非默认** locale；
+#   · next-intl@4.6.1 的 `as-needed` 会把 `/zh/chat` 先重定向成 `/chat` ⇒ 浏览器落不到带默认前缀的路径。
+#
+# ⚠️ 本文件里已有 **5 处** `"/chat" in p.url` 之类的字面量（选 tab / goto_chat / __main__）。
+#    **本单知情地不统一它们**（超范围）；新判定一律从 `CHAT_URL` 派生。
+_LOGIN_STATES = ("logged_in", "logged_out", "unknown")
+
+# 连续多少轮判出「不在聊天页」才停手（≈秒）。🔴 **拍的，无实测支撑。**
+# 它换来的是**不误判自愈瞬态**：已登录的人落在站点根时，落地页会自己 router.push("/chat")
+# （agentic-chat LandingYzsgo 的 effect，注释原话「LoginModal does NOT navigate on success」）
+# ⇒ 「落地站点根」可能是 1–3 秒自愈的瞬态，没有 settle 就会把它判成掉线、**白喊人一趟**。
+# ⚠️ 已知盲区：若 `/chat ↔ /` 振荡周期 ≤ 本值，连续计数被反复清零 ⇒ 闸不响，退回今天的行为。
+#    ⛔ **不许改成累计计数** —— 那会把自愈瞬态又判回 logged_out。
+SETTLE_ROUNDS = 5
+
+# `wait_for_login` 的三个数。🔴 **全是拍的，无实测支撑。**
+# FIRST_PROBE_S：第一次主动探测之前等多久。⛔ 不许调小到十几秒 —— 没人能在那么短的时间里
+#   收完短信验证码，那次探测几乎必然落在**人正在填表**的中途，把他跳走（= 换个形式复刻
+#   用户那句「等我登录完它又关掉了」）。
+# PROBE_EVERY_S：之后每隔多久再探一次。🔴 **必须可重复** —— 只探一次的话，人在第 2 分钟
+#   才登完并落在 /workspace-select 这类页上时，唯一那次探测早用掉了 ⇒ **人登了，我们说他没登**。
+FIRST_PROBE_S = 90
+PROBE_EVERY_S = 60
+
+# 形如 `/xx` 或 `/xx-YY` 的首段。真相在 agentic-chat `src/i18n/routing.ts` 的 `routing.locales`。
+_LOCALE_SEG = re.compile(r"^/[A-Za-z]{2}(?:-[A-Za-z]{2})?(?=/|$)")
+
+
+def _strip_locale(path: str) -> str:
+    """剥掉**任何**形如 `/xx` / `/xx-YY` 的首段（含默认 locale `zh`）。"""
+    path = path or "/"
+    m = _LOCALE_SEG.match(path)
+    return (path[m.end():] or "/") if m else path
+
+
+# 🔴 **已知的** locale 根。真相在 agentic-chat `src/i18n/routing.ts` 的 `routing.locales`
+#    （今天是 `['zh','zh-HK','en']`）。**跨仓耦合，前端加语种这里没跟 ⇒ 新语种的裸根落
+#    `unknown`（安全方向：停手问人），⛔ 不会落 logged_out。**
+_KNOWN_LOCALE_ROOTS = ("/zh", "/zh-HK", "/en")
+
+
+def _is_site_root(path: str) -> bool:
+    """站点根 —— 🔴 看**原始 path**，且只认**已知** locale 根。
+
+    🔴 **这里的严格度和 `_strip_locale` 故意不一样**，依据是代价不对称：
+      · `_strip_locale` 喂的是 `logged_in`，**宽一点没关系** —— 判错最坏回到今天的超时路径；
+      · 本函数喂的是 `logged_out`，**必须严** —— 判错会叫人**白登一次**（#770 ② 付过代价，
+        `scripts/test-login-todo-host-source.py` 记着那次）。
+    ⇒ ⛔ **不许改用 `_LOCALE_SEG`**：`/ai` 结构上和 `/zh` 一模一样（都是两字母首段），
+      那样 `/ai` 会被判成站点根 ⇒ `logged_out` ⇒ 叫人去登一个根本不用登的东西。
+      判据 A33 钉这一条（写它的时候就是这么红的）。
+    """
+    path = (path or "/").rstrip("/") or "/"
+    return path == "/" or path in _KNOWN_LOCALE_ROOTS
+
+
+def validate_chat_url(chat_url: str) -> str:
+    """→ 期望路径（`/chat`）。不合格**当场 `ValueError`**。
+
+    🔴 **必须在打开浏览器之前调**（`chat_driver` L17：闸的位置不对等于没有）。
+    放进轮询里 ⇒ tab 和 CDP 连接都开好了才抛 ⇒ 每次配错漏一个 tab（CEO「24 个 tab」那条）。
+    """
+    expected = _strip_locale(urlparse(chat_url or "").path)
+    if expected in ("", "/"):
+        raise ValueError(
+            f"CHAT_URL={chat_url!r} 的路径是站点根 —— 那样「受登录闸保护的路径」和"
+            "「未登录被踢到的落点」就是同一个，这道闸会静默失效。请指到聊天页。")
+    return expected
+
+
+def landed_url(page) -> str:
+    """读落地 URL；读不到回 `""`（⛔ 不抛）。
+
+    ⚠️ 真 Playwright 的 `Page.url` 是**本地缓存字符串**，页面关掉也不抛、照样返回旧值
+    ——所以「读不到」这条分支挡的主要是夹具与异常态，**tab 死活要另外看 `is_closed()`**。
+    """
+    try:
+        return page.url or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def login_todo(state: str, why: str, landed: str) -> str:
+    """停手时交到**人**手上的那句话。🔴 这是本单唯一直接送到人手上的东西。
+
+    本仓为它付过代价：2026-09-13 因为域名是**兜底猜的**，店主照着去登了一次、**白登**
+    （`scripts/test-login-todo-host-source.py` 记着）。所以五条硬规矩：
+
+    1. 🔴 **优先指「那个留着的标签页」** —— 无歧义，不用猜域；
+    2. 点名 URL 时点的是**实际落地的那个**（观测来的），⛔ **不是 `CHAT_URL`**（可能是缺省猜的）；
+    3. `YZSGO_CHAT_URL` **没被显式设过**时要说一声那是内置缺省地址；设过了就**不说**；
+    4. 两态话术**不同**：`unknown` ⛔ **不许出现「去登录」这类祈使**（人可能根本不用登）；
+    5. 两态都要带**回收话术** —— 留着的 tab 占一个并发名额。
+
+    ⛔ **不许对具体路径分支**（不枚举 `/app` / `/workspace-select` …）——
+       通用话术里带上 `why` 原样回显的那段就够。
+    """
+    if state not in _LOGIN_STATES:
+        raise ValueError(f"未知登录态 {state!r}")
+    head = ("浏览器里**那个还开着的标签页**（停在 " + (landed or "（读不到地址）") + "）"
+            if state == "logged_out" else
+            "**先去看一眼**浏览器里那个还开着的标签页（停在 " + (landed or "（读不到地址）") + "）")
+    body = ("上去登录一下，登好了回来说一声，这一轮会接着往下跑。"
+            if state == "logged_out" else
+            "——" + (why or "判不出登录态") + "。⛔ 别急着登录，它未必是掉登录态。")
+    default_note = ("" if os.environ.get("YZSGO_CHAT_URL") else
+                    f"\n（顺带一说：这个地址是**内置缺省值**（{urlparse(CHAT_URL).hostname}，cn-prod）；"
+                    "要跑的不是 cn-prod 就先设 `YZSGO_CHAT_URL`，别在这儿登。）")
+    recycle = "\n如果这一轮不打算继续跑了，**请把这个标签页关掉**，它占着一个并发名额。"
+    return head + body + default_note + recycle
+
+
+def login_state(landed: str, chat_url: str, *, navigated: bool) -> tuple:
+    """→ (`_LOGIN_STATES` 之一, 人话)。🔴 **只有已知签名才给确定判定，其余一律 `unknown`**。
+
+    `navigated` **必填**：只有「我们自己 goto 过 `chat_url`」时，「落地站点根」才是
+    「被那道闸踢出来」的签名；别人选的页面停在首页可能只是用户开着首页。
+    """
+    expected = validate_chat_url(chat_url)
+    if not landed:
+        return "unknown", "读不到落地 URL —— 判不出登录态，**别当成还登着**"
+    want_host = (urlparse(chat_url).hostname or "").lower()
+    got_host = (urlparse(landed).hostname or "").lower()
+    if not got_host or got_host != want_host:
+        return "unknown", (f"落在了别的域（{landed[:80]}），预期 {want_host} —— "
+                           "**不判掉登录**：换个域上的登录态是另一回事")
+    path = urlparse(landed).path
+    if _strip_locale(path) == expected:
+        return "logged_in", ""
+    if navigated and _is_site_root(path):
+        return "logged_out", f"被登录闸踢回站点根（{landed[:80]}）—— 这个源上没有登录态"
+    # 🔴 其余一律 unknown，⛔ 不枚举同 host 路径（枚举是维护陷阱）。
+    return "unknown", (
+        f"页面落在 {path or '/'}，不是聊天页；**这既可能是没登录，也可能是登着但被导到了别处、"
+        "或者还差一步没走完**（比如要选一个工作区）—— 先去那个标签页看一眼")
 
 
 # ── 紫鸟 profile 的**声明**闸（#611；锁那一半已撤）────────────────────
@@ -580,6 +877,145 @@ class ChatDriver:
             self.page.wait_for_timeout(1000)
         return None
 
+    def _await_sid_or_login_stop(self, timeout: int):
+        """等认领；**同一个循环里**顺带判登录态。拿到 sid 回 sid；到点没拿到回 `None`。
+
+        🔴 **只给 `want_own`（自己开 tab）那一档用。**
+        ⛔ **绝对不许改 `_await_sid` 方法本身** —— `attach()` 里还有第二处调用（auto 降级**之后**
+           那次 `_await_sid(10)`），那时 `self.page` 已经换成**用户自己的 tab**、`_own_tab` 已置 False。
+           三处一起上闸 ⇒ 用户的 tab 不在 `/chat` ⇒ 判 unknown ⇒ 停手 ⇒ **把用户自己的 tab 关掉**
+           = 本单要修的那件事被原样造回来。判据 A24 / A29 钉这两条，变异 M21 必须打红。
+
+        🔴 **停手路径上 ⛔ 不调 `close()` / `browser.close()` / `_pw.stop()`**（判据 A12）：
+          · `close()` 底下是 `browser.close()` + `_pw.stop()` ⇒ CDP 断连 ⇒ `wait_for_login` 必死；
+          · 并发共用一台 Chrome 时 `browser.close()` **会把别人刚开的 tab 一并关掉**
+            （2026-09-18 实测，见 `docs/.1918-coupon-e2e/.../send1.py` 的注释）。
+          ⚠️ 紧挨着的 `strict` 分支就是 `self.close()` 然后 raise —— **⛔ 别抄那个邻居。**
+        """
+        deadline = time.time() + timeout
+        off = 0
+        while time.time() < deadline:
+            # 🔴 先看 tab 还在不在：真 Playwright 的 `Page.url` 是**本地缓存字符串**，
+            #    页面关掉也不抛、照样返回旧值 ⇒ 不看的话会一直判 logged_in、计数永远清零。
+            try:
+                gone = self.page.is_closed()
+            except Exception:  # noqa: BLE001
+                gone = True
+            if gone:
+                raise TabGoneDuringClaim(
+                    "认领等待期间那个标签页没了（被手动关掉？被别的会话的 browser.close() 波及？）"
+                    "—— 这一轮没法继续，也**没有现场可以留给人**。重开一轮即可。", self)
+            sid = self._read_sid(self.page)
+            if sid:
+                return sid
+            state, why = login_state(landed_url(self.page), CHAT_URL, navigated=True)
+            off = 0 if state == "logged_in" else off + 1
+            if off >= SETTLE_ROUNDS:
+                self._login_stop(state, why)          # 必 raise
+            self.page.wait_for_timeout(1000)
+        return None
+
+    def wait_for_login(self, timeout: int = 600) -> "ChatDriver":
+        """人登录完之后**接着往下认领、继续干**（CTO 第 4 条）。
+
+        用法（🔴 **注意是 `e.driver`**：两个生产调用点都是链式 `d = ChatDriver().attach(...)`，
+        抛异常时 `d` 根本没被赋值）::
+
+            try:
+                d = ChatDriver().attach(ziniao=..., own_tab=True)
+            except NeedsHumanLogin as e:
+                print(e.todo)                    # 调用方喊人
+                d = e.driver.wait_for_login()    # 人登完，接着认领
+
+        🔴 **默认只读 URL，⛔ 不 goto**；只有隔了 `FIRST_PROBE_S` / 之后每 `PROBE_EVERY_S`
+           才主动探测一次（探测 = `goto(CHAT_URL)`）。理由见那两个常数上面那段。
+        🔴 **判 `logged_in` 也要连续 `SETTLE_ROUNDS` 轮**：人正过二步验证时 `/chat` 可能
+           **闪现一帧**（cookie 在但失效 ⇒ 中间件放行落 /chat ⇒ 前端再 push('/')），
+           见一次就去认领的话，人还在输验证码，这一轮已经结束了。
+        🔴 **timeout=600 是拍的，无实测支撑。**
+        """
+        r = getattr(self, "_resume", None)
+        if not r:
+            raise RuntimeError("wait_for_login() 只能在 attach() 抛 NeedsHumanLogin 之后调")
+        start = time.time()
+        last_probe = None
+        on = 0
+        while time.time() - start < timeout:
+            try:
+                gone = self.page.is_closed()
+            except Exception:  # noqa: BLE001
+                gone = True
+            if gone:
+                raise TabGoneDuringClaim(
+                    "等人登录的过程中那个标签页没了 —— 现场没了，重开一轮。", self)
+            state, why = login_state(landed_url(self.page), CHAT_URL, navigated=True)
+            on = on + 1 if state == "logged_in" else 0
+            if on >= SETTLE_ROUNDS:
+                return self._resume_claim()
+            now = time.time()
+            due = ((now - start) >= FIRST_PROBE_S if last_probe is None
+                   else (now - last_probe) >= PROBE_EVERY_S)
+            if due:
+                last_probe = now
+                # 登录成功后**大多数**会被落地页送回 /chat，但有例外（pendingSubscription /
+                # pendingSkillPackCheckout / pendingCnPurchase 分支不跳、多身份先去 /workspace-select）
+                # ⇒ 光等 URL 会等不到，得主动探一次。
+                self.page.goto(CHAT_URL, wait_until="domcontentloaded")
+            self.page.wait_for_timeout(2000)
+        # 到点还没登上 —— 🔴 tab **仍然留着**、`_keep_for_human` **仍然非空**、⛔ 不宣称成功
+        state, why = login_state(landed_url(self.page), CHAT_URL, navigated=True)
+        if state not in ("logged_out", "unknown"):
+            state, why = "unknown", "等到超时都没认领上，而页面看着像在聊天页 —— 判不出"
+        url = landed_url(self.page)
+        raise NeedsHumanLogin(state, why, url, login_todo(state, why, url), self)
+
+    def _resume_claim(self) -> "ChatDriver":
+        """接上 `attach()` 里认领那一段。🔴 `taken` **重拍并排除 self.page**。
+
+        ⛔ 复用 `attach()` 当时那份快照 = 十分钟前的，期间别人认领的 session 不在里面
+           ⇒ 撞车漏判 ⇒ **并行静默串台**（`own_tab=True` 存在的唯一理由）。
+        ⛔ 天真重拍 = 自己的 tab 登录后已经有 sid ⇒ **自己撞自己** ⇒ strict 抛 + 关 tab
+           ⇒ **人刚登的那次白登，tab 还被关了**。
+        """
+        r = self._resume
+        ctx, strict, want_own = r["ctx"], r["strict"], r["want_own"]
+        taken = {sid for sid in (self._read_sid(p) for p in ctx.pages
+                                 if p is not self.page and "/chat" in p.url) if sid}
+        sid = self._await_sid(r["claim_timeout"])
+        why = None
+        if not sid:
+            why = "人登上了，但这个新 tab 仍然没认领到 gateway session"
+        elif sid in taken:
+            why = (f"新 tab 与已有 tab 撞同一个 session（{sid}）—— 该环境 multi-tab 没开"
+                   f"（NEXT_PUBLIC_MULTI_TAB_SESSION 是 build-time flag、默认关）")
+        if why:
+            if strict:
+                # 🔴 ⛔ 不 close：现场还要留给人（`_keep_for_human` 仍非空）
+                raise TabSessionUnavailable(why + "，并行会静默串台。退回串行跑。")
+            # auto ⇒ 降级复用已有 tab（**与今天同**，D4 说了这一档一个字不改）
+            self.release_tab_for_human()
+            print(f"[chat_driver] ⚠️ 续跑仍未独占 tab（{why}）—— 降级复用已有 tab")
+            self._close_own_tab()
+            self._own_tab = False
+            chat = [p for p in ctx.pages if "/chat" in p.url]
+            self.page = chat[0] if chat else (ctx.pages[-1] if ctx.pages else ctx.new_page())
+            self._hook_console()
+            self.session_id = self._await_sid(10)
+            self.tab_isolated = False
+            return self
+        self.session_id = sid
+        self.tab_isolated = bool(want_own)
+        # 🔴 **只能在这里清** —— 挪到函数入口会让判据全绿而 tab 被关掉（A16 + M8b）
+        self.release_tab_for_human()
+        return self
+
+    def _login_stop(self, state: str, why: str):
+        """停手交人：留现场 + 抛。⛔ 这条路上不关 tab、不降级、不等满超时。"""
+        url = landed_url(self.page)
+        todo = login_todo(state, why, url)
+        self.keep_tab_for_human(f"{state}：{why or '判不出登录态'}")
+        raise NeedsHumanLogin(state, why, url, todo, self)
+
     def attach(self, *, ziniao, reason=None, own_tab="auto",
                claim_timeout: int = 60) -> "ChatDriver":
         """连上调试端口 Chrome 并选定本 driver 要驱动的 tab。
@@ -636,6 +1072,14 @@ class ChatDriver:
         # ⚠️ 第二个返回值**恒为 `False`**（锁撤了，没有可持有的东西）⇒ 直接丢掉，
         #    **不要再落一个 `self._ziniao_owned`** —— 那个字段是 `close()` 放锁的开关，
         #    留着它等于把锁的接口留在那儿等人接回去。
+        # 🔴 配置闸也在**开浏览器之前**（L17：位置不对等于没有）。放进轮询里的话，
+        #    tab 和 CDP 连接都已经开好了才抛 ⇒ 每次配错漏一个 tab（CEO「24 个 tab」那条）。
+        #    ⚠️ 排在 `acquire_ziniao` **之前**：它没有副作用，而 `acquire_ziniao` 会写 ledger。
+        validate_chat_url(CHAT_URL)
+        if own_tab is not False and claim_timeout < SETTLE_ROUNDS:
+            raise ValueError(
+                f"claim_timeout={claim_timeout} 比 SETTLE_ROUNDS={SETTLE_ROUNDS} 还小 —— "
+                "连续计数到不了阈值，**登录态这道闸一次都不会响**，会静默退回老行为。")
         self._ziniao_key, _ = acquire_ziniao(
             ziniao, reason, what=f"e2e attach own_tab={own_tab}")
         strict = (own_tab is True)
@@ -668,7 +1112,13 @@ class ChatDriver:
         # 捕获前端 console：发送被拒时「傳送失敗」toast 是通用的，真实原因（weekly_limit=本周额度用完 / 积分不足 …）
         # 只在 console 里（[Chat Error] weekly_limit…）。留最近 20 条供 send() 分流，别再把 weekly_limit 误报成 credits。
         self._hook_console()
-        self.session_id = self._await_sid(claim_timeout if want_own else 10)
+        # 续跑要用的现场（spec D5.2）。🔴 `taken` **不存** —— 续跑时必须重拍并排除 self.page。
+        self._resume = {"ctx": ctx, "claim_timeout": claim_timeout,
+                        "strict": strict, "want_own": want_own}
+        # 🔴 **只有 `want_own` 这一档走新循环**；`own_tab=False` 与下面降级之后那次
+        #    一律照旧走 `_await_sid`（spec D2.1，判据 A24 / A29）。
+        self.session_id = (self._await_sid_or_login_stop(claim_timeout) if want_own
+                           else self._await_sid(10))
         if want_own:
             why = None
             if not self.session_id:
@@ -728,6 +1178,22 @@ class ChatDriver:
                 "例：keep_tab_for_human('停在验证码，要店主本人过')")
         self._keep_for_human = reason.strip()
         print(f"[tab] 这一轮**留着不关**（停手交人）：{reason.strip()}", flush=True)
+
+    def release_tab_for_human(self) -> None:
+        """撤销「停手交人」——人已经介入完了，那一格例外不再成立。
+
+        🔴 **这是补缺口，⛔ 不是改判定**：`keep_tab_for_human` / `_close_own_tab` 的判定
+           一个字没动。那个闸原来**只有 set 没有 unset**（全仓只有 `__init__` 与 setter
+           两处赋值），于是「人登录完、接着跑完」的那条路上 tab **永远关不掉** ——
+           正是 CEO 那张「紫鸟 24 个 tab」截图的成因。
+        🔴 CEO 原话自己支持这一步：「除非需要用户**手动介入去点击**，才应该保留」。
+
+        ⚠️ **只许在「认领成功 / 已降级」之后调**。挪到 `wait_for_login` 入口会让判据全绿
+           而 tab 被关掉：超时抛出后 `_keep_for_human` 已是 None ⇒ 调用方的
+           `finally: d.close()` 走到 `_close_own_tab()` 时早退判定不成立
+           ⇒ **把人正在登录的那个 tab 关掉**（判据 A16 + 变异 M8b 钉这一条）。
+        """
+        self._keep_for_human = None
 
     def __enter__(self):
         return self
@@ -1108,6 +1574,194 @@ class ChatDriver:
                     "login_states": [], "session_limit_hits": 0,
                     "session_limit_mentions": 0}
 
+    # ---- 店主把货盘交给我们的那一步（#1095）--------------------------------
+    # 🔴 **这是店主真正走的那条路**：他在鸭嘴兽聊天界面里点那个「＋」挑一个文件。
+    #    命令行那一路（`browser-cli recv-file`，optima-browser-use#382）是另一件事，
+    #    **店主不会去跑它**。所以这条必须在网页这一层固化下来。
+    #
+    # 2026-09-19 真机实测（cn-prod www.yzsgo.com/zh-HK/chat）把这条路拆开了，四件事：
+    #   ① 控件：`input[type=file]`，**全页唯一一个**（整页 input 的 type 直方图就是 `{'file': 1}`），
+    #      `multiple` · `accept=""`（不限类型）· `class="hidden"` 且 `display:none`
+    #      ⇒ **它是隐藏的，只能 `set_input_files`**；那个「＋」按钮
+    #      （`button[aria-label="上傳檔案"]`）点下去开的是系统文件选择器，Playwright 管不着。
+    #   ② 放进去之后前端**立刻**发 `POST https://gw.yzsgo.com/api/user/files`（multipart + Authorization），
+    #      201 的响应体长这样：
+    #        {"uploaded":[{"name":"probe_pool-1789824908371-1.xlsx",
+    #                      "path":"/home/aiuser/attachments/probe_pool-1789824908371-1.xlsx",
+    #                      "size":1742}]}
+    #      🔴 **落点是服务端自己说的，不是我们拼的**；而且**文件名被改过**
+    #      （`<原名>-<毫秒时间戳>-<序号><扩展名>`，客户端生成、序号不可预测）
+    #      ⇒ **拿原文件名去 pod 上 `ls` 是找不到的。**
+    #   ③ 🔴 **附件 chip 是纯客户端状态**：`set_input_files` 之后 UI 立刻长出一张附件卡片
+    #      （`button[aria-label="移除附件"]` 那一块），**它在上传请求回来之前就已经在了**
+    #      ⇒ **chip 只证明「浏览器收下了」，一个字都不说「对方收到了」。**
+    #      ⚠️ `input.files` 同样不能用：React 组件读完就清空，**传成功之后它仍然是 `[]`**。
+    #   ④ 🔴 **附件会累积，`new_conversation()` 不清**（实测：连传两次之后同一个 composer 上
+    #      挂着两张 chip，中间还开过一次新对话）⇒ **下一次 `send()` 会把两份都带过去。**
+    #      所以传之前一般要先 `clear_attachments()`。
+    _UPLOAD_API = "/api/user/files"
+
+    def _attachment_chips(self) -> list:
+        """composer 上现在挂着的**每一张**附件卡片的文字（改名后的文件名 + 人读的大小）。
+        🔴 **只做诊断**——它是客户端状态，不构成「对方收到了」（见 `upload_file` 第 2 对取值）。
+        ⚠️ **返回整张列表，不返回第一张**：附件会累积，只取第一张会在第二次上传之后
+        **原样报出上一次那个文件名** —— 「我刚传的那个」和「上一轮剩下的那个」共用一个输出。"""
+        return self._eval(r"""()=>[...document.querySelectorAll('button[aria-label="移除附件"]')]
+            .map(b=>(((b.parentElement||{}).innerText)||'').trim())""") or []
+
+    def clear_attachments(self) -> int:
+        """把 composer 上挂着的附件全部摘掉，返回摘掉几张。
+        🔴 **传文件之前一般要先调它**：附件会累积而且跨对话存活，不摘的话下一条消息会**多带几份**。"""
+        before = len(self._attachment_chips())
+        for _ in range(before):
+            n = self._eval(r"""()=>{const b=document.querySelector('button[aria-label="移除附件"]');
+                                    if(!b) return 0; b.click(); return 1;}""")
+            if not n:
+                break
+            self.page.wait_for_timeout(300)
+        return before - len(self._attachment_chips())
+
+    def upload_file(self, local_path: str, *, timeout: int = 120, clear_first: bool = True) -> dict:
+        """把**本机一个文件**送进当前对话的输入框（店主点「＋」的那一步）。
+
+        **只做这一件事**：放一个文件进去。不发消息、不管多文件、不断点续传、不同步目录。
+        放完之后照常 `send()` / `send_and_wait()`，附件跟着那条消息一起过去。
+
+        `clear_first=True`（默认）先把 composer 上残留的附件摘干净 —— 见上面第 ④ 条。
+
+        ## 返回：`state` 一个取值扛一件事，**不许合并**
+
+        | `state` | 它说的是 | 它**不**说的是 |
+        |---|---|---|
+        | `local_missing` | 本机这个路径上没有文件 | — |
+        | `no_control` | **界面上没有上传控件**（`input[type=file]` 一个都没有） | — |
+        | `control_dead` | **控件在，但推不动**：`set_input_files` 抛了，而且 chip 也没出现 | — |
+        | `rejected` | **送失败**：上传请求回来了，但不是 2xx（`status` / `error` 里有原话） | — |
+        | `no_receipt` | 🔴 **送出去了，但没拿到回执**（chip 上屏了，等不到那个 POST 的响应，或响应体里没有落点）⇒ **`unknown`** | 🔴 不说它没到 |
+        | `size_mismatch` | 落地了，但**服务端报的字节数和本机对不上** | — |
+        | `landed_not_attached` | 🔴 **字节落地了，但 composer 上没有它那张 chip** ⇒ 文件在 pod 上，**而下一条消息不会带上它** | — |
+        | `landed` | **对方收到了**，落在 `remote_path`，`remote_size` 字节，且 chip 在 | 🔴 **一个字都不说对方读不读得懂它** |
+
+        🔴 **点名要分开的三对取值，逐对说明**（#1095）：
+
+        1. **`no_control`（找不到） vs `control_dead`（找到了但点不动）**
+           前者是「这条路在这个界面上不存在」，**要去找人**；后者是「路在、车没动」，**要去查为什么**。
+           合成一个 `False`，两种会共用同一个输出，而它们指向完全相反的下一步。
+
+        2. **`no_receipt`（文件送出去了） vs `landed`（对方收到了）**
+           chip 上屏、`input.files` 被清空、请求已发出，**全都只证明前者**。
+           🔴 **后者只有服务端那句 2xx + 它自己给的 `path` 才算数。**
+           等不到回执 ⇒ `no_receipt`，**这是 `unknown`，不许当成成功、也不许当成失败**。
+           ⚠️ 还有第三态 `landed_not_attached`：**字节到了，但这条消息带不上它** ——
+           「文件在对面」和「Agent 这一轮看得见它」是两件事。
+
+        3. **`landed`（送到了） vs 「送到了但对方说它读不了」**
+           🔴 **后者本方法答不了，也不许假装答得了。** `landed` 只说「这些字节落在了那个路径上」。
+           「它读不读得出来」要等把消息发出去、让 Agent 去读那份文件之后才知道
+           （`reading-pool-from-upload` 的 `read_pool.py inspect <path>`）。**两件事隔着一次 send。**
+
+        ## 🔴 「它落在哪」
+
+        `landed` / `landed_not_attached` / `size_mismatch` 时 `remote_path` 就是答案，
+        **取自服务端自己的响应体，不是我们拼的**。
+        ⚠️ **文件名会被改**（`<原名>-<毫秒时间戳>-<序号><扩展名>`，序号不可预测）
+        ⇒ 拿原文件名去 pod 上找是找不到的，**要把 `remote_path` 原样交给下游**。
+
+        ## `remote_size` 只到长度这一级
+
+        `remote_size` 是服务端报的字节数，和本机 `os.path.getsize` 对不上就 `size_mismatch`。
+        ⚠️ **字节数相同不等于内容相同** —— 真要逐字节，得在对面把文件读回来算 sha256。
+        **别把本方法说成「逐字节比对过了」。**
+        """
+        out = {"state": None, "local_path": local_path, "local_size": None,
+               "remote_path": None, "remote_size": None,
+               "chips_before": None, "chips_after": None, "chip": None,
+               "status": None, "error": None}
+
+        if not os.path.isfile(local_path):
+            out["state"] = "local_missing"
+            out["error"] = f"本机没有这个文件：{local_path}"
+            return out
+        out["local_size"] = os.path.getsize(local_path)
+
+        # ① 控件在不在 —— 这一问必须在碰它之前答完，否则「没有控件」会被下面的异常吞成 control_dead
+        n = self._eval(r"""()=>document.querySelectorAll('input[type="file"]').length""")
+        if not n:
+            out["state"] = "no_control"
+            out["error"] = ("这个页面上没有 input[type=file]。"
+                            "⚠️ 先确认 driver 停在对话页（chat）上。")
+            return out
+
+        if clear_first:
+            self.clear_attachments()
+        out["chips_before"] = self._attachment_chips()
+
+        def _is_upload_resp(r):
+            return self._UPLOAD_API in r.url and r.request.method == "POST"
+
+        # ② 推它 —— expect_response 必须**先架好再放文件**：上传请求是 set_input_files 当场发的，
+        #    架晚了就错过，而「我架晚了」和「它压根没发」输出一样。
+        resp = None
+        try:
+            with self.page.expect_response(_is_upload_resp, timeout=timeout * 1000) as ev:
+                self.page.locator('input[type="file"]').first.set_input_files(local_path)
+            resp = ev.value
+        except Exception as e:
+            out["chips_after"] = self._attachment_chips()
+            if len(out["chips_after"]) > len(out["chips_before"]):
+                out["state"] = "no_receipt"   # 🔴 unknown：上屏了，回执没等到
+                out["error"] = f"附件已上屏但 {timeout}s 内没等到 {self._UPLOAD_API} 的响应：{e}"
+            else:
+                out["state"] = "control_dead"
+                out["error"] = f"控件在，但文件没进去（chip 也没多出来）：{e}"
+            return out
+
+        out["chips_after"] = self._attachment_chips()
+        out["status"] = resp.status
+        if resp.status < 200 or resp.status >= 300:
+            body = ""
+            try:
+                body = resp.text()[:500]
+            except Exception:
+                pass
+            out["state"] = "rejected"
+            out["error"] = f"{self._UPLOAD_API} 回 {resp.status}：{body}"
+            return out
+
+        try:
+            data = resp.json()
+        except Exception as e:
+            # 2xx 但拿不到落点 —— 不许当成 landed（`landed` 的定义里含「落在哪」）
+            out["state"] = "no_receipt"
+            out["error"] = f"上传回了 {resp.status}，但响应体解析不了、拿不到落点：{e}"
+            return out
+
+        up = (data or {}).get("uploaded") or []
+        if not up or not up[0].get("path"):
+            out["state"] = "no_receipt"
+            out["error"] = (f"上传回了 {resp.status}，但响应体里没有 uploaded[0].path："
+                            f"{str(data)[:300]}")
+            return out
+
+        out["remote_path"] = up[0]["path"]
+        out["remote_size"] = up[0].get("size")
+        base = os.path.basename(out["remote_path"])
+        out["chip"] = next((c for c in out["chips_after"] if base in c), None)
+
+        if out["remote_size"] is not None and out["remote_size"] != out["local_size"]:
+            out["state"] = "size_mismatch"
+            out["error"] = (f"服务端报 {out['remote_size']} 字节，本机是 {out['local_size']} 字节"
+                            f"（{out['remote_path']}）")
+            return out
+        if out["chip"] is None:
+            # 字节到了 pod，但 composer 不认它 ⇒ 这条消息带不上它。**和 landed 不是一回事。**
+            out["state"] = "landed_not_attached"
+            out["error"] = (f"字节已落在 {out['remote_path']}，但 composer 上没有它那张 chip"
+                            f"（现有 chip：{out['chips_after']}）⇒ 下一条消息不会带上它。")
+            return out
+        out["state"] = "landed"
+        return out
+
     def send(self, msg: str, *, ziniao=_INHERIT) -> bool:
         """发消息，并**验证真的发出去了**（状态离开 idle → generating/waiting，或输入框清空+消息上屏）。
         发不出去（仍 idle 且没上屏）返回 False —— 不再「填了字就以为发出去了」。
@@ -1314,6 +1968,9 @@ class ChatDriver:
             const bs=[...document.querySelectorAll('button[aria-expanded]')].filter(e=>/個工具|个工具/.test(e.textContent||'')&&!e.hasAttribute('data-old'));
             const last=bs[bs.length-1]; if(!last) return [];
             const panel=last.parentElement;   // 限定到当轮面板
+            // ⚠️ **这道筛选把短名工具每行数了两遍**（#2104，2026-09-19 核实：447 份日志里
+            //    441 份符合「`名字长度+7 < 12` ⇒ 数两遍，否则一遍」这条公式）。
+            //    **本次（#2091）一个字没改它** —— 改它会动到所有历史日志的工具计数，单独一笔做。
             const ops=[...panel.querySelectorAll('div')].filter(e=>e.querySelectorAll('button').length===2 && /參數|参数/.test(e.textContent) && /結果|结果/.test(e.textContent) && e.textContent.trim().length<12);
             const out=[];
             for(const op of ops){
@@ -1324,6 +1981,24 @@ class ChatDriver:
             }
             return out;
         }""") or []
+        # 🔴 **新形态的 `load_skill` 不在这个面板里**（#2091）：09-19 改版后它渲染成
+        #    `使用技能：<slug>` + `已完成` 两行纯文本，排在聚合头之前、**没有兩個按钮、
+        #    也没有「參數/結果」两个词** ⇒ 上面那个 `ops` 筛选把整行滤掉了，
+        #    于是 09-19 起所有轨迹里**一个 `load_skill` 都没有**（实证：09-19 三轮全是纯 `bash`）。
+        #    ⇒ 单独扫整页文本补回来。**只补新形态**：旧形态本来就在 `ops` 里读到了，
+        #    再补一次会把同一次加载数成两遍。
+        # ⚠️ **作用域说清楚**：`ops` 只读**最后一个**聚合面板（当轮），而新形态**不在面板里**
+        #    ⇒ 这一段只能扫整页 = **整段对话**（每个用例都 `new_conversation` 隔离，
+        #    但一个用例里若有多轮 AskUserQuestion 往返，早先那几轮的「使用技能」也会被算进来）。
+        #    🔴 **这是个作用域不一致，如实写在这儿**：它只影响 `count` / `names` / `repeats`
+        #    这三个**印出来给人看**的数，**不进任何判定**（`failures` 只数非「已完成」状态）。
+        #    `must_call` 那一维本来就是整页口径（`loaded_skills` 的 `<pre>` 扫描从第一天就是全页），
+        #    所以这一改**没有动它的语义**。工具计数本身另有一笔（#2104），到那时一起收口。
+        page_text = self._eval(r"""()=>document.body.innerText||''""") or ""
+        _marks = parse_skill_loads(page_text)
+        if _marks["slugs"]:
+            tools = [{"name": "load_skill", "status": "已完成", "skill": s_}
+                     for s_ in _marks["slugs"]] + tools
         names = [t["name"] for t in tools]
         failures = [t for t in tools if t.get("status") not in ("已完成", "进行中", "進行中")]
         # 反复：同名工具出现次数（>1 提示可能有重试/多步）
@@ -1498,11 +2173,35 @@ class ChatDriver:
             }
             return [...new Set(out)];
         }"""
+        # 🔴 **新形态（#2091）**：09-19 改版后 `load_skill` 渲染成两行纯文本
+        #    `使用技能：<slug>` + `已完成`，**没有參數面板**、也**不在聚合面板里**。
+        #    先把整页文本读一遍，两种形态一起判 —— `page` 里读到的 slug 和 `<pre>` 里读到的
+        #    **合并**，不是二选一（一轮里两种形态可能同时出现：旧的工具行 + 新的技能行）。
+        page_text = self._eval(r"""()=>document.body.innerText||''""") or ""
+        marks = parse_skill_loads(page_text)
         n_calls = self._eval(r"""()=>[...document.querySelectorAll('span,div')]
-            .filter(e=>(e.textContent||'').trim()==='load_skill' && e.getBoundingClientRect().width>0).length""")
+            .filter(e=>(e.textContent||'').trim()==='load_skill' && e.getBoundingClientRect().width>0).length""") or 0
         got = self._eval(READ) or []
+
+        def _finish(pre_slugs):
+            """合并两条信号源，并**把「页面上一共有几个加载节点」留痕**（#2091）。
+
+            🔴 `nodes == 0` 是「**我们一个加载节点都没读到**」—— 它和
+               「读到了节点、但期望那个不在 slugs 里」**必须分开**，否则一次抓取失败
+               长得跟一次真的没调一模一样（这条 issue 本身）。
+            合并口径走 `build_must_call` —— **只有一份**，测试用历史日志重判走的是同一份。
+            """
+            probe = build_must_call(None, pre_slugs, marks)
+            probe["pre_slugs"] = list(pre_slugs)
+            probe["text_slugs"] = list(marks["slugs"])
+            probe["slugs"] = probe["loaded"]
+            probe["nodes"] = probe["load_nodes"]
+            probe["shapes"] = probe["load_shapes"]
+            self._skill_load_probe = probe
+            return probe["loaded"]
+
         if not n_calls or len(got) >= n_calls:
-            return got          # 面板已经是展开的（或本轮压根没调 load_skill）—— 别去 toggle 它
+            return _finish(got)  # 面板已经是展开的（或本轮压根没调 load_skill）—— 别去 toggle 它
         # 还没展开：点一次「參數」再读
         CLICK = r"""()=>{
             const nodes=[...document.querySelectorAll('span,div')].filter(e=>(e.textContent||'').trim()==='load_skill' && e.getBoundingClientRect().width>0);
@@ -1520,15 +2219,25 @@ class ChatDriver:
             got = self._eval(READ) or []
             if len(got) >= n_calls:
                 break
-        return got
+        return _finish(got)
 
     def verify_must_call(self, expected) -> dict:
         """验证当轮是否加载了期望 skill。expected 可为单个 slug 或 slug 列表（**多选之一**——
         有些任务合理地会路由到几个 skill 之一，如「只读核价」→ verifying 或 listing 都算对）。
-        返回 {expected, loaded, ok}。"""
-        loaded = self.loaded_skills()
-        exp = expected if isinstance(expected, list) else [expected]
-        return {"expected": expected, "loaded": loaded, "ok": any(e in loaded for e in exp)}
+        返回 `{expected, loaded, ok, load_nodes, load_shapes}` —— 🔴 `load_nodes` 是 #2091 加的：
+        **页面上一共读到几个加载节点**，判定方靠它分「它没调」和「我们没读到」。"""
+        self.loaded_skills()          # 读两条信号源，结果落在 `_skill_load_probe`
+        probe = getattr(self, "_skill_load_probe", None) or {}
+        # 🔴 `load_nodes`（#2091）：**页面上一共读到几个「加载 skill」的节点**。
+        #    `0` ⇒ 我们**什么都没读到**（面板改版 / 抓取坏了都长这样），判定方必须走
+        #    「没读到」那一档，**不许判成「没加载」** —— 后者会把人指去改 registry / 改触发词，
+        #    而真正坏的是抓取。`None` = 这份 `mc` 不是本 driver 产的（老数据），同样不许当 0。
+        out = build_must_call(expected,
+                              probe.get("pre_slugs") or [],
+                              {"slugs": probe.get("text_slugs") or [],
+                               "nodes": probe.get("nodes") or 0,
+                               "shapes": probe.get("shapes") or []})
+        return out
 
     # ── 技能市场 ──
     def open_market(self) -> None:
