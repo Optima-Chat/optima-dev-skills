@@ -3,6 +3,7 @@
 judge 由 Claude 用 judge_workflow.js 跑；提 issue 由 Claude 依 SKILL.md 用 gh 做。用户不敲本脚本。"""
 import argparse, json, os, sys
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 # 鸭嘴兽 cn-prod 前端的唯一规范域名（dev-skills#111）：2026-09-24 起 www.yzsgo.com / 裸域
 # 301 到 app.yzsgo.com（optima-terraform#467/#468），登录态存在 localStorage、按 origin 隔离。
@@ -109,7 +110,8 @@ def main():
         ziniao=None, reason="yzsgo-e2e 驱动鸭嘴兽网页对话做端到端测试，本脚本不绑定任何紫鸟 profile")
     session_id = d.session_id      # attach 后立刻取：放在 try 里的话，中途抛异常会留下未绑定名
     if not d.tab_isolated:
-        print("[warn] 未能独占 tab（该环境 multi-tab 未开，或调试 Chrome 在 app.yzsgo.com 上没登录——"
+        host = urlparse(chat_driver.CHAT_URL).hostname
+        print(f"[warn] 未能独占 tab（该环境 multi-tab 未开，或调试 Chrome 在 {host} 上没登录——"
               "见 SKILL.md 前置「重新登录」）—— wire 定位退回 (时间,首句) 启发式")
     try:
         d.new_conversation()

@@ -29,7 +29,7 @@ store-skills#2567（merge `a5eadfbe`）改了驱动缺省。本仓**这次没有
 - 届时的收尾清单：
   1. 上方台账 `chat_driver.py` 一行改成新 commit 与日期，照例写一节「这次同步带了什么」；
   2. 去掉 `run_e2e.py` 里的 `setdefault` 覆盖与 `DEFAULT_CHAT_URL`（驱动缺省已是 app），`test_canonical_host.py` 改为直接断言驱动缺省（上游 A34 同款，桩掉 playwright 即可）；
-  3. 删掉 `SKILL.md` 里两处过渡说明：前置里「驱动自己的缺省仍写着 www」与「忘了重登时看到的…」（登录闸会给出明确提示），「自己写脚本调 `chat_driver`」那条里的「并在 import 驱动前设 `YZSGO_CHAT_URL`」；以及「前后端对照」里的「已知盲区」、「vendor 同步纪律」里「漂移是有意保留的」；
+  3. 处理 `SKILL.md` 里以下过渡说明（删除，另有说明的除外）：前置里「驱动自己的缺省仍写着 www」与「忘了重登时看到的…」（登录闸会给出明确提示），「自己写脚本调 `chat_driver`」那条里的「并在 import 驱动前设 `YZSGO_CHAT_URL`」；「vendor 同步纪律」里「漂移是有意保留的」；「前后端对照」里的「已知盲区」**不是删，而是改写**成新驱动的问题（按整页抓 `使用技能：`，多轮会串）；`run_e2e.py` 警告里的「或没登录」建议保留（上游登录闸在 `unknown` 时不抛）；
   4. 删掉本节「⏳ 待办」，关闭 dev-skills#111。
 
 ## 2026-09-17 这次同步带了什么

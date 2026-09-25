@@ -31,7 +31,7 @@ allowed-tools: ["Bash", "Read", "Write", "Agent", "Workflow"]
 > 2026-09-24 起 www 和裸域都 301 到唯一规范域名 `app.yzsgo.com`（optima-terraform#467/#468）。登录态存在 localStorage、按 origin 隔离，www 上的登录态带不到 app。
 > `run_e2e.py` 会把 `YZSGO_CHAT_URL` 缺省设为 `https://app.yzsgo.com/zh-HK/chat`（显式设过的照旧）；vendored 的 `chat_driver.py` 自己的缺省仍写着 www（逐字同步，等上游真机验收后再整体同步，见 `SYNC.md`）。
 > **忘了重登时看到的不是「未登录」**（这版驱动没有登录闸，preflight 的 `chrome-9222` 也只查端口）：attach 等约 60s 后打出 `没认领到 gateway session（没登录？…）`，
-> 接着 `run_e2e` 打 `未能独占 tab …`，后面发消息可能直接报错。⇒ **先去调试 Chrome 里打开 `https://app.yzsgo.com` 看是不是已登录**，不是 multi-tab 的问题。
+> 接着 `run_e2e` 打 `未能独占 tab …`，之后这一轮多半记成 `state=send_failed`。⇒ **先去调试 Chrome 里打开 `https://app.yzsgo.com` 看是不是已登录**，不是 multi-tab 的问题。
 
 ## 并发（2026-09-09 起）：本 skill 自己开 tab
 
