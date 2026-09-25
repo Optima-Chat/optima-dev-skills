@@ -1,6 +1,6 @@
 ---
 name: "yzsgo-e2e"
-description: "当用户请求端到端测试鸭嘴兽、e2e 测 yzsgo 对话、用浏览器真机测鸭嘴兽整个流程、驱动对话再拉 wire 核对前后端、测网关/agent 端到端有没有问题时，使用此技能。playwright attach 调试端口 Chrome 驱 www.yzsgo.com 对话 → 拉 gateway wire → conversation-iq 语义管线判定 → confirmed 自动提 issue。"
+description: "当用户请求端到端测试鸭嘴兽、e2e 测 yzsgo 对话、用浏览器真机测鸭嘴兽整个流程、驱动对话再拉 wire 核对前后端、测网关/agent 端到端有没有问题时，使用此技能。playwright attach 调试端口 Chrome 驱 app.yzsgo.com 对话 → 拉 gateway wire → conversation-iq 语义管线判定 → confirmed 自动提 issue。"
 allowed-tools: ["Bash", "Read", "Write", "Agent", "Workflow"]
 ---
 
@@ -27,6 +27,10 @@ allowed-tools: ["Bash", "Read", "Write", "Agent", "Workflow"]
    - 每个 ✋ 缺项：引导用户——`chrome-9222`：`python3 $S/bootstrap.py launch-chrome` 起窗口、让用户**手动登测试账号**（登一次长期免登）；`buildbox-pw`：让用户把口令放 `~/.buildbox_pw`（内部拉 wire 用，向团队要）；`test-user-id`：让用户登录 Optima（run_e2e 自动从 `~/.optima/token.json` 读 userId）。
    - 补完 `python3 $S/preflight.py <env>` 复检，直到全 ✅ 才进四段。
 
+> 🔴 **以前在 `www.yzsgo.com` 上登录过的调试 Chrome，要在 `app.yzsgo.com` 上重新登录一次。**
+> 2026-09-24 起 www 和裸域都 301 到唯一规范域名 `app.yzsgo.com`（optima-terraform#467/#468）。登录态存在 localStorage、按 origin 隔离，www 上的登录态带不到 app。
+> `run_e2e.py` 会把 `YZSGO_CHAT_URL` 缺省设为 `https://app.yzsgo.com/zh-HK/chat`（显式设过的照旧）；vendored 的 `chat_driver.py` 自己的缺省仍写着 www（逐字同步，等上游真机验收后再整体同步，见 `SYNC.md`）。
+
 ## 并发（2026-09-09 起）：本 skill 自己开 tab
 
 鸭嘴兽支持并发任务了 —— **一个浏览器 tab = 一个独立 gateway session**（一 tab 一 session，
@@ -44,7 +48,7 @@ cn-prod 已验开、cn-stage 未验）时 `"auto"` 档自己会降级复用已�
 
 🔴 **`attach()` 必须声明紫鸟 profile**（2026-09-17 同步上游 #611 起）：`ziniao` 是必填关键字参数，
 漏传直接 `TypeError`；`ziniao=None` 必须带非空 `reason`，否则 `ValueError`。`run_e2e.py` 传的是
-`ziniao=None` + 理由，因为本 skill 测对话链路、不绑定任何店。**自己写脚本调 `chat_driver` 时照此声明。**
+`ziniao=None` + 理由，因为本 skill 测对话链路、不绑定任何店。**自己写脚本调 `chat_driver` 时照此声明，并在 import 驱动前设 `YZSGO_CHAT_URL=https://app.yzsgo.com/zh-HK/chat`**（驱动缺省仍是 www，见上方前置）。
 消息正文里出现 `--ziniao-profile <id>` 而声明是 `None`，`send()` 会抛 `ZiniaoDeclarationConflict` 拒发。
 
 🔴 **绝不能让两个 driver 共用一个 tab**：实证会**静默串台**——两个线程写同一个 textarea，

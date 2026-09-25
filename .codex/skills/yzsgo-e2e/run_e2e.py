@@ -4,6 +4,15 @@ judge 由 Claude 用 judge_workflow.js 跑；提 issue 由 Claude 依 SKILL.md �
 import argparse, json, os, sys
 from datetime import datetime, timezone
 
+# 鸭嘴兽 cn-prod 前端的唯一规范域名（dev-skills#111）：2026-09-24 起 www.yzsgo.com / 裸域
+# 301 到 app.yzsgo.com（optima-terraform#467/#468），登录态存在 localStorage、按 origin 隔离。
+# vendored 的 chat_driver.py 仍停在上游 010c578a（逐字，不在本仓改），它的缺省 CHAT_URL 还是 www
+# ⇒ 这里在 import 驱动**之前**用 YZSGO_CHAT_URL 覆盖缺省（驱动在 import 时读它）。
+# setdefault：显式设过 YZSGO_CHAT_URL（比如指 cn-stage）的照旧生效。
+# `/zh-HK` 保留：技能市场按繁体文案认控件，落到别的语种会误判。
+# 上游已在 optima-store-skills#2567 改了驱动缺省；全量同步等 store-skills#2558 真机验收后再做（#111）。
+DEFAULT_CHAT_URL = "https://app.yzsgo.com/zh-HK/chat"
+
 def render_report(result: dict) -> str:
     L = [f"# yzsgo-e2e 报告 · {result['env']} · {result['started_ts']}", ""]
     if result.get("blocked"):
@@ -78,6 +87,7 @@ def main():
         print("[warn] cn-stage 的 wire 取法未验证（spec §8 待核实）；仅 cn-prod 全链路已打通。", file=sys.stderr)
 
     os.makedirs(args.out, exist_ok=True)
+    os.environ.setdefault("YZSGO_CHAT_URL", DEFAULT_CHAT_URL)   # 必须在 import chat_driver 之前
     import preflight, chat_driver, pull_wire, prep_conversation
     pf = preflight.summarize_preflight(preflight.probe(args.env))
     if not pf["ok"]:
