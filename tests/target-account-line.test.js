@@ -32,9 +32,9 @@ test('免费档：active=false 如实显示', () => {
   assert.match(line, /手机=\(无\) email=a@b\.com 会员=free\(active=false,status=active\)$/);
 });
 
-test('没有任何订阅：显示「(无订阅)」而不是 null', () => {
+test('没有生效订阅（含已过期 / 已取消）：显示「(无生效订阅)」而不是 null', () => {
   const line = formatTargetAccountLine(USER, { phone: null, email: null }, NONE);
-  assert.match(line, /会员=\(无订阅\)$/);
+  assert.match(line, /会员=\(无生效订阅\)$/);
 });
 
 test('billing 读取失败：确认行照常打印、写明失败原因', () => {
@@ -128,7 +128,7 @@ test('接线：user-auth 与 billing 两个读取并行发起（不串行多等�
     acct: async () => {
       const winner = await Promise.race([
         billingCalled.then(() => 'parallel'),
-        new Promise((resolve) => setTimeout(() => resolve('serial'), 1000)),
+        new Promise((resolve) => setTimeout(() => resolve('serial'), 1000).unref()),
       ]);
       assert.equal(winner, 'parallel');
       return { user_id: USER, phone: '18898654855', email: null };

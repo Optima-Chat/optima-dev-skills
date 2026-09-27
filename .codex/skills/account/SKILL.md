@@ -8,7 +8,7 @@ allowed-tools: ["Bash"]
 
 以用户为中心的运营 admin 操作：查状态、禁用、恢复。CLI：`optima-account`。
 
-标识符 `<email|phone|userId>`：**cn-prod / cn-stage 用户多为手机号注册**，三种都支持；AWS stage/prod 仅 email（经 RDS SSH 隧道解析）。执行前都会打印 `🎯 目标账号` 反查回显，防止发错账号。cn 的回显末尾带 `会员=<档位>(active=…,status=…)`，读自 billing membership-status（user-auth 的 `current_plan` 已不随订阅同步，不再显示，#117）；没有任何订阅显示 `会员=(无订阅)`；读不到（含 8 秒超时）显示 `会员=(读取失败: …)`，不影响后续操作。
+标识符 `<email|phone|userId>`：**cn-prod / cn-stage 用户多为手机号注册**，三种都支持；AWS stage/prod 仅 email（经 RDS SSH 隧道解析）。执行前都会打印 `🎯 目标账号` 反查回显，防止发错账号。cn 的回显末尾带 `会员=<档位>(active=…,status=…)`，读自 billing membership-status（user-auth 的 `current_plan` 已不随订阅同步，不再显示，#117）；没有生效订阅（含已过期 / 已取消 / past_due）显示 `会员=(无生效订阅)`；读不到显示 `会员=(读取失败: …)`（单次 8 秒超时，billing 回 5xx 会重试一次，最坏约多等 16 秒），不影响后续操作。
 
 ## 执行方式
 

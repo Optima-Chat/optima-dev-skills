@@ -5,7 +5,7 @@ import { callBilling } from './billing-http';
 
 export interface MembershipStatus {
   active: boolean; // plan.tierRank > 0 且订阅 active/trialing（free / trial 恒 false）
-  planId: string | null; // 最高档的有效订阅；无订阅时为 null
+  planId: string | null; // 最高档的生效订阅（active/trialing 且未过期）；没有生效订阅时为 null（含已过期 / 已取消 / past_due）
   status: string | null;
 }
 
@@ -40,7 +40,7 @@ export async function readMembership(fetcher: () => Promise<MembershipStatus>): 
 
 function formatMembership(m: MembershipRead): string {
   if (!m.ok) return `(读取失败: ${m.error})`;
-  if (!m.value.planId) return '(无订阅)';
+  if (!m.value.planId) return '(无生效订阅)';
   return `${m.value.planId}(active=${m.value.active},status=${m.value.status})`;
 }
 
