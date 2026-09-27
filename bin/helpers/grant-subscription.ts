@@ -12,6 +12,7 @@ import {
   validateEnvCnProd,
 } from './billing-http';
 import { operatorActorId } from './operator';
+import { fetchMembershipStatus, formatTargetAccountLine, readMembership, type MembershipRead } from './membership';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -143,6 +144,8 @@ export async function resolveTargetUser(
   userId: string;
   kind: 'email' | 'phone' | 'userId';
   identity: { phone: string | null; email: string | null };
+  /** cn 分支才有：确认行已读过的 billing 会员状态，供调用方复用（account status）。 */
+  membership?: MembershipRead;
 }> {
   const kind = classifyIdentifier(identifier);
   assertAwsEmailOnly(env, kind);
@@ -161,17 +164,17 @@ export async function resolveTargetUser(
 
     // Reverse-verify: fetch and loudly print the target account identity
     // before any mutation, so a wrong userId is caught by eye (gateway#923).
+    // 会员档位读 billing（#117）——user-auth 的旧 plan 字段已不同步，别再显示它。
     const acct = await getUserById(env, userId);
-    console.log(
-      `🎯 目标账号: userId=${userId} 手机=${acct.phone || '(无)'} email=${acct.email || '(无)'} 当前plan=${acct.current_plan || '?'}`,
-    );
+    const membership = await readMembership(() => fetchMembershipStatus(env, userId));
+    console.log(formatTargetAccountLine(userId, { phone: acct.phone, email: acct.email }, membership));
 
     // Hard assertion: a phone-input grant must land on an account whose phone
     // matches. Runs BEFORE the caller's mutation — a mismatch aborts.
     if (kind === 'phone') {
       assertPhoneMatch(identifier, acct.phone);
     }
-    return { userId, kind, identity: { phone: acct.phone, email: acct.email } };
+    return { userId, kind, identity: { phone: acct.phone, email: acct.email }, membership };
   }
 
   // AWS (stage/prod): email-only, resolved via the RDS SSH tunnel. No internal

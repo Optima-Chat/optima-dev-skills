@@ -456,13 +456,16 @@ export async function resolveUserIdByPhone(env: string, phone: string): Promise<
 /**
  * Fetch a user's identity by id via user-auth's internal endpoint
  * (GET /api/v1/internal/users/{userId}). Used to reverse-verify the target
- * account before granting — prints phone/email/current_plan so the operator
- * can confirm they're hitting the right account (gateway#923).
+ * account before granting — prints phone/email so the operator can confirm
+ * they're hitting the right account (gateway#923). The response also carries
+ * user-auth's legacy `current_plan`, which is NOT synced with billing
+ * subscriptions — deliberately not typed/read; membership comes from billing
+ * membership-status (#117, see membership.ts).
  */
 export async function getUserById(
   env: string,
   userId: string,
-): Promise<{ user_id: string; phone: string | null; email: string | null; current_plan?: string }> {
+): Promise<{ user_id: string; phone: string | null; email: string | null }> {
   const token = getServiceToken(env);
   const authUrl = USER_AUTH_URLS[env];
   if (!authUrl) throw new Error(`Unknown env: ${env}`);
@@ -478,7 +481,7 @@ export async function getUserById(
   if (!res.ok) {
     throw new Error(formatServiceError(res.status, res.statusText, text));
   }
-  let parsed: { user_id: string; phone: string | null; email: string | null; current_plan?: string };
+  let parsed: { user_id: string; phone: string | null; email: string | null };
   try {
     parsed = JSON.parse(text);
   } catch {
