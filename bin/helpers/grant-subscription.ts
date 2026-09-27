@@ -165,8 +165,11 @@ export async function resolveTargetUser(
     // Reverse-verify: fetch and loudly print the target account identity
     // before any mutation, so a wrong userId is caught by eye (gateway#923).
     // 会员档位读 billing（#117）——user-auth 的旧 plan 字段已不同步，别再显示它。
-    const acct = await getUserById(env, userId);
-    const membership = await readMembership(() => fetchMembershipStatus(env, userId));
+    // 两个读取互不依赖，并行发起。
+    const [acct, membership] = await Promise.all([
+      getUserById(env, userId),
+      readMembership(() => fetchMembershipStatus(env, userId)),
+    ]);
     console.log(formatTargetAccountLine(userId, { phone: acct.phone, email: acct.email }, membership));
 
     // Hard assertion: a phone-input grant must land on an account whose phone

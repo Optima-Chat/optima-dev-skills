@@ -11,11 +11,17 @@ export interface MembershipStatus {
 
 export type MembershipRead = { ok: true; value: MembershipStatus } | { ok: false; error: string };
 
+// 确认行现在出现在 ban/unban 等原本不经 billing 的命令里：billing 卡住时最多多等这么久
+// （5xx 重试时每次尝试各自计时）。
+export const MEMBERSHIP_TIMEOUT_MS = 8000;
+
 export async function fetchMembershipStatus(env: string, userId: string): Promise<MembershipStatus> {
   const { body } = await callBilling<MembershipStatus>(
     env,
     'GET',
     `/api/internal/users/${encodeURIComponent(userId)}/membership-status`,
+    undefined,
+    { timeoutMs: MEMBERSHIP_TIMEOUT_MS },
   );
   return body;
 }
@@ -25,7 +31,10 @@ export async function readMembership(fetcher: () => Promise<MembershipStatus>): 
   try {
     return { ok: true, value: await fetcher() };
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    // formatServiceError 的消息是「❌ Error [5xx] …\n   Response body …」——只留首行、去掉 ❌，
+    // 确认行保持单行，也不让人误读成「操作失败」。
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: msg.split('\n')[0].replace(/^❌\s*/, '').trim() };
   }
 }
 
