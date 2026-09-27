@@ -9,6 +9,7 @@
 import { resolveTargetUser } from './grant-subscription';
 import { callBilling, callUserAuthAsAdmin, validateEnvCnProd } from './billing-http';
 import { confirmIfProd } from './confirm-prompt';
+import { fetchMembershipStatus, formatSubscriptionLine, readMembership } from './membership';
 
 interface CommonArgs {
   identifier: string;
@@ -37,18 +38,12 @@ function parseArgs(argv: string[], opts: { reason?: boolean } = {}): CommonArgs 
 
 async function runStatus(argv: string[]): Promise<void> {
   const { identifier, env } = parseArgs(argv);
-  const { userId, identity } = await resolveTargetUser(env, identifier);
+  const { userId, identity, membership } = await resolveTargetUser(env, identifier);
 
-  // 订阅（membership-status，M2M；路径前缀 /api/internal 经 billing base URL）
-  let sub = '(读取失败)';
-  try {
-    const { body } = await callBilling<{ active: boolean; planId: string; status: string }>(
-      env, 'GET', `/api/internal/users/${encodeURIComponent(userId)}/membership-status`,
-    );
-    sub = `active=${body.active} plan=${body.planId} status=${body.status}`;
-  } catch (e) {
-    sub = `(读取失败: ${(e as Error).message})`;
-  }
+  // 订阅（membership-status，M2M）：cn 分支的确认行已经读过，直接复用；AWS 分支现读。
+  const sub = formatSubscriptionLine(
+    membership ?? (await readMembership(() => fetchMembershipStatus(env, userId))),
+  );
 
   // 权益（admin/entitlements，M2M）
   let ents = '(读取失败)';

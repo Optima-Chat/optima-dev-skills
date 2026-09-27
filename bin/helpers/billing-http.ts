@@ -215,6 +215,8 @@ export interface ServiceResponse<T> {
  * Authenticated call to an Optima service (billing or skills — same dev-skills
  * M2M token works for both). Returns `{status, body}` on 2xx; throws Error with
  * formatted message on non-2xx. Single retry on 5xx (no backoff — admin CLI).
+ * `opts.timeoutMs`（可选，每次尝试各自计时）：超时即中止请求并抛 TimeoutError——
+ * 仅用 Promise.race 不够，挂着的 fetch 会让进程在命令结束后仍等到 Node 默认超时才退出。
  */
 async function callService<T>(
   baseUrl: string,
@@ -222,6 +224,7 @@ async function callService<T>(
   method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   path: string,
   body?: object,
+  opts?: { timeoutMs?: number },
 ): Promise<ServiceResponse<T>> {
   const url = `${baseUrl}${path}`;
   const token = getServiceToken(env);
@@ -233,6 +236,7 @@ async function callService<T>(
       'Content-Type': 'application/json',
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal: opts?.timeoutMs !== undefined ? AbortSignal.timeout(opts.timeoutMs) : undefined,
   });
 
   let res = await doFetch();
@@ -260,8 +264,9 @@ export async function callBilling<T = unknown>(
   method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   path: string,
   body?: object,
+  opts?: { timeoutMs?: number },
 ): Promise<ServiceResponse<T>> {
-  return callService<T>(getBillingUrl(env), env, method, path, body);
+  return callService<T>(getBillingUrl(env), env, method, path, body, opts);
 }
 
 export async function callSkills<T = unknown>(
@@ -456,13 +461,16 @@ export async function resolveUserIdByPhone(env: string, phone: string): Promise<
 /**
  * Fetch a user's identity by id via user-auth's internal endpoint
  * (GET /api/v1/internal/users/{userId}). Used to reverse-verify the target
- * account before granting — prints phone/email/current_plan so the operator
- * can confirm they're hitting the right account (gateway#923).
+ * account before granting — prints phone/email so the operator can confirm
+ * they're hitting the right account (gateway#923). The response also carries
+ * user-auth's legacy `current_plan`, which is NOT synced with billing
+ * subscriptions — deliberately not typed/read; membership comes from billing
+ * membership-status (#117, see membership.ts).
  */
 export async function getUserById(
   env: string,
   userId: string,
-): Promise<{ user_id: string; phone: string | null; email: string | null; current_plan?: string }> {
+): Promise<{ user_id: string; phone: string | null; email: string | null }> {
   const token = getServiceToken(env);
   const authUrl = USER_AUTH_URLS[env];
   if (!authUrl) throw new Error(`Unknown env: ${env}`);
@@ -478,7 +486,7 @@ export async function getUserById(
   if (!res.ok) {
     throw new Error(formatServiceError(res.status, res.statusText, text));
   }
-  let parsed: { user_id: string; phone: string | null; email: string | null; current_plan?: string };
+  let parsed: { user_id: string; phone: string | null; email: string | null };
   try {
     parsed = JSON.parse(text);
   } catch {
