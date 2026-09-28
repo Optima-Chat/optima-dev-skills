@@ -7,7 +7,8 @@
  *
  * 做四件事(每件都是踩过的坑):
  *   1. 触发服务仓 Codeup mirror 同步并等目标分支追平 GitHub —— mirror 不新鲜=构建旧代码。
- *      GitHub token 用 `gh auth token`(需本机 gh 已登录)。
+ *      GitHub 凭证用只读 GitHub App 现换的令牌(只含本仓、1 小时过期,tf#452),不再把本机 gh 登录令牌交给 Codeup;
+ *      私钥 / APP_ID 取自 CODEUP_MIRROR_APP_* 环境变量或 1P(见 github-app-cred.ts)。
  *   2. StartPipelineRun;--branch 时带 runningBranchs 覆盖服务仓 source 分支。
  *   3. 轮询到终态,给出云效 run 链接。
  *   4. SUCCESS 后校验 SAE ImageUrl tag == 目标分支 HEAD short-sha(防"流水线绿但没部上");
@@ -27,12 +28,14 @@
  *       # 无任何审批任务(aliyun devops GetPipeline 查 pipelineConfig.flow 可复核)。
  *       # ⇒ 唯一的决策点是敲下这条命令之前。
  *
- * 前置: aliyun CLI(profile 默认 aliyun-optima,可用 OPTIMA_ALIYUN_PROFILE 覆盖)+ gh 已登录。
+ * 前置: aliyun CLI(profile 默认 aliyun-optima,可用 OPTIMA_ALIYUN_PROFILE 覆盖)+ gh 已登录(只用来读 GitHub HEAD)
+ *       + Codeup 镜像 App 凭证(CODEUP_MIRROR_APP_* 或 1P,tf#452)。
  * 流水线定义的单一信源在 optima-terraform yunxiao/(gen-pipelines.py)。本表只快照
  * repo / SAE appId;pipelineId 不在此表 —— stage/prod 均按流水线名 ${svc}-cn-${env}
  * 从云效 ListPipelines 实时解析,不再手工同步(见 #84)。
  */
 import { execFileSync } from 'node:child_process';
+import { mintCodeupMirrorToken } from './github-app-cred';
 
 const ORG = '6a17b6282bf8b1184fc0e0c6';
 const ENDPOINT = 'devops.cn-hangzhou.aliyuncs.com';
@@ -127,8 +130,9 @@ async function main() {
   const repos = devops('ListRepositories', { perPage: '100' });
   const repoId = (repos.result || []).find((r: any) => r.name === svc.repo)?.Id;
   if (!repoId) { console.error(`✗ Codeup 无 mirror 仓 ${svc.repo}`); process.exit(1); }
-  const ghTok = sh('gh', ['auth', 'token']);
-  devops('TriggerRepositoryMirrorSync', { repositoryId: String(repoId), account: 'xbfool', token: ghTok });
+  // tf#452:只读 App 令牌(只含本仓、1 小时过期);取不到直接报错,绝不回落 gh 登录令牌
+  const mirrorTok = await mintCodeupMirrorToken(svc.repo);
+  devops('TriggerRepositoryMirrorSync', { repositoryId: String(repoId), account: 'x-access-token', token: mirrorTok });
   let synced = false;
   for (let i = 0; i < 30; i++) {
     // vtag 发版时 ref 是 tag,不是 branch —— GetBranchInfo 查不到 tag 会恒超时,改用 tag 接口。
