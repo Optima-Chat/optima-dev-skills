@@ -131,7 +131,7 @@ async function main() {
   const repoId = (repos.result || []).find((r: any) => r.name === svc.repo)?.Id;
   if (!repoId) { console.error(`✗ Codeup 无 mirror 仓 ${svc.repo}`); process.exit(1); }
   // tf#452:委托服务仓 sync-to-codeup.yml(GHA 里用只读 App 令牌);触发失败直接报错,绝不回落个人令牌
-  const on = delegateMirrorSync(svc.repo, ref, Boolean(vtag));
+  const on = delegateMirrorSync(svc.repo);
   console.log(`… 已触发 ${svc.repo}/sync-to-codeup.yml@${on},等 Codeup 追平(runner 冷启动约 1-2 分钟)`);
   let synced = false;
   for (let i = 0; i < 60; i++) {

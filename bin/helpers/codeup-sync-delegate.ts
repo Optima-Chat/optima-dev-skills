@@ -7,11 +7,11 @@
  * 直到追平(判据只看轮询——Codeup mirror 接口对无效令牌也回 success,09-28 实测)。
  * ⛔ 触发失败即报错(fail-closed),绝不回落到把个人令牌交给 Codeup。
  *
- * 选哪个 ref 触发:
- *  - pull-mirror 仓(工作流调 Codeup /mirror):Codeup 整仓拉取,恒在默认分支 main 上触发——工作流版本取 main 的
- *    (含 App 换令牌步骤);在旧分支上触发会跑那条分支里的旧工作流(读已删除的旧 secret)。
- *  - push 式镜像仓(工作流 git push 到 Codeup,如 kb-skills / optima-portals):push 的是触发 ref,⇒ 分支构建在目标分支上触发;
- *    tag(vtag)仍在 main 上触发(push 式工作流只推分支)。
+ * 恒在默认分支 main 上触发:
+ *  - pull-mirror 仓(工作流调 Codeup /mirror):Codeup 整仓拉取,分支 / tag 全带;
+ *  - push 式镜像仓(kb-skills / optima-portals):工作流 `git push --mirror`,同样全分支 + tag。
+ *  在目标分支上触发反而会跑那条分支里的旧工作流(多数还是托管 runner / 读已删除的旧 secret,跑不起来;
+ *  #122 fresh 审阅 B1 逐分支核过),所以一律 main。
  */
 import { execFileSync } from 'node:child_process';
 
@@ -28,22 +28,13 @@ export const ghCli: Gh = (args) => {
   }
 };
 
-/** 该仓的 sync-to-codeup.yml 是 push 式(git push 到 Codeup)还是 pull-mirror 式(调 Codeup /mirror)。读 main 上的文件。 */
-export function isPushStyle(workflowText: string): boolean {
-  return !/\/mirror\b|TriggerRepositoryMirrorSync/.test(workflowText) && /git push|CODEUP_PUSH_SSH_KEY/.test(workflowText);
-}
-
-export function dispatchRef(pushStyle: boolean, ref: string, isTag: boolean): string {
-  return pushStyle && !isTag ? ref : 'main';
-}
-
-/** 触发同步;返回在哪个 ref 上触发。失败抛错(fail-closed)。 */
-export function delegateMirrorSync(repo: string, ref: string, isTag: boolean, gh: Gh = ghCli): string {
+/** 触发同步(恒在 main);返回触发的 ref。失败抛错(fail-closed)。先读一次工作流文件,确认存在并给出清楚的报错。 */
+export function delegateMirrorSync(repo: string, gh: Gh = ghCli): string {
   const wf = gh(['api', `repos/${ORG}/${repo}/contents/.github/workflows/${SYNC_WORKFLOW}`, '-H', 'Accept: application/vnd.github.raw']);
   if (!wf.ok || !wf.out) {
     throw new Error(`${repo} 没有 ${SYNC_WORKFLOW}(或 gh 未登录):${wf.err}。无法委托 Codeup 同步(tf#452,不回落个人令牌)`);
   }
-  const on = dispatchRef(isPushStyle(wf.out), ref, isTag);
+  const on = 'main';
   const r = gh(['workflow', 'run', SYNC_WORKFLOW, '-R', `${ORG}/${repo}`, '--ref', on]);
   if (!r.ok) throw new Error(`触发 ${repo}/${SYNC_WORKFLOW}@${on} 失败:${r.err}(需要该仓 Actions 写权限)`);
   return on;
