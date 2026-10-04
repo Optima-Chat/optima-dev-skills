@@ -54,8 +54,27 @@ optima-cn-deploy <service> --env prod --vtag cn-v1.2.3    # prod 发版
 - cn-prod 仅走 vtag 制（见上）；**没有人工卡点闸门** —— 工具侧那道 vtag 校验（拒绝无 vtag / 裸 `v*` / 带 `--branch` 的 prod 请求）就是最后一道闸。日常无 vtag 的构建只发 cn-stage。
 - 服务注册表是 optima-terraform `alicloud/stacks/cn-prod-buildbox/yunxiao/` 的快照；新增服务先在那边 gen-pipelines 建好流水线，再同步本工具的 SERVICES 表。
 
-## 独立 shim Release 构建凭据
+## 独立 shim 的 CN OSS 构建凭据
 
-`agent-runtime` 在触发前使用随 CLI 打包的 Python helper，通过既有 buildbox App 换取仅 `optima-shim` 仓 `contents:read` 的 1 小时票，刷新本环境专用加密变量组。需要 Linux/Python 3、buildbox SSH（已有 key 或 `~/.buildbox_pw` 配合 sshpass）；私钥不下发本机。其它服务不受影响。票不进入启动参数；刷新失败不启动流水线。控制台裸触发或队列等待超过票有效期会读取失败，应重新使用新版 CLI 触发。
+0.16.17 起，`agent-runtime` 不再在 CLI 启动前换取或刷新 GitHub 短票。
+CN 流水线显式执行 `fetch-optima-shim.sh . --source oss`，使用云效已有构建
+AK/SK 读取 GW `RELEASE.json` 固定的两个 OSS object versionId，并继续校验
+manifest/archive SHA256、source、vendor。不会自动回退 GitHub 或本地编译。
+控制台/API 再次构建走同一路径，不需要先运行某个人的 CLI 刷新票；shim
+构建也不再要求本机 Python、buildbox SSH 或 App 私钥。其它 mirror/部署依赖不变。
 
-团队安装：本改动发布后的版本使用 `npm install -g @optima-chat/dev-skills@<已发布版本>`；发布前维护者可从已审核提交 `npm ci && npm run build && npm install -g .`。不依赖 GHA 构建。
+切换须先合 GW 的 OSS fetcher 和真实版本 pin，再更新 stage/prod 流水线。
+有旧 shim fetcher 的历史分支须同步此改动；只有完全没有 shim fetcher 的
+旧分支保留 legacy skip。旧 CLI（含 0.16.16）仍可能在过时的取票步骤失败，
+应升级或直接用已切换的控制台，不能宣称所有旧 CLI 自动恢复。
+
+团队安装使用独审后的 GitHub Release `v0.16.17` 固定 tgz，不依赖 npm registry
+发布或 GHA。维护者先发布已审产物与校验和，之后同事执行：
+
+```sh
+gh release download v0.16.17 --repo Optima-Chat/optima-dev-skills --pattern 'optima-chat-dev-skills-0.16.17.tgz' --pattern 'SHA256SUMS'
+sha256sum --check SHA256SUMS
+npm install -g ./optima-chat-dev-skills-0.16.17.tgz
+```
+
+此说明不表示 Release 已发布。安装不会触发部署；prod vtag 和原发布授权要求保持。
