@@ -40,23 +40,17 @@ console.log(JSON.stringify(data));
   } finally {fs.rmSync(dir,{recursive:true,force:true});}
 }
 
-test('agent-runtime refreshes packaged helper before start, in both environments',()=>{
+test('agent-runtime starts without token refresh or local Python, in both environments',()=>{
   for(const prod of [false,true]) {
-    const p=run('agent-runtime',false,prod);
+    // The obsolete refresh command would fail and print a fake secret if invoked.
+    const p=run('agent-runtime',true,prod);
     assert.equal(p.status,0,p.stderr);
-    const refresh=p.calls.findIndex(c=>c.bin==='python3');
-    const start=p.calls.findIndex(c=>c.args[1]==='StartPipelineRun');
-    assert.ok(refresh>=0&&start>refresh);
-    assert.ok(p.calls[refresh].args.includes(prod?'prod':'stage'));
-    assert.ok(p.calls[refresh].args.includes(prod?'5124970':'5124962'));
-    assert.ok(!JSON.stringify(p.calls[start]).includes('OPTIMA_SHIM_GITHUB_TOKEN'));
+    assert.ok(!p.calls.some(c=>c.bin==='python3'));
+    const start=p.calls.find(c=>c.args[1]==='StartPipelineRun');
+    assert.ok(start);
+    assert.ok(!JSON.stringify(start).includes('OPTIMA_SHIM_GITHUB_TOKEN'));
+    assert.ok(!(p.stdout+p.stderr).includes(secret));
   }
-});
-test('refresh failure suppresses echoed secret and prevents pipeline start',()=>{
-  const p=run('agent-runtime',true);
-  assert.equal(p.status,1);
-  assert.ok(!p.calls.some(c=>c.args[1]==='StartPipelineRun'));
-  assert.ok(!(p.stdout+p.stderr).includes(secret));
 });
 test('other services keep original path and do not invoke helper',()=>{
   const p=run('gateway-core',true);

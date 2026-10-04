@@ -303,3 +303,25 @@ MIT
 ---
 
 **🤖 Powered by [Claude Code](https://claude.com/claude-code)**
+
+### CN shim artifact builds
+
+`optima-cn-deploy` 0.16.17 starts agent-runtime builds without the former
+GitHub token refresh. The CN pipeline explicitly downloads the GW-pinned private
+OSS object versions using builder credentials and verifies the original hashes.
+Roll out the GW fetcher/pin and pipeline definitions before using this CLI change.
+Installed older CLIs (including 0.16.16) retain the obsolete refresh and may fail
+before pipeline start; upgrade to a release containing this change or use the
+console. This removes no deployment confirmation and does not enable any harness.
+
+After the reviewed `v0.16.17` GitHub Release is published, teammates can install
+its fixed package without an npm registry publication:
+
+```sh
+gh release download v0.16.17 --repo Optima-Chat/optima-dev-skills --pattern 'optima-chat-dev-skills-0.16.17.tgz' --pattern 'SHA256SUMS'
+sha256sum --check SHA256SUMS
+npm install -g ./optima-chat-dev-skills-0.16.17.tgz
+```
+
+The release must attach the reviewed tarball and its checksum; these instructions
+do not claim the release already exists. No deployment is triggered by installing.
