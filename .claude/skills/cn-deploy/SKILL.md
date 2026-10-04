@@ -53,3 +53,9 @@ optima-cn-deploy <service> --env prod --vtag cn-v1.2.3    # prod 发版
 
 - cn-prod 仅走 vtag 制（见上）；**没有人工卡点闸门** —— 工具侧那道 vtag 校验（拒绝无 vtag / 裸 `v*` / 带 `--branch` 的 prod 请求）就是最后一道闸。日常无 vtag 的构建只发 cn-stage。
 - 服务注册表是 optima-terraform `alicloud/stacks/cn-prod-buildbox/yunxiao/` 的快照；新增服务先在那边 gen-pipelines 建好流水线，再同步本工具的 SERVICES 表。
+
+## 独立 shim Release 构建凭据
+
+`agent-runtime` 在触发前使用随 CLI 打包的 Python helper，通过既有 buildbox App 换取仅 `optima-shim` 仓 `contents:read` 的 1 小时票，刷新本环境专用加密变量组。需要 Linux/Python 3、buildbox SSH（已有 key 或 `~/.buildbox_pw` 配合 sshpass）；私钥不下发本机。其它服务不受影响。票不进入启动参数；刷新失败不启动流水线。控制台裸触发或队列等待超过票有效期会读取失败，应重新使用新版 CLI 触发。
+
+团队安装：本改动发布后的版本使用 `npm install -g @optima-chat/dev-skills@<已发布版本>`；发布前维护者可从已审核提交 `npm ci && npm run build && npm install -g .`。不依赖 GHA 构建。
