@@ -3,7 +3,7 @@
  * optima-cn-deploy —— 云效 Flow cn-stage 流水线一条龙触发器(团队版)。
  *
  * 对应 optima-terraform alicloud/stacks/cn-prod-buildbox/yunxiao/ 的 cn-run.py,
- * 通用凭证由云效变量组供给；agent-runtime 额外经 buildbox App 刷新专用加密组的 1h shim 读取票。
+ * 凭证由云效变量组供给；agent-runtime 在构建时从私有 OSS 读取固定 shim 版本，无 CLI 预取票。
  *
  * 做四件事(每件都是踩过的坑):
  *   1. 触发服务仓 Codeup mirror 同步并等目标分支追平 GitHub —— mirror 不新鲜=构建旧代码。
@@ -35,7 +35,6 @@
  * 从云效 ListPipelines 实时解析,不再手工同步(见 #84)。
  */
 import { execFileSync } from 'node:child_process';
-import { resolve } from 'node:path';
 import { delegateMirrorSync } from './codeup-sync-delegate';
 
 const ORG = '6a17b6282bf8b1184fc0e0c6';
@@ -161,18 +160,6 @@ async function main() {
     });
   } else if (branch !== 'main') {
     kv.params = JSON.stringify({ runningBranchs: { [`${CODEUP_BASE}/${svc.repo}.git`]: branch } });
-  }
-  if (svcName === 'agent-runtime') {
-    // Packaged canonical Terraform helper; no repo checkout needed at runtime.
-    // Token only enters the encrypted group, never StartPipelineRun params.
-    try {
-      execFileSync('python3', [resolve(__dirname, '../../../bin/helpers/shim_release_token.py'),
-        '--env', envName, '--pipeline-id', String(pipelineId), '--profile', PROFILE],
-      { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
-    } catch {
-      console.error('✗ agent-runtime shim read-token refresh failed; pipeline not started (details suppressed)');
-      process.exit(1);
-    }
   }
   const start = devops('StartPipelineRun', kv);
   const runId = start.pipelineRunId;
