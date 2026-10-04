@@ -107,13 +107,16 @@ def refresh_shim_token(service, environment, pipeline_id, group_id=None):
     ssh = (["sshpass", "-f", password_file, "ssh", "-o", "ConnectTimeout=8",
             "-o", "NumberOfPasswordPrompts=1"] if os.path.isfile(password_file) else SSH)
     try:
-        minted = subprocess.run([*ssh, BUILDBOX, command], capture_output=True, text=True, timeout=45)
+        minted = subprocess.run([*ssh, BUILDBOX, command], capture_output=True, timeout=45)
     except (OSError, subprocess.SubprocessError):
         raise SystemExit("✗ shim token mint failed; output suppressed") from None
     # GitHub installation tokens are opaque; current issuer output may contain
     # dots/dashes. Accept RFC6750 bearer characters, not a historical token shape.
     # Permit one conventional output newline, never multiple values/controls.
-    token = minted.stdout
+    try:
+        token = minted.stdout.decode("ascii")
+    except UnicodeDecodeError:
+        raise SystemExit("✗ shim token mint failed; output suppressed") from None
     if token.endswith("\r\n"):
         token = token[:-2]
     elif token.endswith("\n"):
