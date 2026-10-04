@@ -110,8 +110,15 @@ def refresh_shim_token(service, environment, pipeline_id, group_id=None):
         minted = subprocess.run([*ssh, BUILDBOX, command], capture_output=True, text=True, timeout=45)
     except (OSError, subprocess.SubprocessError):
         raise SystemExit("✗ shim token mint failed; output suppressed") from None
-    token = minted.stdout.strip()
-    if minted.returncode != 0 or not re.fullmatch(r"ghs_[A-Za-z0-9_]+", token):
+    # GitHub installation tokens are opaque; current issuer output may contain
+    # dots/dashes. Accept RFC6750 bearer characters, not a historical token shape.
+    # Permit one conventional output newline, never multiple values/controls.
+    token = minted.stdout
+    if token.endswith("\r\n"):
+        token = token[:-2]
+    elif token.endswith("\n"):
+        token = token[:-1]
+    if minted.returncode != 0 or not re.fullmatch(r"[A-Za-z0-9._~+/-]+=*", token):
         raise SystemExit("✗ shim token mint failed; output suppressed")
     shim_group_api("PUT", group_id, {"name": expected_name,
         "description": "Build-only optima-shim contents:read installation token; expires in 1h",
