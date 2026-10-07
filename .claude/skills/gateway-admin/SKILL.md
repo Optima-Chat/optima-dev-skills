@@ -40,7 +40,7 @@ optima-gateway-admin <METHOD> </admin/...> [jsonBody] [--env cn-stage|cn-prod] [
 optima-gateway-admin GET /admin/llm-rates --env cn-stage
 
 # 软杀某用户的 COO（#1681 止血这类场景——不再手写 DB UPDATE）
-optima-gateway-admin POST /admin/coo/users/<userId>/kill --env cn-stage
+optima-gateway-admin POST /admin/coo/instances/<userId>/kill --env cn-stage
 
 # 改 gateway 动态配置
 optima-gateway-admin PUT /admin/config/<KEY> '{"value":"..."}' --env cn-stage
