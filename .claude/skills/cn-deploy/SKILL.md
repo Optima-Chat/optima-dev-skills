@@ -68,13 +68,14 @@ manifest/archive SHA256、source、vendor。不会自动回退 GitHub 或本地�
 旧分支保留 legacy skip。旧 CLI（含 0.16.16）仍可能在过时的取票步骤失败，
 应升级或直接用已切换的控制台，不能宣称所有旧 CLI 自动恢复。
 
-团队安装使用独审后的 GitHub Release `v0.16.17` 固定 tgz，不依赖 npm registry
-发布或 GHA。维护者先发布已审产物与校验和，之后同事执行：
+团队安装从 npm registry 装：
 
 ```sh
-gh release download v0.16.17 --repo Optima-Chat/optima-dev-skills --pattern 'optima-chat-dev-skills-0.16.17.tgz' --pattern 'SHA256SUMS'
-sha256sum --check SHA256SUMS
-npm install -g ./optima-chat-dev-skills-0.16.17.tgz
+npm install -g @optima-chat/dev-skills
 ```
 
-此说明不表示 Release 已发布。安装不会触发部署；prod vtag 和原发布授权要求保持。
+npm 安装：`npm install -g @optima-chat/dev-skills`。谁合的谁可以发版：bump
+版本 → 合入 → 手动触发 Publish to npm（`.github/workflows/publish.yml`，
+`gh workflow run publish.yml -R Optima-Chat/optima-dev-skills --ref main`），
+不再需要 CTO 独审后由 root 执行。安装不会触发部署；cn-prod vtag 与部署确认
+要求保持不变。
