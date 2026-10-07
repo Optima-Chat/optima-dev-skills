@@ -65,7 +65,7 @@ Safety:
 Examples:
   optima-gateway-admin GET /admin/llm-rates --env cn-stage
   optima-gateway-admin GET /admin/coo/instances --env cn-prod
-  optima-gateway-admin POST /admin/coo/users/<userId>/kill --env cn-stage
+  optima-gateway-admin POST /admin/coo/instances/<userId>/kill --env cn-stage
   optima-gateway-admin PUT /admin/config/SOME_KEY '{"value":"x"}' --env cn-stage`);
   process.exit(0);
 }
