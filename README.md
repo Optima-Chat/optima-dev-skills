@@ -314,14 +314,41 @@ Installed older CLIs (including 0.16.16) retain the obsolete refresh and may fai
 before pipeline start; upgrade to a release containing this change or use the
 console. This removes no deployment confirmation and does not enable any harness.
 
-After the reviewed `v0.16.17` GitHub Release is published, teammates can install
-its fixed package without an npm registry publication:
+Install from npm:
 
 ```sh
-gh release download v0.16.17 --repo Optima-Chat/optima-dev-skills --pattern 'optima-chat-dev-skills-0.16.17.tgz' --pattern 'SHA256SUMS'
-sha256sum --check SHA256SUMS
-npm install -g ./optima-chat-dev-skills-0.16.17.tgz
+npm install -g @optima-chat/dev-skills
 ```
 
-The release must attach the reviewed tarball and its checksum; these instructions
-do not claim the release already exists. No deployment is triggered by installing.
+Publication is no longer reserved for the CTO (or root) after an independent
+review: whoever merges the version bump can publish — bump `package.json`
+version, merge, then manually trigger `Publish to npm`
+(`.github/workflows/publish.yml`,
+`gh workflow run publish.yml -R Optima-Chat/optima-dev-skills --ref main`).
+No deployment is triggered by installing; cn-prod vtag and deployment
+confirmations still apply.
+
+## 📦 Release notes
+
+### 0.16.18
+
+- `optima-gateway-admin` kill-path example corrected to
+  `/admin/coo/instances/<userId>/kill` (#128).
+- Installation and publication moved from a reviewed GitHub Release tarball to
+  npm: `npm install -g @optima-chat/dev-skills`, published by whoever merges the
+  version bump (bump → merge → manually trigger `Publish to npm`).
+
+### 0.16.17
+
+- Retire the expiring shim token preflight; CN builds read the two GW-pinned OSS
+  object versions with builder credentials and keep verifying manifest/archive
+  SHA256, source and vendor (#125).
+
+### 0.16.16
+
+- Accept opaque scoped installation tokens and preserve raw mint output bytes
+  (#124).
+
+### 0.16.15
+
+- Refresh the encrypted shim token before runtime builds (#123).
