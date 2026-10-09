@@ -330,6 +330,16 @@ confirmations still apply.
 
 ## 📦 Release notes
 
+### 0.16.19
+
+- `account`: the ban note in the skill and the CLI now depends on the
+  environment — on cn-prod / cn-stage / AWS stage a ban immediately revokes
+  issued access / refresh tokens (user-auth#224, plus #336 / #337 / #339);
+  AWS prod still runs an older user-auth and keeps the old behaviour (#126).
+- `cn-deploy`: agent-runtime releases no longer restart gateway-core; the
+  release stage writes the digest back to Infisical, hot-repins
+  `agent.runtime_image` and soft-drains the warm pool (#127).
+
 ### 0.16.18
 
 - `optima-gateway-admin` kill-path example corrected to
