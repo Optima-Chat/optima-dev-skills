@@ -46,13 +46,15 @@ optima-account ban user@example.com --reason "abuse" --env prod
 optima-account unban 18898654855 --env cn-prod
 ```
 
-> ⚠️ **ban 不是即时踢会话**：仅置 `is_active=false`，挡新登录/刷新，但**已签发的 access token 仍有效到过期**。需要立即失效在线会话的能力是 user-auth 后续支持项。
+> ⚠️ **ban 的即时效果按环境不同**（取决于该环境线上的 user-auth 版本；2026-10-09 核：cn-prod / cn-stage 为 `3f40f22`，AWS stage 为 `f44df9c`，AWS prod 仍是 2026-07 的 `529d7c5`）：
+> - **cn-prod / cn-stage / AWS stage**：ban 提交后，该账号已签发的访问令牌与 refresh 令牌**立即作废**（写吊销游标并轮换会话，user-auth#224）；停用期间各读点直接拒（`account_disabled`，#337）；ban 一个管理员会同时结束他发起的模拟会话（#336）；该账号签出的委托令牌（`delegated_*`）停用期间同样被拒（#339）。**unban 也会作废停用前的旧令牌**（用户要重新登录），委托令牌 unban 后不恢复。
+> - **AWS prod**：线上版本早于上述改动，ban 仍只置 `is_active=false`（挡新登录 / 刷新），**已签发的 access token 仍有效到过期**。随下一次 AWS prod 发版变成上一条。
 
 ## 安全提醒
 
 1. ban/unban 前看清打印的 `🎯 目标账号`（手机/email/userId）。
 2. prod / cn-prod 是生产，确认无误再 `yes`。
-3. ban 是名义禁用，活跃会话不会立刻断——别误以为已立即封死。
+3. 在 AWS prod 上 ban 仍是名义禁用，活跃会话不会立刻断——别误以为已立即封死；其余三个环境 ban 即时生效（见上方说明）。
 
 ## 相关命令
 

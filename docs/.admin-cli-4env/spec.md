@@ -72,6 +72,7 @@ T2/T3/T5 全部依赖此函数（T1 先行）。
 - 新增 `callUserAuthAsAdmin(env, method, path, body)`：base=`USER_AUTH_URLS[env]` + admin-用户 bearer。当前仅有 `callBilling`/`callSkills`，无 user-auth helper（R4）。
 
 ### ban 语义（已实测 + 决策 B1）
+> **2026-10-09 更新（optima-dev-skills#126）**：本节记的是 2026-09 时的 user-auth。之后 user-auth#224 让 ban 立即作废已签发的访问 / refresh 令牌（吊销游标 + 轮换会话），user-auth#348（PR #359）让 `revoke-user` 真正生效、不再是桩；cn-prod / cn-stage / AWS stage 已上线，AWS prod 线上版本（`529d7c5`）仍早于这些改动。现行说明以 `.claude/skills/account/SKILL.md` 为准，下面的原文保留作决策记录。
 - user-auth ban = `is_active=false` + ban 元数据。**已实测确认**：`verify_token`(oauth.py:267) 与 `get_current_user`(auth.py:13) **都不查 is_active**，verify_token 只认 `revoked_token:{jti}`（单 token）+ single-device session-superseded（需 flag）。→ **被 ban 用户已签发 access token 仍有效到过期**，ban 只挡新登录/刷新。
 - `revoke-user` 端点（`POST /api/v1/admin/tokens/revoke-user/{id}`）**是 TODO 桩**：`admin_service.revoke_user_tokens` 只写 `user_tokens_revoked:{id}` 这个 Redis key，**verify_token 全程不读它**（全仓仅 admin.py:365 一处写、零处读）→ 调它等于没用。要真·立刻踢须改 user-auth verify_token（接上 user 级 revoke 时间戳 vs token iat 比对）+ 部署 4 环境。
 - `is_active=false` 与账号软删除**共用同一标志**，仅靠 `banned_at` 区分。
@@ -106,4 +107,4 @@ T2/T3/T5 全部依赖此函数（T1 先行）。
 - **OPEN-4（验证项，T0 解决）**：membership-status 经 callBilling+M2M 在 AWS 是否可读；credits 余额的 M2M 读取端点（r2 已初验：无 M2M 读他人余额端点 → status 的 credits 部分大概率降级为"不可读"提示，不阻塞）。
 - ~~OPEN-1~~ 已定：admin 凭证 `/shared-secrets/credentials`（USER_AUTH_ADMIN_EMAIL/PASSWORD），4 环境统一 admin@optima.chat+seed pw（实测可用）。
 - ~~OPEN-2~~ 已定：`optima-account` 聚合。 ~~OPEN-3~~ 已定：status 含 credits 余额。
-- ~~OPEN-5~~ 已定：B1——ban 仅 is_active，不链 revoke-user（桩无效）；即时踢列 user-auth 后续。
+- ~~OPEN-5~~ 已定：B1——ban 仅 is_active，不链 revoke-user（桩无效）；即时踢列 user-auth 后续。（2026-10-09：user-auth 后续已由 #224 / #348 完成，见「ban 语义」开头的更新。）
