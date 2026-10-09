@@ -48,7 +48,8 @@ interface Svc { repo: string; saeAppId?: string; prodSaeAppId?: string; buildOnl
 const SERVICES: Record<string, Svc> = {
   'agent-portal':             { repo: 'optima-portals',     saeAppId: 'fe757f78-d18d-4480-9402-fe59d4721055', prodSaeAppId: '9211db38-a255-4393-ae92-7a7bb41b583d' },
   // build-only:非 SAE 常驻(gateway-core 按 session 拉起的镜像)。release 段=解析 ACR digest
-  // → 回写 Infisical /services/gateway-core/ALIYUN_AGENT_RUNTIME_IMAGE(#807)→ 滚动重启 gateway-core。
+  // → 回写 Infisical /services/gateway-core/ALIYUN_AGENT_RUNTIME_IMAGE(#807)→ 热 repin
+  // PUT /admin/config/agent.runtime_image(gw#2472 PR-B)→ warm-pool soft drain(terraform#360)。不重启 gateway-core。
   // 无自身 saeAppId(build-only 不跑 SAE ImageUrl 校验)。
   'agent-runtime':            { repo: 'optima-gateway',     buildOnly: true },
   'agentic-chat':             { repo: 'agentic-chat',       saeAppId: '6aea1ce1-f813-4e1c-8e97-d1ecb5398e37', prodSaeAppId: '6e290c73-a646-43ef-9da5-ad0b2e7eff73' },
@@ -183,13 +184,13 @@ async function main() {
   console.log(`${status === 'SUCCESS' ? '✅' : '❌'} ${svcName} run#${runId}: ${status}`);
   if (status !== 'SUCCESS') process.exit(1);
 
-  // 4. 成功标准。build-only(agent-runtime)无自身 SAE app 可查:digest 回写 Infisical +
-  //    滚动重启 gateway-core 都在流水线 release 段内完成(任一步失败即 exit 非 0)。CLI 不碰
+  // 4. 成功标准。build-only(agent-runtime)无自身 SAE app 可查:digest 回写 Infisical + 热 repin +
+  //    soft drain 都在流水线 release 段内完成(任一步失败即 exit 非 0)。CLI 不碰
   //    Infisical 凭证,只以流水线终态为准、不独立校验回写是否真落地——故措辞用「应已」而非「已」;
-  //    真实 digest / 重启变更单在 run『发版』段日志里(见上方链接)。
+  //    真实 digest 与 repin / drain 的结果在 run『发版』段日志里(见上方链接)。
   if (svc.buildOnly) {
     const infEnv = envName === 'prod' ? 'prod' : 'staging';
-    console.log(`✓ 流水线 SUCCESS(build-only)。release 段应已回写 ${infEnv} Infisical ALIYUN_AGENT_RUNTIME_IMAGE(@sha256 digest)并滚动重启 gateway-core;CLI 未独立校验,digest 见上方 run『发版』段日志`);
+    console.log(`✓ 流水线 SUCCESS(build-only)。release 段应已回写 ${infEnv} Infisical ALIYUN_AGENT_RUNTIME_IMAGE(@sha256 digest)、热 repin agent.runtime_image 并 soft drain 暖池(不重启 gateway-core,新镜像对之后新拉起的容器生效);CLI 未独立校验,digest 见上方 run『发版』段日志`);
     return;
   }
 

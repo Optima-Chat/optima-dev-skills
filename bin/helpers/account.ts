@@ -79,7 +79,13 @@ async function runBan(argv: string[]): Promise<void> {
   console.log(`\n🚫 Banning ${identifier} (userId=${userId})...`);
   const res = await callUserAuthAsAdmin(env, 'POST', `/api/v1/admin/users/${encodeURIComponent(userId)}/ban`, { reason });
   console.log(`✓ Banned (HTTP ${res.status})`);
-  console.log('⚠️  注意：ban 仅置 is_active=false——挡新登录/刷新，但**不会立即失效已签发的 access token**（活跃会话到 token 过期才失效）。即时踢会话需 user-auth 后续支持。\n');
+  // #126：即时效果取决于该环境线上的 user-auth 版本（user-auth#224 起 ban 立即作废已签发令牌）。
+  // 2026-10-09 核：cn-prod / cn-stage / AWS stage 已含；AWS prod 线上版本（529d7c5）早于 #224。
+  console.log(
+    env === 'prod'
+      ? '⚠️  注意（AWS prod）：线上 user-auth 版本早于 #224，ban 仅置 is_active=false——挡新登录/刷新，但不会立即失效已签发的 access token（活跃会话到 token 过期才失效）。随下一次 AWS prod 发版改为即时生效。\n'
+      : 'ℹ️  该账号已签发的访问 / refresh 令牌已随 ban 立即作废（user-auth#224），停用期间委托令牌同样被拒；unban 后用户需重新登录。\n',
+  );
 }
 
 async function runUnban(argv: string[]): Promise<void> {
@@ -115,7 +121,7 @@ Options:
 
 Notes:
   · ban/unban 用 admin-用户 token（Infisical /shared-secrets/credentials）。
-  · ban 非即时踢会话：仅挡新登录/刷新，活跃 token 过期后失效。
+  · ban 的即时效果按环境：cn-prod / cn-stage / AWS stage 立即作废已签发令牌（user-auth#224）；AWS prod 线上版本较旧，仍只挡新登录/刷新、活跃 token 到期才失效。
   · 禁用原因/banned_at 与 credits 余额暂不在 status 显示（见 #36）。
 
 Examples:
