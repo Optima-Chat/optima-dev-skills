@@ -1,6 +1,6 @@
 ---
 name: cn-deploy
-description: 当用户请求把服务发布/部署/构建到 cn-stage、跑云效流水线、cn-stage 发版、部署某个分支到 cn-stage、触发 cn 构建、yunxiao 部署、"把 xx 发到 cn"时，使用此技能。覆盖 cn-stage 全部 23 个服务（构建→DB迁移→SAE 发布一条龙；含 build-only 的 agent-runtime）。
+description: 当用户请求把服务发布/部署/构建到 cn-stage、跑云效流水线、cn-stage 发版、部署某个分支到 cn-stage、触发 cn 构建、yunxiao 部署、"把 xx 发到 cn"时，使用此技能。覆盖 cn-stage 全部 24 个服务（构建→DB迁移→SAE 发布一条龙；含 build-only 的 agent-runtime）。
 ---
 
 # cn-deploy - 云效 cn-stage 流水线发布
@@ -21,7 +21,7 @@ optima-cn-deploy --list                       # 列出全部可发服务
 
 ## 使用要点
 
-1. **先 `--list` 确认服务名**（23 个服务，含 commerce-backend / optima-scout / build-only 的 agent-runtime）。
+1. **先 `--list` 确认服务名**（24 个服务，含 commerce-backend / optima-scout / build-only 的 agent-runtime）。
 2. 全链约 3-8 分钟（agentic-chat 最重）。触发后会输出云效 run 链接，可发给用户自行围观。
 3. **凭证零配置**：构建凭证由云效变量组 `cn-stage-build-credentials`(41970) 供给，不需要注入任何 secret。
 4. 分支构建会把该分支代码部署到 cn-stage（替换现运行版本）——用户明确要求部署分支时才用。
@@ -43,6 +43,17 @@ optima-cn-deploy <service> --env prod --vtag cn-v1.2.3    # prod 发版
 - ⚠️ **老路径会盖掉 digest**：云效 prod 钉的是 `@sha256:` digest，buildbox `cn-deploy.sh` 发的是 `:<sha>` tag，后发的覆盖先发的。发版后隔天复查一次 SAE ImageUrl：已从 digest 变回 tag 形态即为被老路径覆盖，需重跑云效 prod 流水线（2026-07-31 一天内见 3 例，`cn-deploy.sh` 下线前一直存在）
 - 用户请求发 cn-prod 时：确认已有 stage 验证过的 cn-v tag；没有则先引导走 stage
 - **已发过 prod 的服务**（2026-07-14 起，截至 2026-07-31）：`commerce-backend`、`optima-scout`、`optima-generation`、`optima-generation-worker`、`browser-backend`（最近一次 2026-07-30 browser-backend cn-v1.0.0 全绿）。**不在此列的一律当首发处理**：避开业务高峰、**触发之前**找 xbfool/svenyang 人工确认（没有卡点可以事后补，见上条）、发完立刻校验 ImageUrl
+
+## 启动响应异常
+
+Start/Stop/Create/Update 等写操作只调用一次；只有 List/Get 自动重试。Start
+响应无法解析时，CLI 按调用前后时间窗口分页查询 ListPipelineRuns：恰好一条
+则打印该 runId 并继续；零条或多条则报错退出，多条会列出全部 runId。此时先
+人工核查窗口内的运行记录，不要直接重发命令；CLI 不会自动取消任何 run。
+
+`optima-auth` 仅注册 stage（当前云效流水线只构建推 ACR，SAE 部署仍走独立流程；
+CLI 等待完成后的 ImageUrl 校验不会把旧镜像当作已部署）。prod 尚无流水线，
+`--env prod` 会在同步/启动之前明确拒绝。
 
 ## 前置依赖
 
