@@ -6,7 +6,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const cli = process.env.CN_DEPLOY_TEST_CLI || path.resolve(__dirname, '../dist/bin/helpers/cn-deploy.js');
-const appId = 'f18f4750-33f7-4e60-a3e5-2185e6efe89e';
+const deployHint = 'SAE 部署走 optima-auth 仓 oa143-sae-deploy-image.sh / terraform image_tag';
 
 function run(options = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cn-deploy-start-'));
@@ -24,15 +24,18 @@ if (options.action) { console.log('broken'); process.exit(0); }
 if (bin === 'gh') {
   console.log(args.join(' ').includes('/commits/') ? 'a'.repeat(40) : 'run: git push codeup HEAD:main');
 } else if (args[0] === 'sae') {
-  emit({ Data: { ImageUrl: 'registry/optima-auth:aaaaaaaaaa' } });
+  emit({ Data: { ImageUrl: options.imageUrl || 'registry/image:aaaaaaaaaa' } });
 } else if (action === 'ListRepositories') {
   if (nth <= (options.readFailures || 0)) console.log('broken');
-  else emit({ result: [{ name: 'optima-gateway', Id: 1 }, { name: 'optima-auth', Id: 2 }] });
+  else emit({ result: [{ name: 'optima-gateway', Id: 1 }, { name: 'optima-auth', Id: 2 }, { name: 'optima-billing', Id: 3 }] });
 } else if (['GetBranchInfo', 'GetRepositoryTag'].includes(action)) {
   if (options.mirrorFailures && nth >= 2 && nth <= 4) console.log('broken');
   else emit({ result: { commit: { id: options.mirrorFailures && nth === 1 ? 'old' : 'a'.repeat(40) } } });
 } else if (action === 'ListPipelines') {
-  emit({ pipelines: [{ pipelineName: (options.service || 'agent-runtime') + '-cn-stage', pipelineId: 123 }] });
+  emit({ pipelines: ['stage', 'prod'].map(env => ({
+    pipelineName: (options.service || 'agent-runtime') + '-cn-' + env,
+    pipelineId: env === 'prod' ? 5332501 : 123,
+  })) });
 } else if (action === 'StartPipelineRun') {
   if (options.start === 'valid' || nth > 1) emit({ pipelineRunId: 999 });
   else if (options.start === 'exit') process.exit(1);
@@ -50,7 +53,7 @@ if (bin === 'gh') {
   } else emit({ success: true, pipelineRuns: all, nextToken: '' });
 } else if (action === 'GetPipelineRun') {
   if (options.pollFailures && nth >= 2 && nth <= 4) console.log('broken');
-  else emit({ pipelineRun: { status: options.pollFailures && nth === 1 ? 'RUNNING' : 'SUCCESS' } });
+  else emit({ pipelineRun: { status: options.pollFailures && nth === 1 ? 'RUNNING' : options.status || 'SUCCESS' } });
 } else console.log('broken');
 `;
   for (const bin of ['gh', 'aliyun']) fs.writeFileSync(path.join(dir, bin), stub, { mode: 0o755 });
@@ -174,19 +177,90 @@ test('failed recovery list cannot be interpreted as zero or one matches', () => 
   assert.doesNotMatch(result.stdout, /已启动/);
 });
 
-test('optima-auth stage resolves its repo and pipeline and checks its SAE app', () => {
-  const result = run({ service: 'optima-auth', start: 'valid', wait: true });
-  assert.equal(result.status, 0, result.stderr);
-  assert.ok(result.calls.some(c => c.bin === 'gh' && c.args.includes('repos/Optima-Chat/optima-auth/commits/main')));
-  assert.equal(callsFor(result, 'StartPipelineRun').length, 1);
-  assert.ok(result.calls.some(c => c.bin === 'aliyun' && c.args.includes(appId)));
-});
+const flag = (call, name) => call.args[call.args.indexOf('--' + name) + 1];
+const saeCalls = result => result.calls.filter(c => c.bin === 'aliyun' && c.args[0] === 'sae');
 
-for (const args of [['--env', 'prod'], ['--env', 'prod', '--vtag', 'cn-v1.2.3']]) {
-  test(`optima-auth prod is explicitly rejected before external calls (${args.join(' ')})`, () => {
+for (const env of ['stage', 'prod']) {
+  test(`optima-auth ${env} builds successfully without checking a stale SAE image`, () => {
+    const vtag = env === 'prod' ? 'cn-v1.2.3' : '';
+    const result = run({ service: 'optima-auth', start: 'valid', wait: true,
+      args: ['--env', env, ...(vtag ? ['--vtag', vtag] : [])], imageUrl: 'registry/optima-auth:old' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.calls.some(c => c.bin === 'gh' && c.args.includes(`repos/Optima-Chat/optima-auth/commits/${vtag || 'main'}`)));
+    const starts = callsFor(result, 'StartPipelineRun');
+    assert.equal(starts.length, 1);
+    const pipelineId = env === 'prod' ? '5332501' : '123';
+    assert.equal(flag(starts[0], 'pipelineId'), pipelineId);
+    assert.equal(flag(callsFor(result, 'GetPipelineRun')[0], 'pipelineId'), pipelineId);
+    if (vtag) {
+      assert.deepEqual(JSON.parse(flag(starts[0], 'params')), {
+        runningTags: { 'https://codeup.aliyun.com/6a17b6282bf8b1184fc0e0c6/optima-auth.git': vtag },
+        envs: { VTAG: vtag },
+      });
+      assert.equal(flag(callsFor(result, 'GetRepositoryTag')[0], 'tagName'), vtag);
+      assert.equal(callsFor(result, 'GetBranchInfo').length, 0);
+    }
+    assert.deepEqual(saeCalls(result), []);
+    assert.match(result.stdout, /run#999: SUCCESS/);
+    assert.ok(result.stdout.trim().split('\n').at(-1).includes(deployHint));
+    assert.match(result.stdout, /SUCCESS\(build-only\).*仅构建推 ACR/);
+    assert.doesNotMatch(result.stdout, /SAE ImageUrl|ALIYUN_AGENT_RUNTIME_IMAGE|repin|soft drain|构建→迁移→digest 部署/);
+  });
+
+  test(`optima-auth ${env} --no-wait prints its separate deployment path without claiming success`, () => {
+    const result = run({ service: 'optima-auth', start: 'valid',
+      args: ['--env', env, ...(env === 'prod' ? ['--vtag', 'cn-v1.2.3'] : [])] });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.stdout.includes(deployHint));
+    assert.equal(callsFor(result, 'GetPipelineRun').length, 0);
+    assert.deepEqual(saeCalls(result), []);
+    assert.doesNotMatch(result.stdout, /SUCCESS|digest 部署/);
+  });
+
+  test(`optima-auth ${env} failed build still exits nonzero`, () => {
+    const result = run({ service: 'optima-auth', start: 'valid', wait: true, status: 'FAIL',
+      args: ['--env', env, ...(env === 'prod' ? ['--vtag', 'cn-v1.2.3'] : [])] });
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /run#999: FAIL/);
+    assert.doesNotMatch(result.stdout, /SUCCESS/);
+    assert.deepEqual(saeCalls(result), []);
+  });
+}
+
+for (const [args, error] of [
+  [['--env', 'prod'], /必须带 --vtag/],
+  [['--env', 'prod', '--vtag', 'v1.2.3'], /vtag 格式必须/],
+  [['--env', 'prod', '--vtag', 'cn-v1.2.3', '--branch', 'feat/test'], /不接受 --branch/],
+]) {
+  test(`optima-auth retains prod input validation (${args.join(' ')})`, () => {
     const result = run({ service: 'optima-auth', args });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /prod 尚无 optima-auth 流水线/);
+    assert.match(result.stderr, error);
     assert.deepEqual(result.calls, []);
+  });
+}
+
+test('agent-runtime retains its build-only release guidance', () => {
+  const result = run({ start: 'valid', wait: true });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /SUCCESS\(build-only\).*staging Infisical ALIYUN_AGENT_RUNTIME_IMAGE.*repin.*soft drain/);
+  assert.ok(!result.stdout.includes(deployHint));
+  assert.deepEqual(saeCalls(result), []);
+});
+
+for (const [env, imageUrl, status] of [
+  ['stage', 'registry/billing:old', 1],
+  ['stage', 'registry/billing:aaaaaaaaaa', 0],
+  ['prod', 'registry/billing@sha256:abc', 0],
+  ['prod', 'registry/billing:aaaaaaaaaa', 1],
+]) {
+  test(`billing retains ${env} SAE verification (${imageUrl})`, () => {
+    const result = run({ service: 'billing', start: 'valid', wait: true, imageUrl,
+      args: ['--env', env, ...(env === 'prod' ? ['--vtag', 'cn-v1.2.3'] : [])] });
+    assert.equal(result.status, status, result.stderr);
+    assert.equal(saeCalls(result).length, 1);
+    assert.equal(flag(saeCalls(result)[0], 'AppId'), env === 'prod'
+      ? '6c31cf82-8802-4d45-b6a2-e9d7c83ccce9' : '09d8e292-dc64-4af8-bce5-0a56cb666921');
+    assert.match(result.stdout, /SAE ImageUrl/);
   });
 }
