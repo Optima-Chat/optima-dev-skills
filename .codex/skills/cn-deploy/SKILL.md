@@ -1,6 +1,6 @@
 ---
 name: cn-deploy
-description: 当用户请求把服务发布/部署/构建到 cn-stage、跑云效流水线、cn-stage 发版、部署某个分支到 cn-stage、触发 cn 构建、yunxiao 部署、"把 xx 发到 cn"时，使用此技能。覆盖 cn-stage 全部 24 个服务（构建→DB迁移→SAE 发布一条龙；含 build-only 的 agent-runtime）。
+description: 当用户请求把服务发布/部署/构建到 cn-stage、跑云效流水线、cn-stage 发版、部署某个分支到 cn-stage、触发 cn 构建、yunxiao 部署、"把 xx 发到 cn"时，使用此技能。覆盖 cn-stage 全部 24 个服务（构建→DB迁移→SAE 发布一条龙；含 build-only 的 agent-runtime / optima-auth）。
 ---
 
 # cn-deploy - 云效 cn-stage 流水线发布
@@ -26,7 +26,7 @@ optima-cn-deploy --list                       # 列出全部可发服务
 3. **凭证零配置**：构建凭证由云效变量组 `cn-stage-build-credentials`(41970) 供给，不需要注入任何 secret。
 4. 分支构建会把该分支代码部署到 cn-stage（替换现运行版本）——用户明确要求部署分支时才用。
 5. 失败排查：命令输出的 flow.aliyun.com 链接里看具体 step 日志；常见原因是该分支/仓的 Codeup mirror 凭证问题（命令会在 mirror 步就报错并中止，不会构建旧代码）。
-6. 成功标准：最后一行 `✓ SAE ImageUrl tag=<sha>` —— 流水线绿且 SAE 真的钉到了目标 commit。只看流水线绿不算完成。
+6. SAE 服务成功标准（build-only 见下）：最后一行 `✓ SAE ImageUrl tag=<sha>` —— 流水线绿且 SAE 真的钉到了目标 commit。只看流水线绿不算完成。
 7. **build-only 服务（`agent-runtime`）**：非 SAE 常驻（gateway-core 按 session 拉起的镜像）。成功标准不是 SAE ImageUrl，而是流水线绿即可——release 段做三件事（任一步失败即 exit 非 0），**不重启 gateway-core**：① ACR digest 回写 Infisical `/services/gateway-core/ALIYUN_AGENT_RUNTIME_IMAGE`(#807)；② 热 repin：`PUT /admin/config/agent.runtime_image`（gw#2472 PR-B）；③ warm-pool soft drain（optima-terraform#360，日志 `drain soft OK`）。新镜像对之后新拉起的容器生效，正在跑的容器不换。工具最后一行为 `✓ 流水线 SUCCESS(build-only)…` —— CLI 以流水线终态为准，未独立校验 Infisical / repin / drain（digest 与各步结果见 run『发版』段日志）；核实际在用的镜像见 optima-gateway `docs/runbooks/deploy-status-check.md`「agent-runtime（cn）」。
 
 
@@ -38,8 +38,8 @@ optima-cn-deploy <service> --env prod --vtag cn-v1.2.3    # prod 发版
 ```
 
 - prod 是 vtag 制：必须先 `git tag cn-vX.Y.Z && git push`，工具拒绝无 vtag / 裸 v* / 带 --branch 的 prod 请求
-- 🔴 prod 流水线**没有人工卡点**：构建 → DB 迁移 → digest 钉死部署一路自动走完，不会停下来等谁审批。**敲下命令那一刻就是最终决策点**；触发后要中止只能去云效 run 页面手动取消（实测 2026-08-09，见 #89）
-- 成功标准：prod SAE ImageUrl 为 `@sha256:` digest 寻址（工具最后一行校验）
+- 🔴 prod 流水线**没有人工卡点**：SAE 服务构建 → DB 迁移 → digest 钉死部署一路自动走完（`optima-auth` 仅构建推 ACR），不会停下来等谁审批。**敲下命令那一刻就是最终决策点**；触发后要中止只能去云效 run 页面手动取消（实测 2026-08-09，见 #89）
+- SAE 服务成功标准：prod SAE ImageUrl 为 `@sha256:` digest 寻址（工具最后一行校验）
 - ⚠️ **老路径会盖掉 digest**：云效 prod 钉的是 `@sha256:` digest，buildbox `cn-deploy.sh` 发的是 `:<sha>` tag，后发的覆盖先发的。发版后隔天复查一次 SAE ImageUrl：已从 digest 变回 tag 形态即为被老路径覆盖，需重跑云效 prod 流水线（2026-07-31 一天内见 3 例，`cn-deploy.sh` 下线前一直存在）
 - 用户请求发 cn-prod 时：确认已有 stage 验证过的 cn-v tag；没有则先引导走 stage
 - **已发过 prod 的服务**（2026-07-14 起，截至 2026-07-31）：`commerce-backend`、`optima-scout`、`optima-generation`、`optima-generation-worker`、`browser-backend`（最近一次 2026-07-30 browser-backend cn-v1.0.0 全绿）。**不在此列的一律当首发处理**：避开业务高峰、**触发之前**找 xbfool/svenyang 人工确认（没有卡点可以事后补，见上条）、发完立刻校验 ImageUrl
@@ -51,9 +51,10 @@ Start/Stop/Create/Update 等写操作只调用一次；只有 List/Get 自动重
 则打印该 runId 并继续；零条或多条则报错退出，多条会列出全部 runId。此时先
 人工核查窗口内的运行记录，不要直接重发命令；CLI 不会自动取消任何 run。
 
-`optima-auth` 仅注册 stage（当前云效流水线只构建推 ACR，SAE 部署仍走独立流程；
-CLI 等待完成后的 ImageUrl 校验不会把旧镜像当作已部署）。prod 尚无流水线，
-`--env prod` 会在同步/启动之前明确拒绝。
+`optima-auth` 支持 stage / prod，两侧流水线均为 `NO_DEPLOY=1`，仅构建推 ACR。
+prod 仍要求 `--env prod --vtag cn-vX.Y.Z`。CLI 以流水线 `SUCCESS` 为构建完成标准，
+不查询 SAE ImageUrl；完成时打印「SAE 部署走 optima-auth 仓
+oa143-sae-deploy-image.sh / terraform image_tag」。构建成功后仍需走该独立流程部署 SAE。
 
 ## 前置依赖
 

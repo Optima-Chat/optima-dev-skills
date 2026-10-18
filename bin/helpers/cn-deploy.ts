@@ -12,7 +12,7 @@
  *   2. StartPipelineRun;--branch 时带 runningBranchs 覆盖服务仓 source 分支。
  *   3. 轮询到终态,给出云效 run 链接。
  *   4. SUCCESS 后校验 SAE ImageUrl tag == 目标分支 HEAD short-sha(防"流水线绿但没部上");
- *      aliyun API 偶发空返回,带重试守卫。
+ *      aliyun API 偶发空返回,带重试守卫。build-only 服务以流水线终态为准。
  *
  * 用法:
  *   optima-cn-deploy billing                      # main 全链(构建→迁移→SAE 发布)
@@ -62,8 +62,8 @@ const SERVICES: Record<string, Svc> = {
   'gw-admin':                 { repo: 'optima-gateway',     saeAppId: '90e0daf7-7910-46b8-b5bf-a0b8bcc60859', prodSaeAppId: 'c6bc5a78-b27f-46e2-825a-eaa338c23645' },
   'kb-backend':               { repo: 'kb-skills',          saeAppId: 'c7f65160-9d9e-416e-9e36-5439010d2b2d', prodSaeAppId: '732dfc8c-ed78-43f7-a722-c614359ff1a1' },
   'ops-portal':               { repo: 'optima-portals',     saeAppId: '41d0ee66-8402-4e72-bfda-8eba75d1270c', prodSaeAppId: '69e513fd-29bf-4355-a275-5eba82b21136' },
-  // services.stage.env: stage 门面 app；目前流水线只构建，尚无 prod 流水线/app。
-  'optima-auth':              { repo: 'optima-auth',        saeAppId: 'f18f4750-33f7-4e60-a3e5-2185e6efe89e' },
+  // stage/prod 流水线均 NO_DEPLOY=1，只构建推 ACR；SAE 由 optima-auth 仓独立部署。
+  'optima-auth':              { repo: 'optima-auth',        saeAppId: 'f18f4750-33f7-4e60-a3e5-2185e6efe89e', prodSaeAppId: '28cc1542-9f02-484d-994d-516b27d180fc', buildOnly: true },
   'optima-channels':          { repo: 'optima-channels',    saeAppId: '6ef530b5-1b00-4e5a-935f-40f026f09467', prodSaeAppId: '8c7846d7-70b7-4ebf-af3f-84e5892cd17a' },
   'optima-generation':        { repo: 'optima-gen',         saeAppId: '327856d5-8b18-4e15-bfd8-b8bd3b807ffa', prodSaeAppId: '868d1a69-12c9-4bb7-868b-3e89c26784b5' },
   'optima-generation-worker': { repo: 'optima-gen',         saeAppId: 'ad75b3b0-9ff4-443d-b0ef-81886bc7aa60', prodSaeAppId: '2adc941e-374b-406a-9863-e53d40bc9500' },
@@ -159,9 +159,6 @@ async function main() {
   const vIdx = argv.indexOf('--vtag');
   const vtag = vIdx >= 0 ? argv[vIdx + 1] : '';
   if (!['stage', 'prod'].includes(envName)) { console.error('✗ --env 只支持 stage|prod'); process.exit(1); }
-  if (envName === 'prod' && svcName === 'optima-auth') {
-    console.error('✗ prod 尚无 optima-auth 流水线'); process.exit(1);
-  }
   if (vtag && !/^cn-v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(vtag)) {
     console.error(`✗ vtag 格式必须 cn-vX.Y.Z(得到 ${vtag});裸 v* 会误触 AWS prod,绝不放行`); process.exit(1);
   }
@@ -215,7 +212,9 @@ async function main() {
   if (!runId) { console.error(`✗ 启动失败: ${JSON.stringify(start).slice(0, 150)}`); process.exit(1); }
   console.log(`▶ ${svcName} run#${runId} 已启动 (ref=${ref}, env=${envName})`);
   console.log(`  https://flow.aliyun.com/pipelines/${pipelineId}/current`);
-  if (envName === 'prod') {
+  if (svcName === 'optima-auth') {
+    console.log('ℹ️ optima-auth:流水线只构建推 ACR；SAE 部署走 optima-auth 仓 oa143-sae-deploy-image.sh / terraform image_tag');
+  } else if (envName === 'prod') {
     console.log('🔴 cn-prod:流水线**没有**人工卡点 —— 构建→迁移→digest 部署会一路自动走完,');
     console.log('   不要去云效控制台等『发布审批』(那一步不存在)。要中止只能在上面的链接里手动取消 run。');
   }
@@ -232,11 +231,16 @@ async function main() {
   console.log(`${status === 'SUCCESS' ? '✅' : '❌'} ${svcName} run#${runId}: ${status}`);
   if (status !== 'SUCCESS') process.exit(1);
 
-  // 4. 成功标准。build-only(agent-runtime)无自身 SAE app 可查:digest 回写 Infisical + 热 repin +
+  // 4. 成功标准。optima-auth 的 NO_DEPLOY 流水线只构建推 ACR，SAE 部署走独立流程。
+  //    build-only(agent-runtime)无自身 SAE app 可查:digest 回写 Infisical + 热 repin +
   //    soft drain 都在流水线 release 段内完成(任一步失败即 exit 非 0)。CLI 不碰
   //    Infisical 凭证,只以流水线终态为准、不独立校验回写是否真落地——故措辞用「应已」而非「已」;
   //    真实 digest 与 repin / drain 的结果在 run『发版』段日志里(见上方链接)。
   if (svc.buildOnly) {
+    if (svcName === 'optima-auth') {
+      console.log('✓ 流水线 SUCCESS(build-only)，仅构建推 ACR。SAE 部署走 optima-auth 仓 oa143-sae-deploy-image.sh / terraform image_tag');
+      return;
+    }
     const infEnv = envName === 'prod' ? 'prod' : 'staging';
     console.log(`✓ 流水线 SUCCESS(build-only)。release 段应已回写 ${infEnv} Infisical ALIYUN_AGENT_RUNTIME_IMAGE(@sha256 digest)、热 repin agent.runtime_image 并 soft drain 暖池(不重启 gateway-core,新镜像对之后新拉起的容器生效);CLI 未独立校验,digest 见上方 run『发版』段日志`);
     return;
