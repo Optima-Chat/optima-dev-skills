@@ -62,6 +62,8 @@ const SERVICES: Record<string, Svc> = {
   'gw-admin':                 { repo: 'optima-gateway',     saeAppId: '90e0daf7-7910-46b8-b5bf-a0b8bcc60859', prodSaeAppId: 'c6bc5a78-b27f-46e2-825a-eaa338c23645' },
   'kb-backend':               { repo: 'kb-skills',          saeAppId: 'c7f65160-9d9e-416e-9e36-5439010d2b2d', prodSaeAppId: '732dfc8c-ed78-43f7-a722-c614359ff1a1' },
   'ops-portal':               { repo: 'optima-portals',     saeAppId: '41d0ee66-8402-4e72-bfda-8eba75d1270c', prodSaeAppId: '69e513fd-29bf-4355-a275-5eba82b21136' },
+  // services.stage.env: stage 门面 app；目前流水线只构建，尚无 prod 流水线/app。
+  'optima-auth':              { repo: 'optima-auth',        saeAppId: 'f18f4750-33f7-4e60-a3e5-2185e6efe89e' },
   'optima-channels':          { repo: 'optima-channels',    saeAppId: '6ef530b5-1b00-4e5a-935f-40f026f09467', prodSaeAppId: '8c7846d7-70b7-4ebf-af3f-84e5892cd17a' },
   'optima-generation':        { repo: 'optima-gen',         saeAppId: '327856d5-8b18-4e15-bfd8-b8bd3b807ffa', prodSaeAppId: '868d1a69-12c9-4bb7-868b-3e89c26784b5' },
   'optima-generation-worker': { repo: 'optima-gen',         saeAppId: 'ad75b3b0-9ff4-443d-b0ef-81886bc7aa60', prodSaeAppId: '2adc941e-374b-406a-9863-e53d40bc9500' },
@@ -84,14 +86,54 @@ function sh(cmd: string, args: string[]): string {
   }
 }
 
-function devops(action: string, kv: Record<string, string>, retries = 3): any {
+export function devops(action: string, kv: Record<string, string>, retries = 3): any {
   const args = ['devops', action, '--organizationId', ORG, '--endpoint', ENDPOINT, '--profile', PROFILE];
   for (const [k, v] of Object.entries(kv)) args.push(`--${k}`, v);
-  for (let i = 0; i < retries; i++) {
+  // 只允许只读 API 自动重试。Start/Stop/Create/Update 等写操作响应丢失时可能已生效。
+  const attempts = /^(List|Get)/.test(action) ? retries : 1;
+  for (let i = 0; i < attempts; i++) {
     const out = sh('aliyun', args);
-    try { return JSON.parse(out); } catch { /* aliyun 偶发空返回/超时,重试 */ }
+    try { return JSON.parse(out); } catch { /* 只有只读 API 可以重发 */ }
   }
-  return {};
+  throw new Error(`${action} 响应无法解析(${attempts} 次调用)`);
+}
+
+function startPipelineRun(kv: Record<string, string>): any {
+  const startTime = Date.now();
+  try {
+    return devops('StartPipelineRun', kv);
+  } catch {
+    const endTime = Date.now();
+    console.error('⚠️ StartPipelineRun 响应无法解析；不会重发，按调用时间窗口查询实际 run。');
+    const runIds = new Set<string>();
+    const tokens = new Set<string>();
+    let nextToken = '0';
+    do {
+      if (tokens.has(nextToken)) throw new Error('ListPipelineRuns 分页 token 重复，无法确认启动结果；请人工核查，不要重发 Start');
+      tokens.add(nextToken);
+      const page = devops('ListPipelineRuns', {
+        pipelineId: kv.pipelineId, startTime: String(startTime), endTime: String(endTime),
+        maxResults: '100', nextToken,
+      });
+      if (page?.success === false || !Array.isArray(page?.pipelineRuns)) {
+        throw new Error('ListPipelineRuns 查询失败，无法确认启动结果；请人工核查，不要重发 Start');
+      }
+      for (const run of page.pipelineRuns) {
+        const time = Number(run.startTime);
+        if (!Number.isFinite(time) || !run.pipelineRunId) {
+          throw new Error('ListPipelineRuns 返回缺少 startTime/runId，无法确认启动结果；请人工核查，不要重发 Start');
+        }
+        if (time >= startTime && time <= endTime) runIds.add(String(run.pipelineRunId));
+      }
+      nextToken = String(page.nextToken || '');
+    } while (nextToken);
+    if (runIds.size === 1) return { pipelineRunId: [...runIds][0] };
+    const window = `${new Date(startTime).toISOString()} ~ ${new Date(endTime).toISOString()}`;
+    if (runIds.size === 0) {
+      throw new Error(`启动结果未确认：时间窗口 ${window} 内找到 0 条 run；不会重试启动，请人工核查 pipeline ${kv.pipelineId}`);
+    }
+    throw new Error(`启动结果不唯一：时间窗口 ${window} 内找到 ${runIds.size} 条 run，runId: ${[...runIds].join(', ')}；请人工处理，不会自动取消任何 run`);
+  }
 }
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -114,6 +156,9 @@ async function main() {
   const vIdx = argv.indexOf('--vtag');
   const vtag = vIdx >= 0 ? argv[vIdx + 1] : '';
   if (!['stage', 'prod'].includes(envName)) { console.error('✗ --env 只支持 stage|prod'); process.exit(1); }
+  if (envName === 'prod' && svcName === 'optima-auth') {
+    console.error('✗ prod 尚无 optima-auth 流水线'); process.exit(1);
+  }
   if (vtag && !/^cn-v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(vtag)) {
     console.error(`✗ vtag 格式必须 cn-vX.Y.Z(得到 ${vtag});裸 v* 会误触 AWS prod,绝不放行`); process.exit(1);
   }
@@ -162,7 +207,7 @@ async function main() {
   } else if (branch !== 'main') {
     kv.params = JSON.stringify({ runningBranchs: { [`${CODEUP_BASE}/${svc.repo}.git`]: branch } });
   }
-  const start = devops('StartPipelineRun', kv);
+  const start = startPipelineRun(kv);
   const runId = start.pipelineRunId;
   if (!runId) { console.error(`✗ 启动失败: ${JSON.stringify(start).slice(0, 150)}`); process.exit(1); }
   console.log(`▶ ${svcName} run#${runId} 已启动 (ref=${ref}, env=${envName})`);
@@ -217,4 +262,6 @@ async function main() {
   }
 }
 
-main().catch(e => { console.error('✗', e?.message || e); process.exit(1); });
+if (require.main === module) {
+  main().catch(e => { console.error('✗', e?.message || e); process.exit(1); });
+}
