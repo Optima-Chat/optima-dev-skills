@@ -90,11 +90,14 @@ export function devops(action: string, kv: Record<string, string>, retries = 3):
   const args = ['devops', action, '--organizationId', ORG, '--endpoint', ENDPOINT, '--profile', PROFILE];
   for (const [k, v] of Object.entries(kv)) args.push(`--${k}`, v);
   // 只允许只读 API 自动重试。Start/Stop/Create/Update 等写操作响应丢失时可能已生效。
-  const attempts = /^(List|Get)/.test(action) ? retries : 1;
+  const readOnly = /^(List|Get)/.test(action);
+  const attempts = readOnly ? retries : 1;
   for (let i = 0; i < attempts; i++) {
     const out = sh('aliyun', args);
     try { return JSON.parse(out); } catch { /* 只有只读 API 可以重发 */ }
   }
+  // 只读失败交给调用方兜底，轮询可继续等待；写操作必须抛错以恢复启动结果。
+  if (readOnly) return {};
   throw new Error(`${action} 响应无法解析(${attempts} 次调用)`);
 }
 

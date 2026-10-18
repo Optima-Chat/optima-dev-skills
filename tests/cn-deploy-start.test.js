@@ -29,7 +29,8 @@ if (bin === 'gh') {
   if (nth <= (options.readFailures || 0)) console.log('broken');
   else emit({ result: [{ name: 'optima-gateway', Id: 1 }, { name: 'optima-auth', Id: 2 }] });
 } else if (['GetBranchInfo', 'GetRepositoryTag'].includes(action)) {
-  emit({ result: { commit: { id: 'a'.repeat(40) } } });
+  if (options.mirrorFailures && nth >= 2 && nth <= 4) console.log('broken');
+  else emit({ result: { commit: { id: options.mirrorFailures && nth === 1 ? 'old' : 'a'.repeat(40) } } });
 } else if (action === 'ListPipelines') {
   emit({ pipelines: [{ pipelineName: (options.service || 'agent-runtime') + '-cn-stage', pipelineId: 123 }] });
 } else if (action === 'StartPipelineRun') {
@@ -48,14 +49,18 @@ if (bin === 'gh') {
       nextToken: value('nextToken') === '0' ? 'page2' : '' });
   } else emit({ success: true, pipelineRuns: all, nextToken: '' });
 } else if (action === 'GetPipelineRun') {
-  emit({ pipelineRun: { status: 'SUCCESS' } });
+  if (options.pollFailures && nth >= 2 && nth <= 4) console.log('broken');
+  else emit({ pipelineRun: { status: options.pollFailures && nth === 1 ? 'RUNNING' : 'SUCCESS' } });
 } else console.log('broken');
 `;
   for (const bin of ['gh', 'aliyun']) fs.writeFileSync(path.join(dir, bin), stub, { mode: 0o755 });
+  // Keep the real polling loops, but skip their 10s/45s delays in the child CLI.
+  const fastTimers = path.join(dir, 'fast-timers.cjs');
+  fs.writeFileSync(fastTimers, 'const timer = global.setTimeout; global.setTimeout = (fn, ms, ...args) => timer(fn, 0, ...args);');
   try {
     const args = options.action
-      ? ['-e', 'require(process.argv[1]).devops(process.argv[2], {})', cli, options.action]
-      : [cli, options.service || 'agent-runtime', ...(options.wait ? [] : ['--no-wait']), ...(options.args || [])];
+      ? ['-e', 'console.log(JSON.stringify(require(process.argv[1]).devops(process.argv[2], {})))', cli, options.action]
+      : ['--require', fastTimers, cli, options.service || 'agent-runtime', ...(options.wait ? [] : ['--no-wait']), ...(options.args || [])];
     const result = spawnSync(process.execPath, args, {
       encoding: 'utf8', timeout: 10000,
       env: { ...process.env, PATH: dir + path.delimiter + process.env.PATH,
@@ -115,6 +120,29 @@ test('read-only API still retries parse failures and succeeds on third attempt',
   assert.equal(callsFor(result, 'ListRepositories').length, 3);
 });
 
+test('polling continues after three malformed responses mid-run and reaches SUCCESS', () => {
+  const result = run({ start: 'valid', wait: true, pollFailures: true });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(callsFor(result, 'GetPipelineRun').length, 5);
+  assert.equal(callsFor(result, 'StartPipelineRun').length, 1);
+  assert.equal(callsFor(result, 'ListPipelineRuns').length, 0);
+  assert.match(result.stdout, /run#999 已启动/);
+  assert.match(result.stdout, /run#999: SUCCESS/);
+});
+
+for (const [action, args] of [['GetBranchInfo', []], ['GetRepositoryTag', ['--vtag', 'cn-v1.2.3']]]) {
+  test(`mirror ${action} continues after three malformed responses and catches up`, () => {
+    const result = run({ start: 'valid', mirrorFailures: true, args });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(callsFor(result, action).length, 5);
+    assert.equal(callsFor(result, 'StartPipelineRun').length, 1);
+    const mirrorCalls = callsFor(result, action);
+    assert.ok(mirrorCalls.at(-1).time <= callsFor(result, 'StartPipelineRun')[0].time);
+    assert.match(result.stdout, /mirror 已追平/);
+    assert.match(result.stdout, /run#999 已启动/);
+  });
+}
+
 for (const action of ['StartPipelineRun', 'StopPipelineRun', 'CreatePipeline', 'UpdatePipeline']) {
   test(`${action} does not retry malformed responses`, () => {
     const result = run({ action });
@@ -125,7 +153,8 @@ for (const action of ['StartPipelineRun', 'StopPipelineRun', 'CreatePipeline', '
 for (const action of ['ListPipelines', 'GetPipelineRun']) {
   test(`${action} prefix retains three attempts on malformed responses`, () => {
     const result = run({ action });
-    assert.equal(result.status, 1);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {});
     assert.equal(callsFor(result, action).length, 3);
   });
 }
@@ -135,7 +164,7 @@ test('unreadable recovery list exits after read retries without resending Start'
   assert.equal(result.status, 1);
   assert.equal(callsFor(result, 'StartPipelineRun').length, 1);
   assert.equal(callsFor(result, 'ListPipelineRuns').length, 3);
-  assert.match(result.stderr, /ListPipelineRuns 响应无法解析/);
+  assert.match(result.stderr, /ListPipelineRuns 查询失败/);
 });
 
 test('failed recovery list cannot be interpreted as zero or one matches', () => {
