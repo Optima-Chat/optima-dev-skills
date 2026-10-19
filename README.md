@@ -134,6 +134,8 @@ Claude:
 本表与 `package.json` 的 `bin` 一一对应（同样由 `tests/service-matrix-alignment.test.js` 校验）。包自身的入口 `optima-dev-skills`（只提供 `version` / `help`）与 `optima-grant-credits` 的废弃别名 `optima-grant-balance` 有意不单独列行。
 
 > **4 环境 + 标识符**：`grant-subscription` / `grant-credits` / `entitlement` / `account` 均支持 `stage` / `prod` / `cn-prod` / `cn-stage`。标识符 `<email\|phone\|userId>`——**cn-prod / cn-stage 用户多为手机号注册**，三种均可；AWS stage/prod 仅 email。`ban`/`unban` 及 `account status` 的禁用态读取需 admin-用户凭证（Infisical `/shared-secrets/credentials`；cn 另需 `INFISICAL_CN_EMAIL/PASSWORD`）。
+>
+> **cn-stage 无人值守（不带 Infisical admin 口令）**：同时设 `DEV_SKILLS_CN_STAGE_OAUTH_CLIENT_ID` / `DEV_SKILLS_CN_STAGE_OAUTH_CLIENT_SECRET` ⇒ cn-stage 的 M2M 令牌（铸号补 credits、`grant-credits`、`gateway-admin`、按邮箱/手机号查 userId）直接用这对 stage client，不读 cn Infisical；只设一个直接报错；cn-prod 不读这两个变量。`ban`/`unban`（admin-用户口令）不在此列，仍走 Infisical。
 
 **特点**：
 - ✅ 支持 ci / stage / prod / cn-stage / cn-prod（query-db，见 `bin/helpers/query-db.ts` 的 `VALID_ENVS`）

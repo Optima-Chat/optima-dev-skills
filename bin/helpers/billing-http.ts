@@ -65,6 +65,25 @@ const DEV_SKILLS_CLIENT_SECRET_KEY = 'DEV_SKILLS_OAUTH_CLIENT_SECRET';
 // under CN_PROD-prefixed keys so we reuse the existing Infisical access —
 // zero new credential chain. Canonical copy lives in cn Infisical
 // /shared-secrets/oauth-clients (DEV_SKILLS_OAUTH_CLIENT_ID/SECRET).
+/**
+ * cn-stage only: take the dev-skills OAuth client straight from the environment
+ * instead of reading cn Infisical with the admin email/password. Lets an unattended
+ * runner (r3-soak on buildbox, gw#3291) hold just this stage-scoped client and never
+ * the cn Infisical admin login, which also reaches prod. Both keys or neither:
+ * a half-set pair is a misconfiguration and fails closed (no silent Infisical fallback).
+ */
+export const CN_STAGE_OAUTH_CLIENT_ID_ENV = 'DEV_SKILLS_CN_STAGE_OAUTH_CLIENT_ID';
+export const CN_STAGE_OAUTH_CLIENT_SECRET_ENV = 'DEV_SKILLS_CN_STAGE_OAUTH_CLIENT_SECRET';
+export function cnStageOAuthClientFromEnv(env: NodeJS.ProcessEnv = process.env): { clientId: string; clientSecret: string } | null {
+  const clientId = env[CN_STAGE_OAUTH_CLIENT_ID_ENV]?.trim() ?? '';
+  const clientSecret = env[CN_STAGE_OAUTH_CLIENT_SECRET_ENV]?.trim() ?? '';
+  if (!clientId && !clientSecret) return null;
+  if (!clientId || !clientSecret) {
+    throw new Error(`${CN_STAGE_OAUTH_CLIENT_ID_ENV} / ${CN_STAGE_OAUTH_CLIENT_SECRET_ENV} 必须同时设置（只设了一个）。`);
+  }
+  return { clientId, clientSecret };
+}
+
 const DEV_SKILLS_CN_CLIENT_ID_KEY = 'DEV_SKILLS_CN_PROD_OAUTH_CLIENT_ID';
 const DEV_SKILLS_CN_CLIENT_SECRET_KEY = 'DEV_SKILLS_CN_PROD_OAUTH_CLIENT_SECRET';
 
@@ -124,7 +143,10 @@ export function getServiceToken(env: string, scope?: string): string {
   const isCn = env === 'cn-prod' || env === 'cn-stage';
   let clientId: string;
   let clientSecret: string;
-  if (env === 'cn-stage') {
+  const cnStageFromEnv = env === 'cn-stage' ? cnStageOAuthClientFromEnv() : null;
+  if (cnStageFromEnv) {
+    ({ clientId, clientSecret } = cnStageFromEnv);
+  } else if (env === 'cn-stage') {
     const cnTok = getCnInfisicalToken();
     const oc = getCnSecrets(cnTok, '/shared-secrets/oauth-clients', false, 'staging');
     clientId = oc['DEV_SKILLS_OAUTH_CLIENT_ID'];
