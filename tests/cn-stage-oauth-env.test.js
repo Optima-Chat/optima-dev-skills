@@ -76,3 +76,22 @@ test('getServiceToken(cn-prod)：设了 cn-stage 这对 env 也绝不拿它发 p
   assert.ok(!r.calls.some((c) => c.includes('cid-stage')), r.calls.join('\n'));
   assert.ok(!r.calls.some((c) => c.includes('auth.stage.optima.chat')), r.calls.join('\n'));
 });
+
+// cworker05 r1（#135）：AWS stage / prod 分支走原 AWS Infisical 凭证链，完全不读这对 cn-stage 变量（成对或半设都一样）。
+// 夹具 env 不继承调用方（只给 PATH / HOME 等），所以不会意外拿到真实的 AWS Infisical 配置或 gh 登录态。
+for (const awsEnv of ['stage', 'prod']) {
+  for (const [label, pair] of [
+    ['成对设置', { DEV_SKILLS_CN_STAGE_OAUTH_CLIENT_ID: 'cid-stage', DEV_SKILLS_CN_STAGE_OAUTH_CLIENT_SECRET: 'sec-stage' }],
+    ['只设 ID', { DEV_SKILLS_CN_STAGE_OAUTH_CLIENT_ID: 'cid-stage' }],
+    ['只设 SECRET', { DEV_SKILLS_CN_STAGE_OAUTH_CLIENT_SECRET: 'sec-stage' }],
+  ]) {
+    test(`getServiceToken(${awsEnv})：cn-stage 变量${label} ⇒ 不读、不报半设错误，任何请求都不带这对 client`, () => {
+      const r = withFakeCurl(pair, mint(awsEnv));
+      assert.ok(!r.calls.some((c) => c.includes('cid-stage')), r.calls.join('\n'));
+      assert.ok(!r.stdout.includes('必须同时设置'), r.stdout);
+      assert.ok(!r.calls.some((c) => c.includes('auth.stage.optima.chat') && c.includes('cid')), r.calls.join('\n'));
+      // 正面证据：走的是原 AWS 凭证链——夹具里没给 AWS Infisical 配置，它停在找 INFISICAL_URL 这一步
+      assert.match(r.stdout, /^ERR:.*INFISICAL_URL/, r.stdout);
+    });
+  }
+}
