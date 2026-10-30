@@ -765,7 +765,7 @@ export function tunnelExitHint(pids: readonly string[], localPort: number, dbHos
   const who = pids.length ? `pid ${pids.join(',')}` : 'pid 未知（lsof 没查到）';
   return `ℹ️  本次新开了 DB 隧道：${who}，localhost:${localPort} → ${dbHost}。它会在后台常驻、`
     + `**可能被别的会话复用**，工具不会替你关；⛔ 也不要顺手关掉它——关掉正被复用的隧道会让`
-    + `别人正在跑的查询当场断。确实要关的做法见 query-db 技能 SKILL.md 的「隧道是跨会话共享的」一节。`;
+    + `别人正在跑的查询当场断。确实要关的做法见 query-db 技能 SKILL.md 的隧道那一节（中文标题「隧道是跨会话共享的」／英文副本 "Tunnels are shared across sessions"）。`;
 }
 
 /**

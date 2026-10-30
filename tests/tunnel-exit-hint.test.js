@@ -30,6 +30,10 @@ test('🔴 提示要说明「可能被别的会话复用」且叫人别关，并
   assert.match(s, /可能被别的会话复用/);
   assert.match(s, /不要顺手关掉/);
   assert.match(s, /SKILL\.md/);
+  // 两个标题都要写：Codex 读的英文副本标题是 "Tunnels are shared across sessions"，
+  // 只写中文标题的话在那份里按标题搜不到（global-review 的顺带）。
+  assert.match(s, /隧道是跨会话共享的/);
+  assert.match(s, /Tunnels are shared across sessions/);
 });
 test('多个 pid 都列出来', () => {
   assert.match(tunnelExitHint(['1', '2'], 1, 'h'), /pid 1,2/);
