@@ -47,45 +47,64 @@ AWS `stage`/`prod` Infisical config comes from GitHub Variables (4× `gh api`, 2
 - Prefer explicit columns and `LIMIT` over `SELECT *`.
 - Use the CLI instead of rebuilding Infisical and SSH tunnel steps manually.
 
-## Closing tunnels: kill ONLY the pid the tool printed
+## Tunnels are shared across sessions: by default, do NOT close them
 
-Tunnels stay up in the background; the tool does not close them for you. But when you do
-close one, **never kill by port or process pattern**:
+A tunnel is not yours. The registry `~/.cache/optima-dev-skills/tunnel-ports.json` is shared
+by every session, and `ensureTunnel` reuses whatever is on the recorded port as long as it is
+healthy (`isTunnelHealthy(known) → return known` in `db-utils.ts`) — **it does not check who
+opened it**. The source comment says so: "不自动关……且别人可能在复用这条" (do not auto-close;
+someone else may be reusing this one).
+
+⇒ **The default rule is: leave it.** An idle tunnel costs almost nothing and the CLI reuses or
+reopens one on the next call, whereas closing a tunnel that someone is reusing kills **their
+in-flight query** immediately.
+
+### All of these are wrong
 
 ```bash
-# WRONG — this takes down other sessions' long-lived tunnels
+# WRONG — port/process patterns cannot tell ownership; a long `etime` is almost certainly not yours
 ps -eo pid,args | grep 'ssh .*-L.*254' | awk '{print $1}' | xargs kill
 pkill -f 'ssh.*25435'
+lsof -ti:25435 | xargs kill        # also kills other sessions' psql connected to that port
 ```
 
-Several Claude sessions on this machine may each hold their own tunnel, and a port pattern
-cannot tell them apart — the one with a long `etime` is almost certainly not yours.
+**"Kill the pid the tool printed" is not safe either.** Only the session that *opened* the
+tunnel gets that line; sessions that later *reuse* it get no hint at all. If A opened T and B is
+reusing T, A following that line kills B's query. For the same reason `CLAUDE_PID` identifies
+**who opened it, not who is using it**.
 
-1. **Preferred: use the pids the tool printed.** When it opens a tunnel it prints
-   `ℹ️ 本次新开了 DB 隧道：pid A,B, localhost:<port> → <host>. … 用完请 kill A B`
-   Keep that line and kill exactly those pids. Do not filter it out of the output.
-2. **If you no longer have that line** (e.g. the tunnel was opened in an earlier turn),
-   claim by `CLAUDE_PID`:
+The hint the tool prints today still teaches the unsafe thing (`用完请 kill <pids>`, with an
+`lsof -ti:<port> | xargs kill` fallback). That line is slated to change; until it does, do not
+follow it.
 
-   ```bash
-   # print the owning session of each tunnel; kill only the ones whose owner is you
-   for pid in $(pgrep -f 'ssh .*-L .*:.*rds'); do
-     owner=$(tr '\0' '\n' < /proc/$pid/environ 2>/dev/null | sed -n 's/^CLAUDE_PID=//p')
-     printf 'pid=%s owner=%s etime=%s\n' "$pid" "${owner:-<unreadable>}" "$(ps -o etime= -p $pid | tr -d ' ')"
-   done
-   ```
+### If you really must close one
 
-   Verified 2026-10-30: a freshly opened tunnel's `/proc/<pid>/environ` carries the
-   `CLAUDE_PID` of the session that opened it. If the owner is unreadable, do not kill it.
-3. **If neither works, leave it.** An idle tunnel costs almost nothing and the CLI reuses
-   or reopens one on the next call; killing someone else's costs more.
+Only when you know no other connection is using it:
 
-**Why this is spelled out (two real incidents, same day):** on 2026-10-30 two different
-sessions each killed by port pattern and took down other sessions' long-lived tunnels —
-one of them a tunnel that had been up for two days. In both cases the other session's
-**in-flight query died immediately** (`optima-query-db` reopens the tunnel on the next
-call, so state recovers, but a running query does not). Both wrote the lesson only into
-their own private memory, which the next person cannot see — hence this section.
+```bash
+# 1) count ESTABLISHED connections on that port. NOTE the word order: `state` must come
+#    BEFORE the address expression (`ss -tnp "(…)" state established` errors with
+#    `state does not look like a port` while still exiting 0 — a false "no connections");
+#    `-H` drops the header, which would otherwise make the output never empty.
+n=$(ss -H -tnp state established "( sport = :<port> or dport = :<port> )" | grep -c .)
+# 2) only when n is 0, kill exactly the pids the tool printed (still never by port)
+[ "$n" -eq 0 ] && kill <pid…>
+```
+
+(Verified 2026-10-30 in both directions: `n=2` with one live connection on the port, `n=0` with none.)
+
+If unsure, leave it.
+
+**Why this is spelled out (two real incidents, same day):** on 2026-10-30 two different sessions
+each killed by port pattern and took down other sessions' long-lived tunnels — one up for two
+days. In both cases the other session's **in-flight query died immediately** (the CLI reopens the
+tunnel on the next call, so state recovers, but a running query does not). Both wrote the lesson
+only into their own private memory, which the next person cannot see — hence this section.
+
+Note: query-db is not the only tunnel opener — `resolveUserId` also tunnels to RDS on AWS, and
+`account` / `entitlement` / `grant-credits` / `grant-subscription` all go through it and print the
+same hint. Also, AWS defaults to **SSM** (`OPTIMA_DB_TUNNEL` defaults to `ssm`), whose tunnel
+process is **not** `ssh`, so anything that matches processes by `ssh` will miss it there.
 
 
 ## Fallback
