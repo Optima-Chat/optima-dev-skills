@@ -47,6 +47,47 @@ AWS `stage`/`prod` Infisical config comes from GitHub Variables (4× `gh api`, 2
 - Prefer explicit columns and `LIMIT` over `SELECT *`.
 - Use the CLI instead of rebuilding Infisical and SSH tunnel steps manually.
 
+## Closing tunnels: kill ONLY the pid the tool printed
+
+Tunnels stay up in the background; the tool does not close them for you. But when you do
+close one, **never kill by port or process pattern**:
+
+```bash
+# WRONG — this takes down other sessions' long-lived tunnels
+ps -eo pid,args | grep 'ssh .*-L.*254' | awk '{print $1}' | xargs kill
+pkill -f 'ssh.*25435'
+```
+
+Several Claude sessions on this machine may each hold their own tunnel, and a port pattern
+cannot tell them apart — the one with a long `etime` is almost certainly not yours.
+
+1. **Preferred: use the pids the tool printed.** When it opens a tunnel it prints
+   `ℹ️ 本次新开了 DB 隧道：pid A,B, localhost:<port> → <host>. … 用完请 kill A B`
+   Keep that line and kill exactly those pids. Do not filter it out of the output.
+2. **If you no longer have that line** (e.g. the tunnel was opened in an earlier turn),
+   claim by `CLAUDE_PID`:
+
+   ```bash
+   # print the owning session of each tunnel; kill only the ones whose owner is you
+   for pid in $(pgrep -f 'ssh .*-L .*:.*rds'); do
+     owner=$(tr '\0' '\n' < /proc/$pid/environ 2>/dev/null | sed -n 's/^CLAUDE_PID=//p')
+     printf 'pid=%s owner=%s etime=%s\n' "$pid" "${owner:-<unreadable>}" "$(ps -o etime= -p $pid | tr -d ' ')"
+   done
+   ```
+
+   Verified 2026-10-30: a freshly opened tunnel's `/proc/<pid>/environ` carries the
+   `CLAUDE_PID` of the session that opened it. If the owner is unreadable, do not kill it.
+3. **If neither works, leave it.** An idle tunnel costs almost nothing and the CLI reuses
+   or reopens one on the next call; killing someone else's costs more.
+
+**Why this is spelled out (two real incidents, same day):** on 2026-10-30 two different
+sessions each killed by port pattern and took down other sessions' long-lived tunnels —
+one of them a tunnel that had been up for two days. In both cases the other session's
+**in-flight query died immediately** (`optima-query-db` reopens the tunnel on the next
+call, so state recovers, but a running query does not). Both wrote the lesson only into
+their own private memory, which the next person cannot see — hence this section.
+
+
 ## Fallback
 
 If the CLI is unavailable, fall back to the documented manual SSH/Infisical workflow from the repository docs or Claude skill content.

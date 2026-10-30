@@ -258,6 +258,44 @@ optima-query-db gateway-core "SELECT key, value FROM app_configs" cn-prod
 
 **本地端口**：动态分配（自 25432 起扫描空闲端口，记录在 `~/.cache/optima-dev-skills/tunnel-ports.json`，复用前校验隧道健康）；旧文档的固定 15432/15433 已废弃——固定端口会撞本机 Docker PG。
 
+## 🛑 关隧道：只按工具打印的那个 pid 关
+
+隧道**会在后台常驻，工具不会替你关**。但关的时候 ⛔ **不要按端口或进程模式批量 kill**：
+
+```bash
+# ⛔ 错：会打掉别的会话的常驻隧道
+ps -eo pid,args | grep 'ssh .*-L.*254' | awk '{print $1}' | xargs kill
+pkill -f 'ssh.*25435'
+```
+
+**本机同时可能有好几个 Claude 会话各自开着隧道**，而端口模式认不出归属 —— `etime` 很长的那条几乎肯定不是你的。
+
+### 正确做法
+
+1. **首选：用工具自己打印的 pid。** 新开隧道时它会打一行
+   `ℹ️ 本次新开了 DB 隧道：pid A,B，localhost:<port> → <host>。…用完请 kill A B`
+   ⇒ 把那一行留着、按那几个 pid 关。⛔ 不要把这行从输出里过滤掉。
+2. **拿不到那行时（比如隧道是上一个回合开的）：按 `CLAUDE_PID` 认领。**
+
+   ```bash
+   # 列出每条隧道属于哪个会话；只关 CLAUDE_PID == 你自己的那些
+   for pid in $(pgrep -f 'ssh .*-L .*:.*rds'); do
+     owner=$(tr '\0' '\n' < /proc/$pid/environ 2>/dev/null | sed -n 's/^CLAUDE_PID=//p')
+     printf 'pid=%s owner=%s etime=%s\n' "$pid" "${owner:-<读不到>}" "$(ps -o etime= -p $pid | tr -d ' ')"
+   done
+   ```
+
+   2026-10-30 实测可用：一条刚开的隧道，其 `/proc/<pid>/environ` 里 `CLAUDE_PID` 正是开它那个会话的值。读不到 owner（别的用户、或非 Claude 开的）⇒ **不关**。
+3. **两个都做不到 ⇒ 不关。** 常驻隧道不占什么资源，下次用会复用或自动重开；误杀别人的代价更大。
+
+### 为什么写得这么细（两次实撞，同一天）
+
+- **2026-10-30 下午**：worker6 按端口批量 kill，打掉了别的会话的常驻隧道。
+- **2026-10-30 晚**：worker3 做同一件事，一次打掉三条，其中 `etime` **2 天**那条肯定是别人的。
+
+两次的后果都一样：**那个会话正在跑的查询当场断**（`optima-query-db` 会在下次调用时自动重开隧道，所以状态可恢复，但进行中的查询不会自愈）。两个人当时都只把教训写进了自己的记忆 ⇒ 只有自己看得到，第三个人照样栽；所以落到这里。
+
+
 ## 🔗 相关命令
 
 - `optima-query-db` - CLI 查询工具（推荐）
