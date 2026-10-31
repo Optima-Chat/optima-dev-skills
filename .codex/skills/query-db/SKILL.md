@@ -73,9 +73,11 @@ tunnel gets that line; sessions that later *reuse* it get no hint at all. If A o
 reusing T, A following that line kills B's query. For the same reason `CLAUDE_PID` identifies
 **who opened it, not who is using it**.
 
-The hint the tool prints today still teaches the unsafe thing (`用完请 kill <pids>`, with an
-`lsof -ti:<port> | xargs kill` fallback). That line is slated to change; until it does, do not
-follow it.
+As of `0.16.23` the hint the tool prints is fixed (it now says the tunnel is long-lived, may be
+reused by other sessions, and must not be closed casually, and points back to this section).
+**But the copy installed in your process may still be older**: before `0.16.23` it printed
+`用完请 kill <pids>` with an `lsof -ti:<port> | xargs kill` fallback. If you see that wording you
+are on a pre-`0.16.23` build — do not follow it; this section wins.
 
 ### If you really must close one
 
