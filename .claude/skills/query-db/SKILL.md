@@ -258,6 +258,52 @@ optima-query-db gateway-core "SELECT key, value FROM app_configs" cn-prod
 
 **本地端口**：动态分配（自 25432 起扫描空闲端口，记录在 `~/.cache/optima-dev-skills/tunnel-ports.json`，复用前校验隧道健康）；旧文档的固定 15432/15433 已废弃——固定端口会撞本机 Docker PG。
 
+## 🛑 隧道是跨会话共享的：默认**不要关**
+
+隧道**不是你私有的**。注册表 `~/.cache/optima-dev-skills/tunnel-ports.json` 所有会话共用，`ensureTunnel` 只要发现端口上那条隧道**健康就直接复用**（`db-utils.ts` 的 `isTunnelHealthy(known) → return known`）—— **它不看是谁开的**。源码注释自己写着：「不自动关……**且别人可能在复用这条**」。
+
+⇒ **默认规矩就是「不关」**：闲置隧道几乎不占资源，下次用会复用或自动重开；而关掉一条正被复用的隧道，会让**别的会话正在跑的查询当场断**。
+
+### ⛔ 这几种关法都是错的
+
+```bash
+# ⛔ 按端口 / 进程模式批量 kill：认不出归属，etime 长的那条几乎肯定不是你的
+ps -eo pid,args | grep 'ssh .*-L.*254' | awk '{print $1}' | xargs kill
+pkill -f 'ssh.*25435'
+lsof -ti:25435 | xargs kill        # 还会连别的会话连在这个端口上的 psql 一起杀
+```
+
+🔴 **「按工具打印的那个 pid 关」也不安全**：那一行只有**新开**隧道的会话才会收到，而后来**复用**这条隧道的会话收不到任何提示。A 开了 T、B 在复用 T，A 照那行 kill ⇒ B 的查询当场断。同理，`CLAUDE_PID` 认出来的是**开它的人，不是正在用它的人**。
+
+⚠️ **工具目前打印的那行提示本身也还在教错的做法**（`用完请 kill <pids>`，pid 查不到时还给 `lsof -ti:<port> | xargs kill`）。那一行要改，在它改掉之前 **⛔ 不要照它做**。
+
+### 真的必须关的时候
+
+只有一种情况值得关：你确知这条隧道**没有任何别的连接在用**。
+
+```bash
+# 1) 数这个端口上「已建立」的连接。⚠️ 语序：state 必须在地址表达式**之前**
+#    （写成 `ss -tnp "(…)" state established` 会报 `state does not look like a port`，
+#     而退出码仍是 0 ⇒ 看起来像「没有连接」的假绿）；`-H` 去掉表头，否则永远非空。
+n=$(ss -H -tnp state established "( sport = :<port> or dport = :<port> )" | grep -c .)
+# 2) n 为 0 才关，且只关工具打印的那几个 pid（⛔ 仍然不要按端口 kill）
+[ "$n" -eq 0 ] && kill <pid…>
+```
+
+（上面这条 2026-10-30 实测过，**阴阳两个方向都验了**：端口上有一条活连接时 `n=2`、没有时 `n=0`。）
+
+拿不准 ⇒ **不关**。
+
+### 为什么写得这么细（两次实撞，同一天）
+
+- **2026-10-30 下午**：worker6 按端口批量 kill，打掉了别的会话的常驻隧道。
+- **2026-10-30 晚**：worker3 做同一件事，一次打掉三条，其中 `etime` **2 天**那条肯定是别人的。
+
+两次的后果都一样：**那个会话正在跑的查询当场断**（`optima-query-db` 会在下次调用时自动重开隧道，所以状态可恢复，但进行中的查询不会自愈）。两个人当时都只把教训写进了自己的记忆 ⇒ 只有自己看得到，第三个人照样栽；所以落到这里。
+
+ℹ️ **开隧道的不只 query-db**：`resolveUserId` 在 AWS 也走 RDS 隧道，`account` / `entitlement` / `grant-credits` / `grant-subscription` 都用它、打的是同一行提示 ⇒ 本节对它们一样适用。另：AWS 默认走 **SSM**（`OPTIMA_DB_TUNNEL` 缺省 `ssm`），那种隧道进程**不是 `ssh`** ⇒ 任何按 `ssh` 匹配进程的做法在 AWS 上都认不到。
+
+
 ## 🔗 相关命令
 
 - `optima-query-db` - CLI 查询工具（推荐）

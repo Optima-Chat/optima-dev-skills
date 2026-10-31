@@ -752,11 +752,20 @@ export function ensureTunnel(dbHost: string, via: 'aws' | 'cn-buildbox' = 'aws')
  * 09-21 一天两次「隧道挂着没人认」：问题不是不想关，是**不知道自己开了**。
  * ⇒ 本次**新建**了隧道时，退出前在 stderr 打一行提示（复用已有隧道不打印；不自动关——
  * 同一个人常连续跑多条查询，自动关会让下一条重新冷启，且别人可能在复用这条）。
+ *
+ * 🔴 **这一行刻意不给 kill 命令**（#139 / global-review）：隧道是**跨会话共享**的 ——
+ * 注册表所有会话共用，`ensureTunnel` 只要 `isTunnelHealthy(known)` 就复用、**不看是谁开的**
+ * ⇒ 这行提示只有**新开**的会话收得到，后来**复用**的收不到任何提示。给了 `kill`，A 开、B 复用时
+ * A 照着关就会打断 B 正在跑的查询（2026-10-30 一天两次实撞，都是这个后果）。
+ * 旧版还在 pid 查不到时给 `lsof -ti:<port> | xargs kill` —— 那是按端口 kill，会连别的会话连在
+ * 这个端口上的 psql 一起杀掉。⇒ 现在只说「别关」，怎么关（含必须先确认端口上没有已建立连接）
+ * 统一放在 query-db 技能 SKILL.md 的「隧道是跨会话共享的」一节。
  */
 export function tunnelExitHint(pids: readonly string[], localPort: number, dbHost: string): string {
   const who = pids.length ? `pid ${pids.join(',')}` : 'pid 未知（lsof 没查到）';
-  const kill = pids.length ? `kill ${pids.join(' ')}` : `lsof -ti:${localPort} | xargs kill`;
-  return `ℹ️  本次新开了 DB 隧道：${who}，localhost:${localPort} → ${dbHost}。它会在后台常驻，工具不会替你关；用完请 \`${kill}\`。`;
+  return `ℹ️  本次新开了 DB 隧道：${who}，localhost:${localPort} → ${dbHost}。它会在后台常驻、`
+    + `**可能被别的会话复用**，工具不会替你关；⛔ 也不要顺手关掉它——关掉正被复用的隧道会让`
+    + `别人正在跑的查询当场断。确实要关的做法见 query-db 技能 SKILL.md 的隧道那一节（中文标题「隧道是跨会话共享的」／英文副本 "Tunnels are shared across sessions"）。`;
 }
 
 /**
