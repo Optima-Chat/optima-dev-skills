@@ -45,6 +45,7 @@ Optima Dev Skills 让 Claude Code 能够直接在 **ci、stage、prod、cn-stage
 - **grant-credits** - 赠送、发放积分（stage / prod / cn-stage / cn-prod）
 - **grant-subscription** - 开通、赠送、升级订阅（stage / prod / cn-stage / cn-prod）
 - **logs** - 查看服务日志（stage / prod 走 CloudWatch，cn-stage / cn-prod 走 SLS；CI 走 SSH + Docker Compose，不经 `optima-logs`）
+- **publish-coo-windows** - 发布 COO Windows 安装包到实际下载页：复用产物、核验来源与 SHA256、定向上传 OSS、完整公网下载验收
 - **query-db** - 查询数据库、执行 SQL（ci / stage / prod / cn-stage / cn-prod）
 - **read-code** - 阅读 Optima-Chat 组织下任意仓库的代码
 - **reset-onboarding** - 重置账号的 onboarding 资格，让它重新触发新手引导问卷（cn-stage / cn-prod）

@@ -29,6 +29,7 @@ After `npm install -g @optima-chat/dev-skills`, this package installs skills und
 - `grant-credits`
 - `grant-subscription`
 - `logs`
+- `publish-coo-windows`
 - `query-db`
 - `read-code`
 - `reset-onboarding`
